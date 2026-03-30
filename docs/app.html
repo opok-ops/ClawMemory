@@ -93,16 +93,11 @@ body { background: var(--bg-void); color: var(--text-primary); font-family: var(
 .form-input:focus, .form-textarea:focus, .form-select:focus { outline: none; border-color: var(--accent-cyan); }
 .radio-group { display: flex; gap: 1rem; flex-wrap: wrap; }
 .radio-label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer; }
-.demo-banner { background: linear-gradient(90deg, rgba(245,158,11,0.1), rgba(168,85,247,0.1)); border-bottom: 1px solid rgba(245,158,11,0.3); padding: 0.5rem 1.5rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: #f59e0b; }
-.demo-banner button { background: rgba(245,158,11,0.2); border: none; color: #f59e0b; padding: 0.25rem 0.75rem; border-radius: 4px; cursor: pointer; font-size: 0.75rem; }
+
 </style>
 </head>
 <body>
 <div class="app-wrapper">
-<div class="demo-banner">
-<span>⚠️ 这是演示数据</span>
-<button onclick="clearDemoData()">清空演示数据</button>
-</div>
 <div class="header">
 <div class="header-logo">
 <div class="header-logo-icon">🧠</div>
@@ -395,15 +390,7 @@ function importData() {
 }
 
 // ===== DEMO =====
-function clearDemoData() {
-    if (confirm('确定清空所有演示数据？')) {
-        memories = [];
-        saveMemories();
-        renderMemories();
-        updateStats();
-        document.getElementById('online-count').textContent = '0';
-    }
-}
+
 
 // ===== ONLINE USERS =====
 function initOnlineUsers() {
@@ -421,7 +408,7 @@ function initOnlineUsers() {
         users[userId] = now;
         localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
         const count = Object.keys(users).length + Math.floor(Math.random()*20) + 10;
-        document.getElementById('online-count').textContent = memories.length > 0 ? count : '0';
+        document.getElementById('online-count').textContent = count;
     }
     update();
     setInterval(update, 30000);
