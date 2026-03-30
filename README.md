@@ -1,4 +1,4 @@
-﻿# ClawMemory v1.3.0
+﻿# ClawMemory v1.4.0
 
 **AI Agent 终身记忆系统 — 本地化·结构化·隐私优先**
 
