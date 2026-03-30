@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>ClawMemory - AI Agent 记忆中心</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -94,7 +94,54 @@ body { background: var(--bg-void); color: var(--text-primary); font-family: var(
 .radio-group { display: flex; gap: 1rem; flex-wrap: wrap; }
 .radio-label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer; }
 
+
+/* ===== SAFARI / iOS FIXES ===== */
+@supports not (backdrop-filter: blur(20px)) {
+  .header { background: rgba(4,6,13,0.95); }
+}
+@supports (-webkit-touch-callout: none) {
+  body { -webkit-tap-highlight-color: transparent; }
+  button, .sidebar-btn, .memory-card, .toolbar-btn { -webkit-tap-highlight-color: transparent; }
+}
+input, textarea, select { font-size: 16px !important; }
+
+
+/* ===== RESPONSIVE / MOBILE ===== */
+@media (max-width: 768px) {
+  .header { flex-wrap: wrap; padding: 0.5rem 1rem; }
+  .header-nav { order: 3; width: 100%; justify-content: center; }
+  .header-actions { order: 4; width: 100%; flex-wrap: wrap; justify-content: center; }
+  .online-users { order: 5; width: 100%; justify-content: center; }
+  .app-body { flex-direction: column; }
+  .sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; gap: 0.3rem; padding: 0.75rem; border-right: none; border-bottom: 1px solid var(--border); }
+  .sidebar-btn { flex: 0 0 auto; padding: 0.4rem 0.8rem; font-size: 0.8rem; }
+  .sidebar-btn .btn-text { display: inline; }
+  .stats-grid { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .stat-card { flex: 1; min-width: 60px; }
+  .stats-grid { display: none; }
+  .main { padding: 1rem; }
+  .memory-grid { grid-template-columns: 1fr; }
+  .search-bar { flex-direction: column; }
+  .modal { width: 95%; margin: 1rem; max-height: 90vh; }
+  .modal-body { max-height: 70vh; }
+}
+
+
+@supports (padding: env(safe-area-inset-top)) {
+  .header { padding-top: max(0.75rem, env(safe-area-inset-top)); }
+}
+
+
+html { overflow: hidden; height: 100%; }
+body { overflow: auto; height: 100%; -webkit-overflow-scrolling: touch; }
+
 </style>
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#04060d">
+<meta name="apple-mobile-web-app-title" content="ClawMemory">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
 </head>
 <body>
 <div class="app-wrapper">
