@@ -1549,17 +1549,18 @@ function switchView(view) {
 }
 
 function loadStats() {
+  const active = state.memories.filter(m => !m._deleted);
   const byPrivacy = { PUBLIC: 0, INTERNAL: 0, PRIVATE: 0, STRICT: 0 };
   const cats = new Set();
-  state.memories.forEach(m => {
+  active.forEach(m => {
     if (byPrivacy[m.privacy] !== undefined) byPrivacy[m.privacy]++;
     cats.add(m.category);
   });
-  document.getElementById('s-total').textContent = state.memories.length;
+  document.getElementById('s-total').textContent = active.length;
   document.getElementById('s-internal').textContent = byPrivacy.INTERNAL;
   document.getElementById('s-private').textContent = byPrivacy.PRIVATE;
   document.getElementById('s-strict').textContent = byPrivacy.STRICT;
-  document.getElementById('s-db-size').textContent = (state.memories.length * 2.1).toFixed(1) + ' KB';
+  document.getElementById('s-db-size').textContent = (active.length * 2.1).toFixed(1) + ' KB';
   document.getElementById('s-cats').textContent = cats.size;
 }
 
