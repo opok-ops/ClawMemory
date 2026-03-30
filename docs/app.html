@@ -919,9 +919,11 @@ body {
     </div>
 
     <div class="header-actions">
+      <button class="header-btn" onclick="importMemories()" title="从JSON文件导入记忆">📥 导入</button>
       <button class="header-btn" onclick="exportMemories()">📤 导出</button>
       <button class="header-btn primary" onclick="showAddForm()">+ 添加记忆</button>
     </div>
+    <input type="file" id="import-file-input" accept=".json" style="display:none" onchange="handleImportFile(event)">
   </header>
 
   <!-- APP BODY -->
@@ -1256,10 +1258,11 @@ function updateHeaderStats() {
 
 function updateSidebarCounts() {
   const cats = ['all', 'learning', 'work', 'life', 'idea', 'fact', 'emotion'];
+  const active = state.memories.filter(m => !m._deleted);
   cats.forEach(cat => {
     const el = document.getElementById('count-' + cat);
     if (el) {
-      el.textContent = cat === 'all' ? state.memories.length : state.memories.filter(m => m.category === cat).length;
+      el.textContent = cat === 'all' ? active.length : active.filter(m => m.category === cat).length;
     }
   });
 }
@@ -1546,10 +1549,10 @@ function runBackup() {
 // ===== EXPORT =====
 function exportMemories() {
   const data = {
-    version: '1.0.0',
+    version: '1.2.0',
     exported_at: new Date().toISOString(),
-    count: state.memories.length,
-    memories: state.memories.map(m => ({
+    count: state.memories.filter(m => !m._deleted).length,
+    memories: state.memories.filter(m => !m._deleted).map(m => ({
       id: m.id,
       category: m.category,
       content: m.privacy === 'STRICT' ? '[脱敏内容]' : m.content,
@@ -1565,6 +1568,53 @@ function exportMemories() {
   a.click();
   URL.revokeObjectURL(url);
   showToast('导出成功 📤', 'success');
+}
+
+// ===== IMPORT =====
+function importMemories() {
+  document.getElementById('import-file-input').click();
+}
+
+function handleImportFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      const mems = data.memories || data;
+      if (!Array.isArray(mems)) { showToast('格式错误：找不到 memories 数组', 'error'); return; }
+      let added = 0;
+      mems.forEach(m => {
+        if (!m.id || !m.content) return;
+        const exists = state.memories.find(x => x.id === m.id);
+        if (!exists) {
+          state.memories.unshift({
+            id: m.id,
+            content: m.content,
+            category: m.category || 'general',
+            tags: m.tags || [],
+            privacy: m.privacy || 'INTERNAL',
+            importance: m.importance || 2,
+            created_at: m.created_at || Date.now(),
+            updated_at: m.updated_at || Date.now(),
+            access_count: 0,
+            _deleted: false,
+          });
+          added++;
+        }
+      });
+      saveState();
+      renderMemories();
+      updateSidebarCounts();
+      updateHeaderStats();
+      showToast('✅ 导入成功：新增 ' + added + ' 条记忆', 'success');
+    } catch(err) {
+      showToast('❌ 解析失败：' + err.message, 'error');
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file, 'utf-8');
 }
 
 // ===== UTILS =====
