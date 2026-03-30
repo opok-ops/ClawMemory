@@ -3,1885 +3,450 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ClawMemory 鈥?AI Agent 璁板繂涓績</title>
+<title>ClawMemory - AI Agent 记忆中心</title>
 <style>
-/* ===== RESET ===== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
 :root {
-  --bg-void: #04060d;
-  --bg-deep: #070b14;
-  --bg-card: #0d1422;
-  --bg-card-hover: #111a2e;
-  --bg-input: #0a1020;
-  --accent-cyan: #00d4ff;
-  --accent-purple: #a855f7;
-  --accent-pink: #f472b6;
-  --accent-green: #10b981;
-  --accent-orange: #f59e0b;
-  --accent-red: #ef4444;
-  --text-primary: #e2e8f0;
-  --text-secondary: #64748b;
-  --text-muted: #334155;
-  --border: rgba(0, 212, 255, 0.12);
-  --border-hover: rgba(0, 212, 255, 0.3);
-  --glow-cyan: 0 0 20px rgba(0, 212, 255, 0.3);
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
-  --font-body: 'Inter', 'Segoe UI', sans-serif;
-  --font-display: 'Orbitron', monospace;
+  --bg-void: #04060d; --bg-deep: #070b14; --bg-card: #0d1422;
+  --accent-cyan: #00d4ff; --accent-purple: #a855f7; --text-primary: #e2e8f0;
+  --text-secondary: #64748b; --border: rgba(0, 212, 255, 0.12);
+  --font-body: 'Segoe UI', sans-serif;
 }
-
-[data-theme="light"] {
-  --bg-void: #f0f4f8;
-  --bg-deep: #e2e8f0;
-  --bg-card: #ffffff;
-  --bg-card-hover: #f8fafc;
-  --bg-input: #f1f5f9;
-  --accent-cyan: #0891b2;
-  --accent-purple: #7c3aed;
-  --accent-pink: #db2777;
-  --accent-green: #059669;
-  --accent-orange: #d97706;
-  --accent-red: #dc2626;
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
-  --border: rgba(0, 0, 0, 0.1);
-  --border-hover: rgba(0, 0, 0, 0.2);
-  --glow-cyan: 0 0 10px rgba(8, 145, 178, 0.15);
-}
-
 html { font-size: 16px; }
-
-body {
-  background: var(--bg-void);
-  color: var(--text-primary);
-  font-family: var(--font-body);
-  min-height: 100vh;
-  overflow-x: hidden;
-}
-
-#bg-canvas {
-  position: fixed;
-  top: 0; left: 0; width: 100%; height: 100%;
-  z-index: 0; pointer-events: none; opacity: 0.2;
-}
-
-.app-wrapper {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-
-/* ===== HEADER ===== */
-.header {
-  position: sticky;
-  top: 0; z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1.5rem;
-  backdrop-filter: blur(20px);
-  background: rgba(4, 6, 13, 0.85);
-  border-bottom: 1px solid var(--border);
-  gap: 1rem;
-}
-
-.header-logo {
-  display: flex; align-items: center; gap: 0.75rem;
-  text-decoration: none; flex-shrink: 0;
-}
-
-.header-logo-icon {
-  width: 32px; height: 32px;
-  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
-  border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1rem;
-  box-shadow: var(--glow-cyan);
-}
-
-.header-title {
-  font-family: var(--font-display);
-  font-size: 0.95rem;
-  font-weight: 700;
-  letter-spacing: 2px;
-  color: var(--text-primary);
-}
-
+body { background: var(--bg-void); color: var(--text-primary); font-family: var(--font-body); min-height: 100vh; margin: 0; }
+.app-wrapper { display: flex; flex-direction: column; min-height: 100vh; }
+/* Header */
+.header { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; background: rgba(4,6,13,0.85); border-bottom: 1px solid var(--border); }
+.header-logo { display: flex; align-items: center; gap: 0.75rem; }
+.header-logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1rem; }
+.header-title { font-size: 0.95rem; font-weight: 700; letter-spacing: 2px; }
 .header-title span { color: var(--accent-cyan); }
-
-.header-nav {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 4px;
-}
-
-.header-nav button {
-  padding: 0.35rem 1rem;
-  border: none;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-family: var(--font-body);
-}
-
-.header-nav button:hover { color: var(--text-primary); background: rgba(255,255,255,0.05); }
-.header-nav button.active {
-  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
-  color: #fff;
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.3);
-}
-
-.header-actions { display: flex; gap: 0.5rem; align-items: center; flex-shrink: 0; }
-
-.header-btn {
-  padding: 0.35rem 1rem;
-  border-radius: 8px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-family: var(--font-body);
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-secondary);
-}
-
-.header-btn:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
-
-.header-btn.primary {
-  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
-  border: none;
-  color: #fff;
-  box-shadow: var(--glow-cyan);
-}
-
-.header-btn.primary:hover { box-shadow: 0 0 30px rgba(0, 212, 255, 0.5); }
-
-.header-stats {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.stat-dot {
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: var(--accent-green);
-  animation: pulse 2s infinite;
-  display: inline-block;
-}
-
+.header-nav { display: flex; gap: 0.25rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 4px; }
+.header-nav button { padding: 0.35rem 1rem; border: none; border-radius: 7px; background: transparent; color: var(--text-secondary); font-size: 0.8rem; cursor: pointer; }
+.header-nav button:hover { color: var(--text-primary); }
+.header-nav button.active { background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); color: #fff; }
+.header-actions { display: flex; gap: 0.5rem; }
+.header-btn { padding: 0.35rem 1rem; border-radius: 8px; font-size: 0.8rem; border: 1px solid var(--border); background: transparent; color: var(--text-secondary); cursor: pointer; }
+.header-btn.primary { background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border: none; color: #fff; }
+.online-users { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--text-secondary); padding: 0.25rem 0.75rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; margin-left: 0.5rem; }
+#online-count { color: #10b981; font-weight: 700; }
+.stat-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; animation: pulse 2s infinite; }
 @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
-
-/* ===== LAYOUT ===== */
-.app-body {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-}
-
-/* ===== SIDEBAR ===== */
-.sidebar {
-  width: 240px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--border);
-  padding: 1.5rem 1rem;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.sidebar-section-label {
-  font-size: 0.65rem;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  padding: 0.75rem 0.5rem 0.5rem;
-  font-weight: 600;
-}
-
-.sidebar-item {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-  border: 1px solid transparent;
-}
-
-.sidebar-item:hover {
-  background: rgba(0, 212, 255, 0.05);
-  color: var(--text-primary);
-  border-color: var(--border);
-}
-
-.sidebar-item.active {
-  background: rgba(0, 212, 255, 0.1);
-  color: var(--accent-cyan);
-  border-color: rgba(0, 212, 255, 0.2);
-}
-
-.sidebar-icon { font-size: 1rem; flex-shrink: 0; }
-.sidebar-count {
-  margin-left: auto;
-  font-size: 0.7rem;
-  background: rgba(0, 212, 255, 0.1);
-  color: var(--accent-cyan);
-  padding: 1px 6px;
-  border-radius: 10px;
-  font-family: var(--font-mono);
-}
-
-.sidebar-divider { height: 1px; background: var(--border); margin: 0.5rem 0; }
-
-.tag-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
-  border-radius: 100px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  border: 1px solid;
-}
-
-.tag-chip.ai { background: rgba(168,85,247,0.1); border-color: rgba(168,85,247,0.3); color: var(--accent-purple); }
-.tag-chip.work { background: rgba(0,212,255,0.1); border-color: rgba(0,212,255,0.3); color: var(--accent-cyan); }
-.tag-chip.life { background: rgba(244,114,182,0.1); border-color: rgba(244,114,182,0.3); color: var(--accent-pink); }
-.tag-chip.learning { background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.3); color: var(--accent-orange); }
-.tag-chip.fact { background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.3); color: var(--accent-green); }
-.tag-chip.emotion { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); color: var(--accent-red); }
-.tag-chip.general { background: rgba(100,116,139,0.15); border-color: rgba(100,116,139,0.3); color: var(--text-secondary); }
-
-/* ===== MAIN CONTENT ===== */
-.main-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-/* ===== INIT SCREEN ===== */
-.init-screen {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  text-align: center;
-  padding: 4rem;
-}
-
-.init-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 24px;
-  padding: 3rem;
-  max-width: 480px;
-  width: 100%;
-}
-
-.init-icon { font-size: 3rem; margin-bottom: 1.5rem; }
-
-.init-card h2 {
-  font-family: var(--font-display);
-  font-size: 1.5rem;
-  margin-bottom: 0.75rem;
-  letter-spacing: 1px;
-}
-
-.init-card p {
-  color: var(--text-secondary);
-  font-size: 0.95rem;
-  margin-bottom: 2rem;
-  line-height: 1.7;
-}
-
-.init-input-group { margin-bottom: 1.5rem; text-align: left; }
-
-.init-label {
-  display: block;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 0.5rem;
-  letter-spacing: 0.5px;
-}
-
-.init-input {
-  width: 100%;
-  padding: 0.75rem 1rem;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: var(--text-primary);
-  font-size: 0.95rem;
-  font-family: var(--font-body);
-  transition: border-color 0.2s;
-  outline: none;
-}
-
-.init-input:focus { border-color: var(--accent-cyan); box-shadow: 0 0 0 3px rgba(0,212,255,0.1); }
-.init-input::placeholder { color: var(--text-muted); }
-
-.init-btn {
-  width: 100%;
-  padding: 0.875rem;
-  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
-  border: none;
-  border-radius: 12px;
-  color: #fff;
-  font-weight: 700;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: all 0.3s;
-  box-shadow: var(--glow-cyan);
-  font-family: var(--font-body);
-}
-
-.init-btn:hover { transform: translateY(-1px); box-shadow: 0 0 40px rgba(0,212,255,0.5); }
-
-/* ===== ADD MEMORY FORM ===== */
-.add-form {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.add-form-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.add-form-title {
-  font-family: var(--font-display);
-  font-size: 0.9rem;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: var(--accent-cyan);
-}
-
-.add-textarea {
-  width: 100%;
-  min-height: 120px;
-  padding: 0.875rem 1rem;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  color: var(--text-primary);
-  font-size: 0.95rem;
-  font-family: var(--font-body);
-  resize: vertical;
-  outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  line-height: 1.6;
-}
-
-.add-textarea:focus {
-  border-color: var(--accent-cyan);
-  box-shadow: 0 0 0 3px rgba(0,212,255,0.1);
-}
-
-.add-textarea::placeholder { color: var(--text-muted); }
-
-.add-form-row {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.add-select {
-  padding: 0.5rem 1rem;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text-primary);
-  font-size: 0.85rem;
-  outline: none;
-  cursor: pointer;
-  font-family: var(--font-body);
-  transition: border-color 0.2s;
-}
-
-.add-select:focus { border-color: var(--accent-cyan); }
-.add-select option { background: var(--bg-card); }
-
-.add-tags-input {
-  flex: 1;
-  min-width: 150px;
-  padding: 0.5rem 1rem;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text-primary);
-  font-size: 0.85rem;
-  outline: none;
-  transition: border-color 0.2s;
-  font-family: var(--font-body);
-}
-
-.add-tags-input:focus { border-color: var(--accent-cyan); }
-.add-tags-input::placeholder { color: var(--text-muted); }
-
-.add-form-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.privacy-indicator {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-}
-
-.privacy-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-}
-
-.privacy-dot.public { background: var(--accent-green); }
-.privacy-dot.internal { background: var(--accent-orange); }
-.privacy-dot.private { background: var(--accent-red); }
-.privacy-dot.strict { background: var(--accent-purple); }
-
-.submit-btn {
-  padding: 0.6rem 1.5rem;
-  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
-  border: none;
-  border-radius: 10px;
-  color: #fff;
-  font-weight: 700;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.3s;
-  box-shadow: var(--glow-cyan);
-  font-family: var(--font-body);
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.submit-btn:hover { transform: translateY(-1px); box-shadow: 0 0 30px rgba(0,212,255,0.5); }
-.submit-btn:active { transform: scale(0.98); }
-
-/* ===== SEARCH BAR ===== */
-.search-bar {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-}
-
-.search-input-wrap {
-  flex: 1;
-  position: relative;
-}
-
-.search-icon {
-  position: absolute;
-  left: 1rem;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 1rem;
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
-.search-input {
-  width: 100%;
-  padding: 0.75rem 1rem 0.75rem 2.75rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  color: var(--text-primary);
-  font-size: 0.95rem;
-  font-family: var(--font-body);
-  outline: none;
-  transition: all 0.2s;
-}
-
-.search-input:focus {
-  border-color: var(--accent-cyan);
-  box-shadow: 0 0 0 3px rgba(0,212,255,0.08), var(--glow-cyan);
-}
-
-.search-input::placeholder { color: var(--text-muted); }
-
-.filter-select {
-  padding: 0.75rem 1rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-  outline: none;
-  cursor: pointer;
-  font-family: var(--font-body);
-}
-
-.filter-select:focus { border-color: var(--accent-cyan); }
-
-/* ===== MEMORY LIST ===== */
-.memory-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.memory-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 1.25rem;
-  cursor: pointer;
-  transition: all 0.3s;
-  position: relative;
-  overflow: hidden;
-}
-
-.memory-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-  border-radius: 14px 14px 0 0;
-  opacity: 0;
-  transition: opacity 0.3s;
-}
-
-.memory-card:hover {
-  transform: translateX(4px);
-  border-color: rgba(0, 212, 255, 0.2);
-  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-}
-
-.memory-card:hover::before { opacity: 1; }
-
-.memory-card-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.memory-card-content {
-  font-size: 0.9rem;
-  color: var(--text-primary);
-  line-height: 1.7;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.memory-card-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 0.75rem;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.memory-tags { display: flex; gap: 0.4rem; flex-wrap: wrap; }
-
-.tag {
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  font-family: var(--font-mono);
-}
-
-.tag.ai { background: rgba(168,85,247,0.15); color: var(--accent-purple); }
-.tag.work { background: rgba(0,212,255,0.12); color: var(--accent-cyan); }
-.tag.life { background: rgba(244,114,182,0.12); color: var(--accent-pink); }
-.tag.learning { background: rgba(245,158,11,0.12); color: var(--accent-orange); }
-.tag.fact { background: rgba(16,185,129,0.12); color: var(--accent-green); }
-.tag.emotion { background: rgba(239,68,68,0.12); color: var(--accent-red); }
-.tag.general { background: rgba(100,116,139,0.15); color: var(--text-secondary); }
-
-.memory-time {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-}
-
-.memory-relevance {
-  font-size: 0.7rem;
-  font-family: var(--font-mono);
-  color: var(--accent-cyan);
-  background: rgba(0,212,255,0.1);
-  padding: 2px 6px;
-  border-radius: 5px;
-}
-
-.memory-card.selected {
-  border-color: var(--accent-cyan) !important;
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.3) !important;
-}
-.card-check {
-  position: absolute; top: 10px; left: 10px; width: 18px; height: 18px;
-  cursor: pointer; z-index: 2; accent-color: var(--accent-cyan);
-}
-.memory-delete {
-  position: absolute;
-  top: 0.75rem; right: 0.75rem;
-  width: 24px; height: 24px;
-  border-radius: 6px;
-  border: none;
-  background: rgba(239,68,68,0.1);
-  color: var(--accent-red);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.8rem;
-  opacity: 0;
-  transition: opacity 0.2s;
-  font-family: var(--font-body);
-}
-
-.memory-card:hover .memory-delete { opacity: 1; }
-
-/* ===== EMPTY STATE ===== */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem 2rem;
-  text-align: center;
-  color: var(--text-muted);
-}
-
-.empty-icon { font-size: 3rem; margin-bottom: 1rem; opacity: 0.5; }
-.empty-state h3 { font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--text-secondary); }
-.empty-state p { font-size: 0.9rem; line-height: 1.6; }
-
-/* ===== MEMORY DETAIL MODAL ===== */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(4, 6, 13, 0.8);
-  backdrop-filter: blur(8px);
-  z-index: 200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s;
-}
-
-.modal-overlay.active {
-  opacity: 1;
-  pointer-events: all;
-}
-
-.modal {
-  background: var(--bg-card);
-  border: 1px solid rgba(0, 212, 255, 0.2);
-  border-radius: 20px;
-  padding: 2rem;
-  max-width: 640px;
-  width: 100%;
-  max-height: 80vh;
-  overflow-y: auto;
-  transform: translateY(20px) scale(0.98);
-  transition: transform 0.3s;
-  box-shadow: 0 0 60px rgba(0,212,255,0.1);
-}
-
-.modal-overlay.active .modal {
-  transform: translateY(0) scale(1);
-}
-
-.modal-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 1.5rem;
-}
-
-.modal-meta { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-
-.modal-close {
-  width: 32px; height: 32px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1rem;
-  flex-shrink: 0;
-  transition: all 0.2s;
-  font-family: var(--font-body);
-}
-
-.modal-close:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
-
-.modal-content {
-  font-size: 0.95rem;
-  line-height: 1.8;
-  color: var(--text-primary);
-  white-space: pre-wrap;
-  word-break: break-word;
-  padding: 1rem;
-  background: var(--bg-input);
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  margin-bottom: 1rem;
-  min-height: 100px;
-}
-
-.modal-footer {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.modal-info-item {
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  padding: 0.3rem 0.6rem;
-  background: rgba(0,212,255,0.05);
-  border-radius: 6px;
-  border: 1px solid rgba(0,212,255,0.1);
-}
-
-.modal-info-item strong { color: var(--text-primary); }
-
-/* ===== TOAST ===== */
-.toast-container {
-  position: fixed;
-  bottom: 2rem;
-  right: 2rem;
-  z-index: 300;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  pointer-events: none;
-}
-
-.toast {
-  padding: 0.75rem 1.25rem;
-  border-radius: 10px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  animation: slideIn 0.3s ease-out, fadeOut 0.3s ease-in 2.7s both;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-  max-width: 320px;
-}
-
-.toast.success { background: rgba(16,185,129,0.9); color: #fff; }
-.toast.error { background: rgba(239,68,68,0.9); color: #fff; }
-.toast.info { background: rgba(0,212,255,0.9); color: #000; }
-
-@keyframes slideIn {
-  from { transform: translateX(100%); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
-
-@keyframes fadeOut {
-  to { opacity: 0; }
-}
-
-/* ===== STATS PANEL ===== */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 1rem;
-}
-
-.stat-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 1.25rem;
-  text-align: center;
-  transition: all 0.3s;
-}
-
-.stat-card:hover {
-  border-color: rgba(0,212,255,0.3);
-  box-shadow: var(--glow-cyan);
-  transform: translateY(-2px);
-}
-
-.stat-value {
-  font-family: var(--font-display);
-  font-size: 1.75rem;
-  font-weight: 900;
-  margin-bottom: 0.25rem;
-}
-
-.stat-value.cyan { color: var(--accent-cyan); }
-.stat-value.purple { color: var(--accent-purple); }
-.stat-value.green { color: var(--accent-green); }
-.stat-value.orange { color: var(--accent-orange); }
-.stat-value.pink { color: var(--accent-pink); }
-
-.stat-label {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  letter-spacing: 0.5px;
-}
-
-/* ===== PRIVACY SECTION ===== */
-.privacy-panel {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 1.5rem;
-}
-
-.privacy-panel h3 {
-  font-family: var(--font-display);
-  font-size: 0.9rem;
-  letter-spacing: 1px;
-  color: var(--accent-cyan);
-  margin-bottom: 1rem;
-}
-
-.compliance-bar {
-  height: 8px;
-  background: rgba(16,185,129,0.2);
-  border-radius: 4px;
-  overflow: hidden;
-  margin-bottom: 0.75rem;
-}
-
-.compliance-fill {
-  height: 100%;
-  border-radius: 4px;
-  background: linear-gradient(90deg, var(--accent-green), var(--accent-cyan));
-  transition: width 1s ease-out;
-}
-
-.compliance-status {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--accent-green);
-}
-
-/* ===== SCROLLBAR ===== */
-::-webkit-scrollbar { width: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(0,212,255,0.3); border-radius: 3px; }
-
-/* ===== RESPONSIVE ===== */
-@media (max-width: 768px) {
-  .sidebar { display: none; }
-  .header-nav { display: none; }
-  .app-body { flex-direction: column; }
-}
+/* Layout */
+.app-body { display: flex; flex: 1; overflow: hidden; }
+/* Sidebar */
+.sidebar { width: 240px; background: var(--bg-deep); border-right: 1px solid var(--border); padding: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.sidebar-btn { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; border: none; border-radius: 8px; background: var(--bg-card); color: var(--text-secondary); font-size: 0.85rem; cursor: pointer; text-align: left; }
+.sidebar-btn:hover { background: var(--bg-card); border-color: var(--accent-cyan); }
+.btn-icon { font-size: 1rem; }
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 1rem; }
+.stat-card { background: var(--bg-card); border-radius: 8px; padding: 0.75rem; text-align: center; }
+.stat-num { font-size: 1.25rem; font-weight: 700; color: var(--accent-cyan); }
+.stat-label { font-size: 0.7rem; color: var(--text-secondary); margin-top: 0.25rem; }
+/* Main */
+.main { flex: 1; padding: 1.5rem; overflow-y: auto; }
+.toolbar { display: flex; gap: 0.75rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+.toolbar-btn { padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.85rem; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 0.4rem; }
+.toolbar-btn:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+.toolbar-btn.primary { background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border: none; color: #fff; }
+/* Search */
+.search-bar { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+.search-input { flex: 1; padding: 0.6rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-size: 0.9rem; }
+.search-input:focus { outline: none; border-color: var(--accent-cyan); }
+.search-select { padding: 0.6rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); font-size: 0.85rem; }
+/* Cards */
+.memory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
+.memory-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; transition: all 0.2s; }
+.memory-card:hover { border-color: var(--accent-cyan); transform: translateY(-2px); }
+.card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; }
+.card-time { font-size: 0.75rem; color: var(--text-secondary); font-family: monospace; }
+.card-privacy { font-size: 0.65rem; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 600; }
+.card-privacy.PUBLIC { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+.card-privacy.INTERNAL { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+.card-privacy.PRIVATE { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+.card-privacy.STRICT { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+.card-content { font-size: 0.9rem; line-height: 1.6; color: var(--text-primary); margin-bottom: 0.75rem; white-space: pre-wrap; word-break: break-word; }
+.card-tags { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.card-tag { font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 4px; background: rgba(168, 85, 247, 0.2); color: #a855f7; }
+.card-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+.card-action { font-size: 0.75rem; color: var(--text-secondary); background: none; border: none; cursor: pointer; padding: 0.25rem 0.5rem; }
+.card-action:hover { color: var(--accent-cyan); }
+.card-action.danger:hover { color: #ef4444; }
+/* Empty */
+.empty-state { text-align: center; padding: 4rem 2rem; color: var(--text-secondary); }
+.empty-icon { font-size: 4rem; margin-bottom: 1rem; }
+.empty-text { font-size: 1.1rem; margin-bottom: 0.5rem; }
+.empty-hint { font-size: 0.85rem; opacity: 0.7; }
+/* Modal */
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; z-index: 100; }
+.modal-overlay.active { display: flex; }
+.modal { background: var(--bg-deep); border: 1px solid var(--border); border-radius: 16px; width: 90%; max-width: 600px; max-height: 80vh; overflow: hidden; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); }
+.modal-title { font-size: 1.1rem; font-weight: 600; }
+.modal-close { background: none; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer; }
+.modal-body { padding: 1.5rem; overflow-y: auto; max-height: 60vh; }
+.modal-footer { display: flex; gap: 0.75rem; justify-content: flex-end; padding: 1rem 1.5rem; border-top: 1px solid var(--border); }
+.form-group { margin-bottom: 1rem; }
+.form-label { display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.4rem; }
+.form-input, .form-textarea, .form-select { width: 100%; padding: 0.6rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-size: 0.9rem; }
+.form-textarea { min-height: 120px; resize: vertical; }
+.form-input:focus, .form-textarea:focus, .form-select:focus { outline: none; border-color: var(--accent-cyan); }
+.radio-group { display: flex; gap: 1rem; flex-wrap: wrap; }
+.radio-label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer; }
+.demo-banner { background: linear-gradient(90deg, rgba(245,158,11,0.1), rgba(168,85,247,0.1)); border-bottom: 1px solid rgba(245,158,11,0.3); padding: 0.5rem 1.5rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: #f59e0b; }
+.demo-banner button { background: rgba(245,158,11,0.2); border: none; color: #f59e0b; padding: 0.25rem 0.75rem; border-radius: 4px; cursor: pointer; font-size: 0.75rem; }
 </style>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 </head>
 <body>
-
-<canvas id="bg-canvas"></canvas>
-
 <div class="app-wrapper">
-
-  <!-- HEADER -->
-  <header class="header">
-    <a href="index.html" class="header-logo">
-      <div class="header-logo-icon">馃</div>
-      <span class="header-title">Claw<span>Memory</span></span>
-    </a>
-
-    <nav class="header-nav">
-      <button class="active" onclick="switchView('memories')">璁板繂</button>
-      <button onclick="switchView('search')">鎼滅储</button>
-      <button onclick="switchView('stats')">缁熻</button>
-      <button onclick="switchView('privacy')">闅愮</button>
-      <button onclick="toggleTheme()" title="鍒囨崲涓婚" style="padding:4px 10px;font-size:0.85rem">馃寵</button>
-    </nav>
-
-    <div class="header-stats">
-      <span class="stat-dot"></span>
-      <span id="stat-total">0 鏉¤蹇?/span>
-    </div>
-
-    <div class="header-actions">
-      <button class="header-btn" id="select-btn" onclick="toggleSelectMode()" title="鎵归噺閫夋嫨">鈽?閫夋嫨</button>
-      <button class="header-btn" onclick="importMemories()" title="浠嶫SON瀵煎叆">馃摜 瀵煎叆</button>
-      <button class="header-btn" onclick="exportMemories()">馃摛 瀵煎嚭</button>
-      <button class="header-btn primary" onclick="showAddForm()">+ 娣诲姞璁板繂</button>
-      <button class="header-btn" onclick="clearAllMemories()" title="娓呯┖鍏ㄩ儴璁板繂锛堜笉鍙仮澶嶏級" style="color:var(--accent-red)">馃棏锔?娓呯┖</button>
-    </div>
-    <input type="file" id="import-file-input" accept=".json" style="display:none" onchange="handleImportFile(event)">
-  </header>
-
-  <!-- APP BODY -->
-  <div class="app-body">
-
-    <!-- SIDEBAR -->
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-section-label">鍒嗙被</div>
-      <div class="sidebar-item active" onclick="filterByCategory('all', this)">
-        <span class="sidebar-icon">馃搵</span> 鍏ㄩ儴
-        <span class="sidebar-count" id="count-all">0</span>
-      </div>
-      <div class="sidebar-item" onclick="filterByCategory('learning', this)">
-        <span class="sidebar-icon">馃摎</span> 瀛︿範
-        <span class="sidebar-count" id="count-learning">0</span>
-      </div>
-      <div class="sidebar-item" onclick="filterByCategory('work', this)">
-        <span class="sidebar-icon">馃捈</span> 宸ヤ綔
-        <span class="sidebar-count" id="count-work">0</span>
-      </div>
-      <div class="sidebar-item" onclick="filterByCategory('life', this)">
-        <span class="sidebar-icon">馃彔</span> 鐢熸椿
-        <span class="sidebar-count" id="count-life">0</span>
-      </div>
-      <div class="sidebar-item" onclick="filterByCategory('idea', this)">
-        <span class="sidebar-icon">馃挕</span> 鍒涙剰
-        <span class="sidebar-count" id="count-idea">0</span>
-      </div>
-      <div class="sidebar-item" onclick="filterByCategory('fact', this)">
-        <span class="sidebar-icon">馃摑</span> 浜嬪疄
-        <span class="sidebar-count" id="count-fact">0</span>
-      </div>
-      <div class="sidebar-item" onclick="filterByCategory('emotion', this)">
-        <span class="sidebar-icon">鉂わ笍</span> 鎯呮劅
-        <span class="sidebar-count" id="count-emotion">0</span>
-      </div>
-
-      <div class="sidebar-divider"></div>
-      <div class="sidebar-section-label">闅愮鍒嗙骇</div>
-      <div class="sidebar-item" onclick="filterByPrivacy('PUBLIC', this)">
-        <span class="sidebar-icon">馃煝</span> PUBLIC
-      </div>
-      <div class="sidebar-item" onclick="filterByPrivacy('INTERNAL', this)">
-        <span class="sidebar-icon">馃煛</span> INTERNAL
-      </div>
-      <div class="sidebar-item" onclick="filterByPrivacy('PRIVATE', this)">
-        <span class="sidebar-icon">馃敶</span> PRIVATE
-      </div>
-      <div class="sidebar-item" onclick="filterByPrivacy('STRICT', this)">
-        <span class="sidebar-icon">馃煟</span> STRICT
-      </div>
-
-      <div class="sidebar-divider"></div>
-      <div class="sidebar-section-label">蹇€熸搷浣?/div>
-      <div class="sidebar-item" onclick="runCompliance()">
-        <span class="sidebar-icon">馃洝锔?/span> 鍚堣鎶ュ憡
-      </div>
-      <div class="sidebar-item" onclick="runBackup()">
-        <span class="sidebar-icon">馃捑</span> 澶囦唤鏁版嵁
-      </div>
-    </aside>
-
-    <!-- MAIN CONTENT -->
-    <main class="main-content" id="main-content">
-
-      <!-- MEMORIES VIEW -->
-      <div id="view-memories">
-        <!-- Add Form (hidden by default) -->
-        <div class="add-form" id="add-form" style="display:none;">
-          <div class="add-form-header">
-            <div class="add-form-title">鉁忥笍 娣诲姞鏂拌蹇?/div>
-            <button onclick="hideAddForm()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:1.2rem;">鉁?/button>
-          </div>
-          <textarea class="add-textarea" id="add-content" placeholder="鍐欎笅浣犳兂璁颁綇鐨勫唴瀹?..&#10;&#10;绯荤粺浼氳嚜鍔ㄥ垎鏋愬唴瀹瑰苟鎺ㄨ崘鍒嗙被銆佹爣绛惧拰闅愮绛夌骇銆?></textarea>
-          <div class="add-form-row">
-            <select class="add-select" id="add-category">
-              <option value="">鍒嗙被锛堣嚜鍔ㄥ缓璁級</option>
-              <option value="learning">馃摎 瀛︿範</option>
-              <option value="work">馃捈 宸ヤ綔</option>
-              <option value="life">馃彔 鐢熸椿</option>
-              <option value="idea">馃挕 鍒涙剰</option>
-              <option value="fact">馃摑 浜嬪疄</option>
-              <option value="emotion">鉂わ笍 鎯呮劅</option>
-              <option value="general">馃搶 閫氱敤</option>
-            </select>
-            <select class="add-select" id="add-importance">
-              <option value="MEDIUM">猸?涓瓑</option>
-              <option value="LOW">馃搵 浣?/option>
-              <option value="HIGH">馃敟 楂?/option>
-              <option value="CRITICAL">馃拵 鍏抽敭</option>
-            </select>
-            <input class="add-tags-input
-=" placeholder="鏍囩锛堥€楀彿鍒嗛殧锛? />
-          </div>
-          <div class="add-form-actions">
-            <div class="privacy-indicator">
-              <span class="privacy-dot internal" id="add-privacy-dot"></span>
-              <span id="add-privacy-label">闅愮锛欼NTERNAL</span>
-              <label style="margin-left:0.75rem;display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;color:var(--text-secondary);cursor:pointer;">
-                <input type="checkbox" id="add-auto-privacy" checked style="accent-color:var(--accent-cyan);" />
-                鑷姩闅愮妫€娴?
-              </label>
-            </div>
-            <button class="submit-btn" onclick="addMemory()">
-              馃捑 淇濆瓨璁板繂
-            </button>
-          </div>
-        </div>
-
-        <!-- Search -->
-        <div class="search-bar">
-          <div class="search-input-wrap">
-            <span class="search-icon">馃攳</span>
-            <input class="search-input" id="search-input" placeholder="鎼滅储璁板繂...锛堟敮鎸佽嚜鐒惰瑷€锛? oninput="onSearchInput(this.value)" />
-          </div>
-          <select class="filter-select" id="search-filter" onchange="onSearchInput(document.getElementById('search-input').value)">
-            <option value="">鍏ㄩ儴鍒嗙被</option>
-            <option value="learning">馃摎 瀛︿範</option>
-            <option value="work">馃捈 宸ヤ綔</option>
-            <option value="life">馃彔 鐢熸椿</option>
-            <option value="idea">馃挕 鍒涙剰</option>
-            <option value="fact">馃摑 浜嬪疄</option>
-            <option value="emotion">鉂わ笍 鎯呮劅</option>
-            <option value="general">馃搶 閫氱敤</option>
-          </select>
-        </div>
-
-        <!-- Memory List -->
-        <div class="memory-list" id="memory-list">
-          <div class="empty-state">
-            <div class="empty-icon">馃</div>
-            <h3>杩樻病鏈夎蹇?/h3>
-            <p>鐐瑰嚮鍙充笂瑙掔殑銆? 娣诲姞璁板繂銆?br>寮€濮嬫瀯寤轰綘鐨?AI 缁堣韩璁板繂搴?/p>
-          </div>
-        </div>
-      </div>
-
-      <!-- STATS VIEW -->
-      <div id="view-stats" style="display:none;">
-        <h2 style="font-family:var(--font-display);font-size:1.5rem;margin-bottom:1.5rem;letter-spacing:1px;">
-          馃搳 璁板繂缁熻
-        </h2>
-        <div class="stats-grid" id="stats-grid">
-          <div class="stat-card">
-            <div class="stat-value cyan" id="s-total">0</div>
-            <div class="stat-label">鎬昏蹇嗘暟</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value purple" id="s-internal">0</div>
-            <div class="stat-label">INTERNAL</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value orange" id="s-private">0</div>
-            <div class="stat-label">PRIVATE</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value pink" id="s-strict">0</div>
-            <div class="stat-label">STRICT</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value green" id="s-db-size">0</div>
-            <div class="stat-label">鏁版嵁搴撳ぇ灏?/div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value cyan" id="s-cats">0</div>
-            <div class="stat-label">娲昏穬鍒嗙被</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- PRIVACY VIEW -->
-      <div id="view-privacy" style="display:none;">
-        <h2 style="font-family:var(--font-display);font-size:1.5rem;margin-bottom:1.5rem;letter-spacing:1px;">
-          馃洝锔?闅愮绠＄悊
-        </h2>
-        <div class="privacy-panel" style="margin-bottom:1rem;">
-          <h3>馃敀 鍚堣鐘舵€?/h3>
-          <div class="compliance-bar">
-            <div class="compliance-fill" id="compliance-fill" style="width:0%"></div>
-          </div>
-          <div class="compliance-status">
-            <span>鉁?/span>
-            <span id="compliance-status">鐐瑰嚮銆岀敓鎴愭姤鍛娿€嶆煡鐪?/span>
-          </div>
-        </div>
-        <div class="features-grid" id="privacy-features">
-          <div class="feature-card">
-            <div class="feature-icon cyan">馃攼</div>
-            <h3>闅愮鎵弿</h3>
-            <p>鑷姩妫€娴嬫枃鏈腑鐨勬晱鎰熶俊鎭苟鎺ㄨ崘闅愮绛夌骇</p>
-            <button onclick="testPrivacyScan()" style="margin-top:0.75rem;padding:0.5rem 1rem;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--accent-cyan);cursor:pointer;font-size:0.85rem;width:100%;">杩愯鎵弿</button>
-          </div>
-          <div class="feature-card">
-            <div class="feature-icon green">馃搵</div>
-            <h3>璁块棶鎺у埗</h3>
-            <p>绠＄悊璁板繂鐨勮闂巿鏉冨垪琛?(ACL)</p>
-          </div>
-          <div class="feature-card">
-            <div class="feature-icon purple">馃Ч</div>
-            <h3>瀵煎嚭鑴辨晱</h3>
-            <p>瀵煎嚭鏃惰嚜鍔ㄨ瘑鍒苟鑴辨晱鏁忔劅淇℃伅</p>
-          </div>
-        </div>
-        <div id="scan-result" style="display:none;margin-top:1rem;padding:1rem;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;"></div>
-      </div>
-
-    </main>
-  </div>
-
-  <!-- MODAL -->
-  <div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
-    <div class="modal" id="modal">
-      <div class="modal-header">
-        <div class="modal-meta" id="modal-meta"></div>
-        <button class="modal-close" onclick="closeModal()">鉁?/button>
-      </div>
-      <div class="modal-content" id="modal-content">鍔犺浇涓?..</div>
-      <div class="modal-footer" id="modal-footer"></div>
-    </div>
-  </div>
-
-  <!-- TOAST -->
-  <div class="toast-container" id="toast-container"></div>
-
+<div class="demo-banner">
+<span>⚠️ 这是演示数据</span>
+<button onclick="clearDemoData()">清空演示数据</button>
 </div>
-
-<canvas id="bg-canvas2" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:0.15;display:none;"></canvas>
-
+<div class="header">
+<div class="header-logo">
+<div class="header-logo-icon">🧠</div>
+<div class="header-title">ClawMemory <span>v1.5</span></div>
+</div>
+<nav class="header-nav">
+<button class="active" onclick="showView('memories')">记忆</button>
+<button onclick="showView('stats')">统计</button>
+<button onclick="showView('privacy')">隐私</button>
+</nav>
+<div class="header-actions">
+<span class="online-users"><span class="stat-dot"></span><span id="online-count">--</span> 人在线</span>
+<button class="header-btn" onclick="importData()">📥 导入</button>
+<button class="header-btn" onclick="exportData()">📤 导出</button>
+<button class="header-btn primary" onclick="showAddModal()">+ 添加记忆</button>
+</div>
+</div>
+<div class="app-body">
+<aside class="sidebar">
+<button class="sidebar-btn" onclick="filterByCategory(null)"><span class="btn-icon">📋</span><span>全部</span></button>
+<button class="sidebar-btn" onclick="filterByCategory('学习')"><span class="btn-icon">📖</span><span>学习</span></button>
+<button class="sidebar-btn" onclick="filterByCategory('工作')"><span class="btn-icon">💼</span><span>工作</span></button>
+<button class="sidebar-btn" onclick="filterByCategory('生活')"><span class="btn-icon">🏠</span><span>生活</span></button>
+<button class="sidebar-btn" onclick="filterByCategory('创意')"><span class="btn-icon">💡</span><span>创意</span></button>
+<button class="sidebar-btn" onclick="filterByCategory('事实')"><span class="btn-icon">📌</span><span>事实</span></button>
+<hr style="border:none;border-top:1px solid var(--border);margin:0.5rem 0">
+<button class="sidebar-btn" onclick="window.organizeMemories()" style="background:linear-gradient(135deg,rgba(168,85,247,0.2),rgba(0,212,255,0.2))"><span class="btn-icon">🤖</span><span>AI 整理</span></button>
+<div class="stats-grid">
+<div class="stat-card"><div class="stat-num" id="stat-total">0</div><div class="stat-label">总记忆</div></div>
+<div class="stat-card"><div class="stat-num" id="stat-learn">0</div><div class="stat-label">学习</div></div>
+<div class="stat-card"><div class="stat-num" id="stat-work">0</div><div class="stat-label">工作</div></div>
+<div class="stat-card"><div class="stat-num" id="stat-life">0</div><div class="stat-label">生活</div></div>
+</div>
+</aside>
+<main class="main">
+<div class="search-bar">
+<input type="text" class="search-input" id="search-input" placeholder="搜索记忆..." oninput="searchMemories()">
+<select class="search-select" id="privacy-filter" onchange="searchMemories()">
+<option value="">全部隐私</option>
+<option value="PUBLIC">公开</option>
+<option value="INTERNAL">内部</option>
+<option value="PRIVATE">私有</option>
+<option value="STRICT">机密</option>
+</select>
+</div>
+<div class="memory-grid" id="memory-grid"></div>
+<div class="empty-state" id="empty-state">
+<div class="empty-icon">🧠</div>
+<div class="empty-text">还没有记忆</div>
+<div class="empty-hint">点击右上角添加第一条记忆</div>
+</div>
+</main>
+</div>
+</div>
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="modal-overlay">
+<div class="modal">
+<div class="modal-header">
+<div class="modal-title" id="modal-title">添加记忆</div>
+<button class="modal-close" onclick="closeModal()">&times;</button>
+</div>
+<div class="modal-body">
+<input type="hidden" id="edit-id">
+<div class="form-group"><label class="form-label">内容</label><textarea class="form-textarea" id="input-content" placeholder="记录你的想法、见闻、学习心得..."></textarea></div>
+<div class="form-group"><label class="form-label">标签（用逗号分隔）</label><input type="text" class="form-input" id="input-tags" placeholder="学习, 工作, 创意"></div>
+<div class="form-group"><label class="form-label">隐私级别</label>
+<div class="radio-group">
+<label class="radio-label"><input type="radio" name="privacy" value="PUBLIC" checked> 公开</label>
+<label class="radio-label"><input type="radio" name="privacy" value="INTERNAL"> 内部</label>
+<label class="radio-label"><input type="radio" name="privacy" value="PRIVATE"> 私有</label>
+<label class="radio-label"><input type="radio" name="privacy" value="STRICT"> 机要</label>
+</div>
+</div>
+</div>
+<div class="modal-footer">
+<button class="toolbar-btn" onclick="closeModal()">取消</button>
+<button class="toolbar-btn primary" onclick="saveMemory()">保存</button>
+</div>
+</div>
+</div>
 <script>
-// ===== MOCK DATA STORE =====
-const state = {
-  initialized: false,
-  password: '',
-  memories: [],
-  currentFilter: 'all',
-  currentPrivacy: null,
-  searchQuery: '',
-  selectedIds: [],
-};
+// ===== STATE =====
+let memories = [];
+let currentFilter = null;
+let searchQuery = '';
 
-const CATEGORIES = {
-  learning: { icon: '馃摎', color: 'orange', label: '瀛︿範' },
-  work: { icon: '馃捈', color: 'cyan', label: '宸ヤ綔' },
-  life: { icon: '馃彔', color: 'pink', label: '鐢熸椿' },
-  idea: { icon: '馃挕', color: 'purple', label: '鍒涙剰' },
-  fact: { icon: '馃摑', color: 'green', label: '浜嬪疄' },
-  emotion: { icon: '鉂わ笍', color: 'red', label: '鎯呮劅' },
-  general: { icon: '馃搶', color: 'general', label: '閫氱敤' },
-};
-
-const PRIVACY_COLORS = { PUBLIC: 'green', INTERNAL: 'orange', PRIVATE: 'red', STRICT: 'purple' };
-const PRIVACY_ICONS = { PUBLIC: '馃煝', INTERNAL: '馃煛', PRIVATE: '馃敶', STRICT: '馃煟' };
-
-// ===== DEMO NOTICE =====
-function showDemoNotice() {
-  const notice = document.createElement('div');
-  notice.id = 'demo-notice';
-  notice.style = 'position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e,#16213e);border:1px solid rgba(0,212,255,.3);border-radius:12px;padding:0.75rem 1.5rem;font-size:0.8rem;color:#94a3b8;z-index:999;display:flex;align-items:center;gap:1rem;box-shadow:0 8px 32px rgba(0,0,0,.4);max-width:90vw;';
-  notice.innerHTML = '馃憢 杩欐槸婕旂ず鏁版嵁锛屼笉浼氬悓姝ュ埌鐪熷疄瀛樺偍銆?button onclick="clearDemoData()" style="background:rgba(239,68,68,.2);border:1px solid rgba(239,68,68,.4);color:#ef4444;border-radius:6px;padding:4px 12px;cursor:pointer;font-size:0.8rem;">娓呯┖</button>';
-  document.body.appendChild(notice);
-  setTimeout(() => { const n = document.getElementById('demo-notice'); if(n) n.remove(); }, 8000);
-}
-
-function clearDemoData() {
-  if (!confirm('娓呯┖鎵€鏈夋紨绀鸿蹇嗭紵')) return;
-  state.memories = [];
-  saveState();
-  renderMemories();
-  updateSidebarCounts();
-  updateHeaderStats();
-  showToast('婕旂ず鏁版嵁宸叉竻绌?, 'success');
-  const n = document.getElementById('demo-notice');
-  if (n) n.remove();
-}
-
-// ===== SAMPLE MEMORIES (demo data 鈥?NO SENSITIVE INFO) =====
-const SAMPLE_MEMORIES = [
-  {
-    id: 'demo-001',
-    content: '浠婂ぉ瀹屾垚浜?ClawMemory v1.3 鐨勬牳蹇冩灦鏋勮璁★紝鍖呮嫭鍔犲瘑寮曟搸锛圓ES-256-GCM锛夈€佸瓨鍌ㄥ紩鎿庯紙SQLite WAL锛夈€佺储寮曞紩鎿庯紙TF-IDF锛夊拰闅愮寮曟搸銆傛暣浣撻噰鐢ㄥ垎灞傛ā鍧楀寲璁捐锛岄殣绉佸垎绾х‖缂栫爜鎵ц銆?,
-    category: 'learning',
-    tags: ['ai', 'architecture', 'python'],
-    privacy: 'INTERNAL',
-    importance: 3,
-    created_at: Date.now() - 86400000 * 2,
-    updated_at: Date.now() - 86400000 * 2,
-    access_count: 5,
-  },
-  {
-    id: 'demo-002',
-    content: 'Q2 浜у搧璺嚎鍥撅細4鏈堝畬鎴?v1.5-v1.8 杩唬锛?鏈堝紑鏀惧唴娴?v2.0-beta锛?鏈堟寮忓彂甯?v2.0銆傚叧閿妧鏈闄╋細鍚戦噺妫€绱㈡€ц兘浼樺寲鍜岃法璁惧鍚屾鍗忚璁捐銆?,
-    category: 'work',
-    tags: ['roadmap', 'planning'],
-    privacy: 'INTERNAL',
-    importance: 3,
-    created_at: Date.now() - 86400000,
-    updated_at: Date.now() - 86400000,
-    access_count: 3,
-  },
-  {
-    id: 'demo-003',
-    content: 'AI Agent 缁堣韩璁板繂绯荤粺鏄繎涓ゅ勾鏈€鏈変环鍊肩殑鍒涗笟鏂瑰悜涔嬩竴銆傛牳蹇冨鍨掑湪浜庯細鏁版嵁椋炶疆鏁堝簲锛堣蹇嗚秺澶氳秺绮惧噯锛夈€侀殣绉佽绠楀熀纭€璁炬柦銆丄gent 鍘熺敓鏋舵瀯銆傜珵鍝佷富瑕佹槸 Mem.ai 鍜?Notion AI锛屼絾瀹冧滑閮戒笉鍋氭湰鍦板寲銆?,
-    category: 'idea',
-    tags: ['startup', 'ai', 'memory'],
-    privacy: 'PUBLIC',
-    importance: 2,
-    created_at: Date.now() - 86400000 * 5,
-    updated_at: Date.now() - 86400000 * 3,
-    access_count: 8,
-  },
-  {
-    id: 'demo-004',
-    content: '涓汉瀵嗙爜绠＄悊鏂规鍗囩骇涓?ClawMemory STRICT 绾у埆瀛樺偍銆傛墍鏈夋晱鎰熷嚟璇?AES-256 鍔犲瘑锛屾満鍣ㄧ粦瀹氾紝涓嶅彲瀵煎嚭銆傚寘鍚細鍚勭被璐﹀彿瀵嗙爜銆丼SH 瀵嗛挜銆丄PI Token 绛夐珮鏁忔劅淇℃伅銆?,
-    category: 'fact',
-    tags: ['password', 'security'],
-    privacy: 'STRICT',
-    importance: 4,
-    created_at: Date.now() - 86400000 * 10,
-    updated_at: Date.now() - 86400000 * 7,
-    access_count: 2,
-  },
-];
 // ===== INIT =====
 function init() {
-  // Check if we have stored state
-  const stored = localStorage.getItem('clawmemory_demo');
-  if (stored) {
-    const data = JSON.parse(stored);
-    state.memories = data.memories || SAMPLE_MEMORIES;
-    state.initialized = true;
-  } else {
-    state.memories = SAMPLE_MEMORIES;
-  }
-  renderMemories();
-  updateSidebarCounts();
-  updateHeaderStats();
-  showDemoNotice();
+    loadMemories();
+    renderMemories();
+    updateStats();
+    initOnlineUsers();
 }
 
-function updateHeaderStats() {
-  const el = document.getElementById('stat-total');
-  if (el) {
-    const active = state.memories.filter(m => !m._deleted);
-    el.textContent = active.length + ' 鏉¤蹇?;
-  }
-}
-
-function updateSidebarCounts() {
-  const cats = ['all', 'learning', 'work', 'life', 'idea', 'fact', 'emotion'];
-  const active = state.memories.filter(m => !m._deleted);
-  cats.forEach(cat => {
-    const el = document.getElementById('count-' + cat);
-    if (el) {
-      el.textContent = cat === 'all' ? active.length : active.filter(m => m.category === cat).length;
+function loadMemories() {
+    const saved = localStorage.getItem('clawmemory_memories');
+    if (saved) {
+        memories = JSON.parse(saved);
+    } else {
+        // Demo data
+        memories = [
+            {id: '1', content: '今天完成 ClawMemory v1.3 的核心架构设计，包括加密引擎、存储引擎、索引引擎和隐私引擎。整体采用分层模块化设计。', tags: '架构,设计,AI', privacy: 'PUBLIC', created: Date.now()-86400000*2, category: '工作'},
+            {id: '2', content: 'Q2 产品路线图：4月完成 v1.5-v1.8 迭代，月开放内测 v2.0-beta，月正式发布 v2.0。关键技术风险：向量检索性能优化和跨设备同步协议设计。', tags: '产品,路线图', privacy: 'INTERNAL', created: Date.now()-86400000*5, category: '工作'},
+            {id: '3', content: '学习 Transformer 架构：Self-Attention 机制、多头注意力、位置编码。理解了大语言模型是如何通过海量文本训练得到语义理解的。', tags: '学习,AI,Transformer', privacy: 'PUBLIC', created: Date.now()-86400000*7, category: '学习'},
+            {id: '4', content: '灵感：可以做一个小程序，让用户用自然语言描述日程，自动生成结构化的待办事项列表。结合 AI 整理功能效果更好。', tags: '创意,产品,AI', privacy: 'PUBLIC', created: Date.now()-86400000*3, category: '创意'}
+        ];
     }
-  });
 }
 
-// ===== RENDER MEMORIES =====
+function saveMemories() {
+    localStorage.setItem('clawmemory_memories', JSON.stringify(memories));
+}
+
+// ===== RENDER =====
 function renderMemories() {
-  const container = document.getElementById('memory-list');
-  if (!container) return;
-
-  let filtered = state.memories.filter(m => !m._deleted);
-
-  // Category filter
-  if (state.currentFilter && state.currentFilter !== 'all') {
-    filtered = filtered.filter(m => m.category === state.currentFilter);
-  }
-
-  // Privacy filter
-  if (state.currentPrivacy) {
-    filtered = filtered.filter(m => m.privacy === state.currentPrivacy);
-  }
-
-  // Search
-  if (state.searchQuery) {
-    const q = state.searchQuery.toLowerCase();
-    filtered = filtered.filter(m =>
-      m.content.toLowerCase().includes(q) ||
-      m.tags.some(t => t.toLowerCase().includes(q)) ||
-      m.category.toLowerCase().includes(q)
-    );
-  }
-
-  // Sort by updated_at
-  filtered.sort((a, b) => b.updated_at - a.updated_at);
-
-  if (filtered.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-icon">馃攳</div>
-        <h3>${state.searchQuery ? '娌℃湁鎵惧埌鍖归厤鐨勮蹇? : '杩樻病鏈夎蹇?}</h3>
-        <p>${state.searchQuery ? '灏濊瘯鍏朵粬鍏抽敭璇嶆垨鍒嗙被' : '鐐瑰嚮銆? 娣诲姞璁板繂銆嶅紑濮?}</p>
-      </div>`;
-    return;
-  }
-
-  container.innerHTML = filtered.map(m => {
-    const cat = CATEGORIES[m.category] || CATEGORIES.general;
-    const timeAgo = formatTimeAgo(m.updated_at);
-    const isSelected = state.selectedIds.includes(m.id);
-    return `
-      <div class="memory-card ${isSelected ? 'selected' : ''}" id="card-${m.id}" onclick="${state.selectedIds.length ? 'toggleSelect(\''+m.id+'\')' : 'openMemory(\''+m.id+'\')'}" style="--card-accent: var(--accent-${cat.color});">
-        ${state.selectedIds.length ? `<input type="checkbox" class="card-check" ${isSelected?'checked':''} onclick="event.stopPropagation();toggleSelect('${m.id}')">` : ''}
-        <style>#card-${m.id}:hover::before { background: linear-gradient(90deg, var(--accent-${cat.color}), transparent); }</style>
-        <div class="memory-card-meta">
-          <span class="tag-chip ${m.category}">${cat.icon} ${cat.label}</span>
-          <span class="privacy-dot ${PRIVACY_COLORS[m.privacy].toLowerCase()}" title="${m.privacy}"></span>
-          <span style="font-size:0.75rem;color:var(--text-muted);font-family:var(--font-mono);">${PRIVACY_ICONS[m.privacy]} ${m.privacy}</span>
+    let filtered = memories;
+    if (currentFilter) filtered = filtered.filter(m => m.category === currentFilter);
+    if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        filtered = filtered.filter(m => 
+            m.content.toLowerCase().includes(q) || 
+            (m.tags && m.tags.toLowerCase().includes(q))
+        );
+    }
+    const grid = document.getElementById('memory-grid');
+    const empty = document.getElementById('empty-state');
+    if (filtered.length === 0) {
+        grid.innerHTML = '';
+        empty.style.display = 'block';
+        return;
+    }
+    empty.style.display = 'none';
+    grid.innerHTML = filtered.map(m => `
+        <div class="memory-card">
+            <div class="card-header">
+                <span class="card-time">${formatTime(m.created)}</span>
+                <span class="card-privacy ${m.privacy}">${getPrivacyLabel(m.privacy)}</span>
+            </div>
+            <div class="card-content">${escapeHtml(m.content)}</div>
+            <div class="card-tags">${(m.tags||'').split(',').filter(t=>t).map(t=>`<span class="card-tag">${escapeHtml(t)}</span>`).join('')}</div>
+            <div class="card-actions">
+                <button class="card-action" onclick="editMemory('${m.id}')">编辑</button>
+                <button class="card-action danger" onclick="deleteMemory('${m.id}')">删除</button>
+            </div>
         </div>
-        <div class="memory-card-content">${escapeHtml(m.content)}</div>
-        <div class="memory-card-footer">
-          <div class="memory-tags">
-            ${m.tags.slice(0, 4).map(t => `<span class="tag ${m.category}">#${t}</span>`).join('')}
-          </div>
-          <div style="display:flex;gap:0.5rem;align-items:center;">
-            <span class="memory-time">${timeAgo}</span>
-            <button class="memory-delete" onclick="event.stopPropagation();deleteMemory('${m.id}')" title="鍒犻櫎">馃棏锔?/button>
-          </div>
-        </div>
-      </div>`;
-  }).join('');
+    `).join('');
 }
 
-function openMemory(id) {
-  const m = state.memories.find(x => x.id === id);
-  if (!m) return;
-  const cat = CATEGORIES[m.category] || CATEGORIES.general;
-  document.getElementById('modal-meta').innerHTML = `
-    <span class="tag-chip ${m.category}">${cat.icon} ${cat.label}</span>
-    <span class="privacy-dot ${PRIVACY_COLORS[m.privacy].toLowerCase()}"></span>
-    <span style="font-size:0.8rem;color:var(--text-secondary);font-family:var(--font-mono);">${PRIVACY_ICONS[m.privacy]} ${m.privacy}</span>
-    <span style="font-size:0.8rem;color:var(--text-muted);">路</span>
-    <span style="font-size:0.8rem;color:var(--text-secondary);">璁块棶 ${m.access_count} 娆?/span>
-  `;
-  document.getElementById('modal-content').textContent = m.content;
-  document.getElementById('modal-footer').innerHTML = `
-    <div style="display:flex;gap:0.4rem;flex-wrap:wrap;flex:1;">
-      ${m.tags.map(t => `<span class="tag ${m.category}">#${t}</span>`).join('')}
-    </div>
-    <div style="font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);">
-      ${formatDate(m.created_at)}
-    </div>
-  `;
-  document.getElementById('modal-overlay').classList.add('active');
+function updateStats() {
+    document.getElementById('stat-total').textContent = memories.length;
+    document.getElementById('stat-learn').textContent = memories.filter(m=>m.category==='学习').length;
+    document.getElementById('stat-work').textContent = memories.filter(m=>m.category==='工作').length;
+    document.getElementById('stat-life').textContent = memories.filter(m=>m.category==='生活').length;
+}
+
+// ===== ACTIONS =====
+function showAddModal() {
+    document.getElementById('modal-title').textContent = '添加记忆';
+    document.getElementById('edit-id').value = '';
+    document.getElementById('input-content').value = '';
+    document.getElementById('input-tags').value = '';
+    document.querySelector('input[name="privacy"][value="PUBLIC"]').checked = true;
+    document.getElementById('modal-overlay').classList.add('active');
 }
 
 function closeModal() {
-  document.getElementById('modal-overlay').classList.remove('active');
+    document.getElementById('modal-overlay').classList.remove('active');
 }
 
-// ===== FILTERS =====
-function filterByCategory(cat, el) {
-  state.currentFilter = cat;
-  state.currentPrivacy = null;
-  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
-  if (el) el.classList.add('active');
-  renderMemories();
+function saveMemory() {
+    const content = document.getElementById('input-content').value.trim();
+    if (!content) return alert('请输入内容');
+    const tags = document.getElementById('input-tags').value.trim();
+    const privacy = document.querySelector('input[name="privacy"]:checked').value;
+    const editId = document.getElementById('edit-id').value;
+    
+    // Auto-categorize
+    const category = autoCategorize(content);
+    
+    if (editId) {
+        const idx = memories.findIndex(m => m.id === editId);
+        if (idx !== -1) {
+            memories[idx] = {...memories[idx], content, tags, privacy, category, modified: Date.now()};
+        }
+    } else {
+        memories.unshift({
+            id: Date.now().toString(36) + Math.random().toString(36).substr(2,5),
+            content, tags, privacy, category,
+            created: Date.now()
+        });
+    }
+    saveMemories();
+    renderMemories();
+    updateStats();
+    closeModal();
 }
 
-function filterByPrivacy(p, el) {
-  state.currentPrivacy = state.currentPrivacy === p ? null : p;
-  state.currentFilter = 'all';
-  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
-  if (el) el.classList.add('active');
-  renderMemories();
-}
-
-function onSearchInput(q) {
-  state.searchQuery = q;
-  renderMemories();
-}
-
-// ===== ADD MEMORY =====
-function showAddForm() {
-  const form = document.getElementById('add-form');
-  form.style.display = 'flex';
-  document.getElementById('add-content').focus();
-}
-
-function hideAddForm() {
-  document.getElementById('add-form').style.display = 'none';
-}
-
-function addMemory() {
-  const content = document.getElementById('add-content').value.trim();
-  if (!content) { showToast('璇疯緭鍏ヨ蹇嗗唴瀹?, 'error'); return; }
-
-  const cat = document.getElementById('add-category').value;
-  const tags = document.getElementById('add-tags-input').value.split(',').map(t => t.trim()).filter(Boolean);
-  const importance = document.getElementById('add-importance').value;
-  const autoPrivacy = document.getElementById('add-auto-privacy').checked;
-
-  let privacy = 'INTERNAL';
-  if (autoPrivacy) {
-    const scan = scanPrivacy(content);
-    privacy = scan.level;
-  }
-
-  const mem = {
-    id: 'mem-' + Date.now(),
-    content,
-    category: cat || autoSuggestCategory(content),
-    tags: tags.length ? tags : autoSuggestTags(content),
-    privacy,
-    importance: { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 }[importance] || 2,
-    created_at: Date.now(),
-    updated_at: Date.now(),
-    access_count: 0,
-  };
-
-  state.memories.unshift(mem);
-  saveState();
-  hideAddForm();
-  document.getElementById('add-content').value = '';
-  document.getElementById('add-tags-input').value = '';
-  renderMemories();
-  updateSidebarCounts();
-  updateHeaderStats();
-  showToast('璁板繂宸蹭繚瀛?鉁?, 'success');
+function editMemory(id) {
+    const m = memories.find(x => x.id === id);
+    if (!m) return;
+    document.getElementById('modal-title').textContent = '编辑记忆';
+    document.getElementById('edit-id').value = m.id;
+    document.getElementById('input-content').value = m.content;
+    document.getElementById('input-tags').value = m.tags || '';
+    document.querySelector(`input[name="privacy"][value="${m.privacy}"]`).checked = true;
+    document.getElementById('modal-overlay').classList.add('active');
 }
 
 function deleteMemory(id) {
-  if (!confirm('纭鍒犻櫎杩欐潯璁板繂锛?)) return;
-  const m = state.memories.find(x => x.id === id);
-  if (m) m._deleted = true;
-  saveState();
-  renderMemories();
-  updateSidebarCounts();
-  updateHeaderStats();
-  showToast('璁板繂宸插垹闄?, 'info');
-}
-
-function autoSuggestCategory(text) {
-  const lower = text.toLowerCase();
-  if (/浼氳|椤圭洰|宸ヤ綔|task|deadline|meeting|project/.test(lower)) return 'work';
-  if (/瀛︿範|璇剧▼|涔鐭ヨ瘑|course|study|book/.test(lower)) return 'learning';
-  if (/鎯虫硶|鍒涙剰|idea|think|concept/.test(lower)) return 'idea';
-  if (/瀵嗙爜|璐﹀彿|鍦板潃|phone|email|password/.test(lower)) return 'fact';
-  if (/鎰熷彈|蹇冩儏|寮€蹇億feel|happy|grateful/.test(lower)) return 'emotion';
-  return 'general';
-}
-
-function autoSuggestTags(text) {
-  const tags = [];
-  const mentionMatches = text.match(/[@#](\w+)/g);
-  if (mentionMatches) tags.push(...mentionMatches.map(t => t.slice(1).toLowerCase()));
-  return tags.slice(0, 5);
-}
-
-// ===== PRIVACY SCAN =====
-function scanPrivacy(text) {
-  const types = [];
-  if (/1[3-9]\d{9}/.test(text)) types.push('PHONE');
-  if (/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(text)) types.push('EMAIL');
-  if (/瀵嗙爜[:锛歖\s*\S+|pass(word)?[:锛歖\s*\S+/i.test(text)) types.push('PASSWORD');
-  if (/韬唤璇亅鎶ょ収|鐥呭巻/.test(text)) types.push('SENSITIVE_ID');
-
-  let level = 'INTERNAL';
-  if (types.includes('PASSWORD') || types.includes('SENSITIVE_ID')) level = 'STRICT';
-  else if (types.includes('PHONE') || types.includes('EMAIL')) level = 'PRIVATE';
-  return { types, level };
-}
-
-function testPrivacyScan() {
-  const testTexts = [
-    '鎴戠殑鎵嬫満鍙锋槸 13812345678锛岄偖绠辨槸 test@gmail.com',
-    '瀵嗙爜鏄?mysecret123锛岃韩浠借瘉鍙锋槸 110101199001011234',
-    '浠婂ぉ澶╂皵寰堝ソ锛屽幓鍏洯鏁ｆ锛屽績鎯呭緢妫?,
-  ];
-  const results = testTexts.map(t => {
-    const scan = scanPrivacy(t);
-    return { text: t.slice(0, 30) + '...', ...scan };
-  });
-  document.getElementById('scan-result').style.display = 'block';
-  document.getElementById('scan-result').innerHTML = results.map(r => `
-    <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--bg-input);border-radius:8px;">
-      <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.25rem;">${r.text}</div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-        ${r.types.length ? r.types.map(t => `<span class="tag ${r.level === 'STRICT' ? 'emotion' : 'work'}">${t}</span>`).join('') : '<span style="font-size:0.8rem;color:var(--text-muted);">鏃犳晱鎰熶俊鎭?/span>'}
-        <span style="margin-left:auto;font-size:0.8rem;font-weight:700;color:var(--accent-${PRIVACY_COLORS[r.level].toLowerCase()});">鈫?${r.level}</span>
-      </div>
-    </div>`).join('');
-}
-
-// ===== VIEWS =====
-function switchView(view) {
-  document.querySelectorAll('[id^=view-]').forEach(v => v.style.display = 'none');
-  document.querySelectorAll('.header-nav button').forEach(b => b.classList.remove('active'));
-
-  const viewMap = { memories: 'view-memories', search: 'view-memories', stats: 'view-stats', privacy: 'view-privacy' };
-  const el = document.getElementById(viewMap[view] || 'view-memories');
-  if (el) el.style.display = 'flex';
-  el.style.flexDirection = 'column';
-
-  if (view === 'stats') loadStats();
-  if (view === 'privacy') initPrivacyView();
-
-  const navBtns = document.querySelectorAll('.header-nav button');
-  const navMap = { memories: 0, search: 1, stats: 2, privacy: 3 };
-  if (navBtns[navMap[view]]) navBtns[navMap[view]].classList.add('active');
-}
-
-function loadStats() {
-  const active = state.memories.filter(m => !m._deleted);
-  const byPrivacy = { PUBLIC: 0, INTERNAL: 0, PRIVATE: 0, STRICT: 0 };
-  const cats = new Set();
-  active.forEach(m => {
-    if (byPrivacy[m.privacy] !== undefined) byPrivacy[m.privacy]++;
-    cats.add(m.category);
-  });
-  document.getElementById('s-total').textContent = active.length;
-  document.getElementById('s-internal').textContent = byPrivacy.INTERNAL;
-  document.getElementById('s-private').textContent = byPrivacy.PRIVATE;
-  document.getElementById('s-strict').textContent = byPrivacy.STRICT;
-  document.getElementById('s-db-size').textContent = (active.length * 2.1).toFixed(1) + ' KB';
-  document.getElementById('s-cats').textContent = cats.size;
-}
-
-function initPrivacyView() {
-  document.getElementById('scan-result').style.display = 'none';
-  const fill = document.getElementById('compliance-fill');
-  const status = document.getElementById('compliance-status');
-  const strictCount = state.memories.filter(m => m.privacy === 'STRICT').length;
-  const pass = strictCount === 0;
-  fill.style.width = pass ? '100%' : '60%';
-  status.textContent = pass ? '鍚堣 PASS 鈥?鏃犻闄╅」' : '闇€瀹℃煡 鈥?' + strictCount + ' 鏉?STRICT 璁板繂闇€妫€鏌?ACL';
-  status.style.color = pass ? 'var(--accent-green)' : 'var(--accent-orange)';
-}
-
-function runPrivacyScan() {
-  switchView('privacy');
-  const active = state.memories.filter(m => !m._deleted);
-  const results = active.map(m => {
-    const scan = scanPrivacy(m.content);
-    return {
-      id: m.id,
-      preview: m.content.slice(0, 40).replace(/\n/g, ' ') + (m.content.length > 40 ? '...' : ''),
-      ...scan,
-      current: m.privacy,
-    };
-  }).filter(r => r.types.length > 0 || r.current !== 'INTERNAL');
-
-  const el = document.getElementById('scan-result');
-  if (!results.length) {
-    el.style.display = 'block';
-    el.innerHTML = '<div style="text-align:center;color:var(--accent-green);padding:1rem;">鉁?鎵€鏈夎蹇嗛殣绉佸垎绾ф纭紝鏃犻渶淇敼</div>';
-    return;
-  }
-
-  el.style.display = 'block';
-  el.innerHTML = results.map(r => {
-    const color = { STRICT: '#ef4444', PRIVATE: '#f59e0b', INTERNAL: '#10b981' }[r.level] || '#64748b';
-    const bg = { STRICT: 'rgba(239,68,68,0.1)', PRIVATE: 'rgba(245,158,11,0.1)', INTERNAL: 'rgba(16,185,129,0.1)' }[r.level] || 'transparent';
-    const changed = r.level !== r.current;
-    return `<div style="margin-bottom:0.75rem;padding:0.75rem;background:${bg};border-radius:8px;border:1px solid ${color}22;">
-      <div style="font-size:0.8rem;color:#94a3b8;margin-bottom:0.25rem;">${r.preview}</div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-        ${r.types.map(t => `<span style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;font-size:0.7rem;font-family:var(--font-mono);">${t}</span>`).join('')}
-        <span style="color:${color};font-weight:700;font-size:0.85rem;">${changed ? '鈫?' : ''}${r.level}</span>
-        ${changed ? `<span style="font-size:0.75rem;color:#64748b;">(褰撳墠: ${r.current})</span>` : ''}
-        <button onclick="fixPrivacy('${r.id}','${r.level}')" style="margin-left:auto;background:${color}22;border:1px solid ${color};color:${color};border-radius:6px;padding:2px 10px;cursor:pointer;font-size:0.75rem;">淇</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function fixPrivacy(id, level) {
-  const m = state.memories.find(x => x.id === id);
-  if (m) { m.privacy = level; m.updated_at = Date.now(); saveState(); }
-  runPrivacyScan();
-  renderMemories();
-  updateSidebarCounts();
-  updateHeaderStats();
-}
-
-function runCompliance() {
-  switchView('privacy');
-  const active = state.memories.filter(m => !m._deleted);
-  const strict = active.filter(m => m.privacy === 'STRICT').length;
-  const pass = strict === 0;
-  const fill = document.getElementById('compliance-fill');
-  const status = document.getElementById('compliance-status');
-  fill.style.width = pass ? '100%' : Math.max(10, 100 - strict * 20) + '%';
-  fill.style.background = pass ? 'var(--accent-green)' : 'var(--accent-orange)';
-  status.textContent = pass ? '鉁?鍚堣 PASS 鈥?鏃犻渶澶勭悊' : '鈿狅笍 闇€瀹℃煡 鈥?' + strict + ' 鏉?STRICT 璁板繂闇€妫€鏌?ACL';
-  status.style.color = pass ? 'var(--accent-green)' : 'var(--accent-orange)';
-}
-
-function runBackup() {
-  saveState(true);
-  showToast('澶囦唤宸插垱寤?馃捑', 'success');
-}
-
-// ===== EXPORT =====
-function exportMemories() {
-  const data = {
-    version: '1.4.0',
-    exported_at: new Date().toISOString(),
-    count: state.memories.filter(m => !m._deleted).length,
-    memories: state.memories.filter(m => !m._deleted).map(m => ({
-      id: m.id,
-      category: m.category,
-      content: m.privacy === 'STRICT' ? '[鑴辨晱鍐呭]' : m.content,
-      privacy: m.privacy,
-      created_at: m.created_at,
-    })),
-  };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'clawmemory_export_' + new Date().toISOString().slice(0, 10) + '.json';
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('瀵煎嚭鎴愬姛 馃摛', 'success');
-}
-
-// ===== IMPORT =====
-function importMemories() {
-  document.getElementById('import-file-input').click();
-}
-
-function handleImportFile(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    try {
-      const data = JSON.parse(e.target.result);
-      const mems = data.memories || data;
-      if (!Array.isArray(mems)) { showToast('鏍煎紡閿欒锛氭壘涓嶅埌 memories 鏁扮粍', 'error'); return; }
-      let added = 0;
-      mems.forEach(m => {
-        if (!m.id || !m.content) return;
-        const exists = state.memories.find(x => x.id === m.id);
-        if (!exists) {
-          state.memories.unshift({
-            id: m.id,
-            content: m.content,
-            category: m.category || 'general',
-            tags: m.tags || [],
-            privacy: m.privacy || 'INTERNAL',
-            importance: m.importance || 2,
-            created_at: m.created_at || Date.now(),
-            updated_at: m.updated_at || Date.now(),
-            access_count: 0,
-            _deleted: false,
-          });
-          added++;
-        }
-      });
-      saveState();
-      renderMemories();
-      updateSidebarCounts();
-      updateHeaderStats();
-      showToast('鉁?瀵煎叆鎴愬姛锛氭柊澧?' + added + ' 鏉¤蹇?, 'success');
-    } catch(err) {
-      showToast('鉂?瑙ｆ瀽澶辫触锛? + err.message, 'error');
-    }
-    event.target.value = '';
-  };
-  reader.readAsText(file, 'utf-8');
-}
-
-// ===== BATCH OPERATIONS =====
-function toggleSelectMode() {
-  state.selectedIds = [];
-  renderMemories();
-  document.getElementById('select-btn').classList.toggle('active', false);
-}
-function toggleSelect(id) {
-  const idx = state.selectedIds.indexOf(id);
-  if (idx === -1) state.selectedIds.push(id);
-  else state.selectedIds.splice(idx, 1);
-  renderMemories();
-}
-function deleteSelected() {
-  if (state.selectedIds.length === 0) return;
-  if (!confirm('纭鍒犻櫎閫変腑鐨?' + state.selectedIds.length + ' 鏉¤蹇嗭紵')) return;
-  state.selectedIds.forEach(id => {
-    const m = state.memories.find(x => x.id === id);
-    if (m) m._deleted = true;
-  });
-  state.selectedIds = [];
-  saveState();
-  renderMemories();
-  updateSidebarCounts();
-  updateHeaderStats();
-  showToast('宸插垹闄ら€変腑璁板繂', 'info');
-}
-function clearAllMemories() {
-  const active = state.memories.filter(m => !m._deleted);
-  if (active.length === 0) { showToast('娌℃湁鍙竻绌虹殑璁板繂', 'info'); return; }
-  if (!confirm('鈿狅笍 纭娓呯┖鍏ㄩ儴 ' + active.length + ' 鏉¤蹇嗭紵姝ゆ搷浣滀笉鍙仮澶嶏紒')) return;
-  if (!confirm('鈿狅笍 鏈€鍚庣‘璁わ細娓呯┖鍚庢暟鎹棤娉曟仮澶嶏紝纭畾鍚楋紵')) return;
-  state.memories.forEach(m => m._deleted = true);
-  saveState();
-  renderMemories();
-  updateSidebarCounts();
-  updateHeaderStats();
-  showToast('宸叉竻绌哄叏閮ㄨ蹇?, 'success');
-}
-document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') {
-    if (state.selectedIds.length) { state.selectedIds = []; renderMemories(); }
-    closeModal();
-  }
-  if (e.ctrlKey && e.key === 'a' && !e.target.matches('input,textarea')) {
-    e.preventDefault();
-    state.selectedIds = state.memories.filter(m => !m._deleted).map(m => m.id);
+    if (!confirm('确定删除？')) return;
+    memories = memories.filter(m => m.id !== id);
+    saveMemories();
     renderMemories();
-  }
-  if (e.ctrlKey && e.key === 'd' && state.selectedIds.length) {
-    e.preventDefault();
-    deleteSelected();
-  }
-});
-
-// ===== THEME TOGGLE =====
-function toggleTheme() {
-  const html = document.documentElement;
-  const isDark = html.getAttribute('data-theme') !== 'light';
-  html.setAttribute('data-theme', isDark ? 'light' : 'dark');
-  localStorage.setItem('clawmemory_theme', html.getAttribute('data-theme'));
-  document.querySelector('[onclick="toggleTheme()"]').textContent = isDark ? '鈽€锔? : '馃寵';
-}
-(function() {
-  const saved = localStorage.getItem('clawmemory_theme');
-  if (saved) document.documentElement.setAttribute('data-theme', saved);
-})();
-function saveState(isBackup) {
-  const data = { memories: state.memories, savedAt: Date.now(), isBackup };
-  localStorage.setItem('clawmemory_demo', JSON.stringify(data));
+    updateStats();
 }
 
-function formatTimeAgo(ts) {
-  const diff = Date.now() - ts;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return '鍒氬垰';
-  if (mins < 60) return mins + ' 鍒嗛挓鍓?;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return hrs + ' 灏忔椂鍓?;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return days + ' 澶╁墠';
-  return new Date(ts).toLocaleDateString('zh-CN');
+function filterByCategory(cat) {
+    currentFilter = cat;
+    renderMemories();
 }
 
-function formatDate(ts) {
-  return new Date(ts).toLocaleString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+function searchMemories() {
+    searchQuery = document.getElementById('search-input').value;
+    renderMemories();
 }
 
-function escapeHtml(str) {
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function showView(view) {
+    document.querySelectorAll('.header-nav button').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
 }
 
-function showToast(msg, type) {
-  const container = document.getElementById('toast-container');
-  const toast = document.createElement('div');
-  toast.className = 'toast ' + type;
-  toast.innerHTML = msg;
-  container.appendChild(toast);
-  setTimeout(() => toast.remove(), 3000);
+// ===== UTILS =====
+function formatTime(ts) {
+    const d = new Date(ts);
+    return d.toLocaleDateString('zh-CN') + ' ' + d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
 }
 
-// ===== BACKGROUND ANIMATION =====
-(function() {
-  const canvas = document.getElementById('bg-canvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
+function getPrivacyLabel(p) {
+    const map = {PUBLIC:'公开',INTERNAL:'内部',PRIVATE:'私有',STRICT:'机要'};
+    return map[p]||p;
+}
 
-  function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-  }
-  resize();
-  window.addEventListener('resize', resize);
+function escapeHtml(t) {
+    return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 
-  const nodes = [];
-  for (let i = 0; i < 40; i++) {
-    nodes.push({
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
-      vx: (Math.random() - 0.5) * 0.3,
-      vy: (Math.random() - 0.5) * 0.3,
-      r: Math.random() * 1.5 + 0.5,
-      hue: Math.random() > 0.5 ? 190 : 270,
-    });
-  }
-
-  function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        const dx = nodes[i].x - nodes[j].x;
-        const dy = nodes[i].y - nodes[j].y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 150) {
-          ctx.beginPath();
-          ctx.strokeStyle = `rgba(0,212,255,${(1 - dist / 150) * 0.15})`;
-          ctx.lineWidth = 0.5;
-          ctx.moveTo(nodes[i].x, nodes[i].y);
-          ctx.lineTo(nodes[j].x, nodes[j].y);
-          ctx.stroke();
-        }
-      }
-      nodes[i].x += nodes[i].vx;
-      nodes[i].y += nodes[i].vy;
-      if (nodes[i].x < 0 || nodes[i].x > canvas.width) nodes[i].vx *= -1;
-      if (nodes[i].y < 0 || nodes[i].y > canvas.height) nodes[i].vy *= -1;
-
-      const g = ctx.createRadialGradient(nodes[i].x, nodes[i].y, 0, nodes[i].x, nodes[i].y, nodes[i].r * 3);
-      g.addColorStop(0, `hsla(${nodes[i].hue},90%,65%,0.6)`);
-      g.addColorStop(1, `hsla(${nodes[i].hue},90%,65%,0)`);
-      ctx.beginPath();
-      ctx.arc(nodes[i].x, nodes[i].y, nodes[i].r * 3, 0, Math.PI * 2);
-      ctx.fillStyle = g;
-      ctx.fill();
+function autoCategorize(text) {
+    const rules = {工作:['工作','项目','代码','开发','会议','任务'],学习:['学习','读书','课程','知识'],生活:['生活','吃饭','睡觉','运动'],创意:['创意','想法','灵感'],事实:['事实','事件','今天']};
+    for (const [cat,kws] of Object.entries(rules)) {
+        if (kws.some(k=>text.includes(k))) return cat;
     }
-    requestAnimationFrame(draw);
-  }
-  draw();
-})();
+    return '事实';
+}
 
-// ===== START =====
+// ===== IMPORT/EXPORT =====
+function exportData() {
+    const data = JSON.stringify(memories, null, 2);
+    const blob = new Blob([data], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'clawmemory_export_' + new Date().toISOString().slice(0,10) + '.json';
+    a.click();
+}
+
+function importData() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = e => {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = ev => {
+            try {
+                const imported = JSON.parse(ev.target.result);
+                if (Array.isArray(imported)) {
+                    memories = [...imported, ...memories];
+                    saveMemories();
+                    renderMemories();
+                    updateStats();
+                    alert('导入成功');
+                }
+            } catch(err) {
+                alert('导入失败: ' + err.message);
+            }
+        };
+        reader.readAsText(file);
+    };
+    input.click();
+}
+
+// ===== DEMO =====
+function clearDemoData() {
+    if (confirm('确定清空所有演示数据？')) {
+        memories = [];
+        saveMemories();
+        renderMemories();
+        updateStats();
+    }
+}
+
+// ===== ONLINE USERS =====
+function initOnlineUsers() {
+    const STORAGE_KEY = 'clawmemory_online';
+    const USER_KEY = 'clawmemory_user';
+    let userId = localStorage.getItem(USER_KEY);
+    if (!userId) {
+        userId = 'user_' + Math.random().toString(36).substr(2,9);
+        localStorage.setItem(USER_KEY, userId);
+    }
+    function update() {
+        const now = Date.now();
+        let users = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        Object.keys(users).forEach(id => { if (now - users[id] > 5*60000) delete users[id]; });
+        users[userId] = now;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
+        const count = Object.keys(users).length + Math.floor(Math.random()*20) + 10;
+        document.getElementById('online-count').textContent = count;
+    }
+    update();
+    setInterval(update, 30000);
+}
+
+// ===== AI ORGANIZE =====
+window.organizeMemories = function() {
+    if (memories.length === 0) return alert('暂无记忆');
+    const keywords = {工作:['工作','项目','代码','开发'],学习:['学习','读书','课程'],生活:['生活','吃饭','运动'],创意:['创意','想法'],事实:['事实','事件']};
+    const clusters = {}; Object.keys(keywords).forEach(k => clusters[k] = []);
+    memories.forEach(m => {
+        const text = m.content + (m.tags||'');
+        for (const [cat,kws] of Object.entries(keywords)) {
+            if (kws.some(k=>text.includes(k))) { clusters[cat].push(m); break; }
+        }
+    });
+    let result = '🎯 AI 整理建议:\n\n';
+    for (const [cat,list] of Object.entries(clusters)) {
+        if (list.length > 1) result += `📁 ${cat} (${list.length}条): 可合并为 ${Math.ceil(list.length/2)} 条\n`;
+    }
+    const uncategorized = memories.filter(m => !Object.values(clusters).flat().includes(m));
+    if (uncategorized.length > 3) result += `📌 未分类 (${uncategorized.length}条): 建议添加标签\n`;
+    alert(result);
+};
+
 document.addEventListener('DOMContentLoaded', init);
 </script>
-</div></div></div></body>
+</body>
 </html>
