@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ClawMemory 鈥?AI Agent 璁板繂涓績</title>
+<title>ClawMemory — AI Agent 记忆中心</title>
 <style>
 /* ===== RESET ===== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -930,29 +930,29 @@ body {
   <!-- HEADER -->
   <header class="header">
     <a href="index.html" class="header-logo">
-      <div class="header-logo-icon">馃</div>
+      <div class="header-logo-icon">🧠</div>
       <span class="header-title">Claw<span>Memory</span></span>
     </a>
 
     <nav class="header-nav">
-      <button class="active" onclick="switchView('memories')">璁板繂</button>
-      <button onclick="switchView('search')">鎼滅储</button>
-      <button onclick="switchView('stats')">缁熻</button>
-      <button onclick="switchView('privacy')">闅愮</button>
-      <button onclick="toggleTheme()" title="鍒囨崲涓婚" style="padding:4px 10px;font-size:0.85rem">馃寵</button>
+      <button class="active" onclick="switchView('memories')">记忆</button>
+      <button onclick="switchView('search')">搜索</button>
+      <button onclick="switchView('stats')">统计</button>
+      <button onclick="switchView('privacy')">隐私</button>
+      <button onclick="toggleTheme()" title="切换主题" style="padding:4px 10px;font-size:0.85rem">🌙</button>
     </nav>
 
     <div class="header-stats">
       <span class="stat-dot"></span>
-      <span id="stat-total">0 鏉¤蹇?/span>
+      <span id="stat-total">0 条记忆</span>
     </div>
 
     <div class="header-actions">
-      <button class="header-btn" id="select-btn" onclick="toggleSelectMode()" title="鎵归噺閫夋嫨">鈽?閫夋嫨</button>
-      <button class="header-btn" onclick="importMemories()" title="浠嶫SON瀵煎叆">馃摜 瀵煎叆</button>
-      <button class="header-btn" onclick="exportMemories()">馃摛 瀵煎嚭</button>
-      <button class="header-btn primary" onclick="showAddForm()">+ 娣诲姞璁板繂</button>
-      <button class="header-btn" onclick="clearAllMemories()" title="娓呯┖鍏ㄩ儴璁板繂锛堜笉鍙仮澶嶏級" style="color:var(--accent-red)">馃棏锔?娓呯┖</button>
+      <button class="header-btn" id="select-btn" onclick="toggleSelectMode()" title="批量选择">☐ 选择</button>
+      <button class="header-btn" onclick="importMemories()" title="从JSON导入">📥 导入</button>
+      <button class="header-btn" onclick="exportMemories()">📤 导出</button>
+      <button class="header-btn primary" onclick="showAddForm()">+ 添加记忆</button>
+      <button class="header-btn" onclick="clearAllMemories()" title="清空全部记忆（不可恢复）" style="color:var(--accent-red)">🗑️ 清空</button>
     </div>
     <input type="file" id="import-file-input" accept=".json" style="display:none" onchange="handleImportFile(event)">
   </header>
@@ -962,58 +962,58 @@ body {
 
     <!-- SIDEBAR -->
     <aside class="sidebar" id="sidebar">
-      <div class="sidebar-section-label">鍒嗙被</div>
+      <div class="sidebar-section-label">分类</div>
       <div class="sidebar-item active" onclick="filterByCategory('all', this)">
-        <span class="sidebar-icon">馃搵</span> 鍏ㄩ儴
+        <span class="sidebar-icon">📋</span> 全部
         <span class="sidebar-count" id="count-all">0</span>
       </div>
       <div class="sidebar-item" onclick="filterByCategory('learning', this)">
-        <span class="sidebar-icon">馃摎</span> 瀛︿範
+        <span class="sidebar-icon">📚</span> 学习
         <span class="sidebar-count" id="count-learning">0</span>
       </div>
       <div class="sidebar-item" onclick="filterByCategory('work', this)">
-        <span class="sidebar-icon">馃捈</span> 宸ヤ綔
+        <span class="sidebar-icon">💼</span> 工作
         <span class="sidebar-count" id="count-work">0</span>
       </div>
       <div class="sidebar-item" onclick="filterByCategory('life', this)">
-        <span class="sidebar-icon">馃彔</span> 鐢熸椿
+        <span class="sidebar-icon">🏠</span> 生活
         <span class="sidebar-count" id="count-life">0</span>
       </div>
       <div class="sidebar-item" onclick="filterByCategory('idea', this)">
-        <span class="sidebar-icon">馃挕</span> 鍒涙剰
+        <span class="sidebar-icon">💡</span> 创意
         <span class="sidebar-count" id="count-idea">0</span>
       </div>
       <div class="sidebar-item" onclick="filterByCategory('fact', this)">
-        <span class="sidebar-icon">馃摑</span> 浜嬪疄
+        <span class="sidebar-icon">📝</span> 事实
         <span class="sidebar-count" id="count-fact">0</span>
       </div>
       <div class="sidebar-item" onclick="filterByCategory('emotion', this)">
-        <span class="sidebar-icon">鉂わ笍</span> 鎯呮劅
+        <span class="sidebar-icon">❤️</span> 情感
         <span class="sidebar-count" id="count-emotion">0</span>
       </div>
 
       <div class="sidebar-divider"></div>
-      <div class="sidebar-section-label">闅愮鍒嗙骇</div>
+      <div class="sidebar-section-label">隐私分级</div>
       <div class="sidebar-item" onclick="filterByPrivacy('PUBLIC', this)">
-        <span class="sidebar-icon">馃煝</span> PUBLIC
+        <span class="sidebar-icon">🟢</span> PUBLIC
       </div>
       <div class="sidebar-item" onclick="filterByPrivacy('INTERNAL', this)">
-        <span class="sidebar-icon">馃煛</span> INTERNAL
+        <span class="sidebar-icon">🟡</span> INTERNAL
       </div>
       <div class="sidebar-item" onclick="filterByPrivacy('PRIVATE', this)">
-        <span class="sidebar-icon">馃敶</span> PRIVATE
+        <span class="sidebar-icon">🔴</span> PRIVATE
       </div>
       <div class="sidebar-item" onclick="filterByPrivacy('STRICT', this)">
-        <span class="sidebar-icon">馃煟</span> STRICT
+        <span class="sidebar-icon">🟣</span> STRICT
       </div>
 
       <div class="sidebar-divider"></div>
-      <div class="sidebar-section-label">蹇€熸搷浣?/div>
+      <div class="sidebar-section-label">快速操作</div>
       <div class="sidebar-item" onclick="runCompliance()">
-        <span class="sidebar-icon">馃洝锔?/span> 鍚堣鎶ュ憡
+        <span class="sidebar-icon">🛡️</span> 合规报告
       </div>
       <div class="sidebar-item" onclick="runBackup()">
-        <span class="sidebar-icon">馃捑</span> 澶囦唤鏁版嵁
+        <span class="sidebar-icon">💾</span> 备份数据
       </div>
     </aside>
 
@@ -1025,41 +1025,41 @@ body {
         <!-- Add Form (hidden by default) -->
         <div class="add-form" id="add-form" style="display:none;">
           <div class="add-form-header">
-            <div class="add-form-title">鉁忥笍 娣诲姞鏂拌蹇?/div>
-            <button onclick="hideAddForm()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:1.2rem;">鉁?/button>
+            <div class="add-form-title">✏️ 添加新记忆</div>
+            <button onclick="hideAddForm()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:1.2rem;">✕</button>
           </div>
-          <textarea class="add-textarea" id="add-content" placeholder="鍐欎笅浣犳兂璁颁綇鐨勫唴瀹?..&#10;&#10;绯荤粺浼氳嚜鍔ㄥ垎鏋愬唴瀹瑰苟鎺ㄨ崘鍒嗙被銆佹爣绛惧拰闅愮绛夌骇銆?></textarea>
+          <textarea class="add-textarea" id="add-content" placeholder="写下你想记住的内容...&#10;&#10;系统会自动分析内容并推荐分类、标签和隐私等级。"></textarea>
           <div class="add-form-row">
             <select class="add-select" id="add-category">
-              <option value="">鍒嗙被锛堣嚜鍔ㄥ缓璁級</option>
-              <option value="learning">馃摎 瀛︿範</option>
-              <option value="work">馃捈 宸ヤ綔</option>
-              <option value="life">馃彔 鐢熸椿</option>
-              <option value="idea">馃挕 鍒涙剰</option>
-              <option value="fact">馃摑 浜嬪疄</option>
-              <option value="emotion">鉂わ笍 鎯呮劅</option>
-              <option value="general">馃搶 閫氱敤</option>
+              <option value="">分类（自动建议）</option>
+              <option value="learning">📚 学习</option>
+              <option value="work">💼 工作</option>
+              <option value="life">🏠 生活</option>
+              <option value="idea">💡 创意</option>
+              <option value="fact">📝 事实</option>
+              <option value="emotion">❤️ 情感</option>
+              <option value="general">📌 通用</option>
             </select>
             <select class="add-select" id="add-importance">
-              <option value="MEDIUM">猸?涓瓑</option>
-              <option value="LOW">馃搵 浣?/option>
-              <option value="HIGH">馃敟 楂?/option>
-              <option value="CRITICAL">馃拵 鍏抽敭</option>
+              <option value="MEDIUM">⭐ 中等</option>
+              <option value="LOW">📋 低</option>
+              <option value="HIGH">🔥 高</option>
+              <option value="CRITICAL">💎 关键</option>
             </select>
             <input class="add-tags-input
-=" placeholder="鏍囩锛堥€楀彿鍒嗛殧锛? />
+=" placeholder="标签（逗号分隔）" />
           </div>
           <div class="add-form-actions">
             <div class="privacy-indicator">
               <span class="privacy-dot internal" id="add-privacy-dot"></span>
-              <span id="add-privacy-label">闅愮锛欼NTERNAL</span>
+              <span id="add-privacy-label">隐私：INTERNAL</span>
               <label style="margin-left:0.75rem;display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;color:var(--text-secondary);cursor:pointer;">
                 <input type="checkbox" id="add-auto-privacy" checked style="accent-color:var(--accent-cyan);" />
-                鑷姩闅愮妫€娴?
+                自动隐私检测
               </label>
             </div>
             <button class="submit-btn" onclick="addMemory()">
-              馃捑 淇濆瓨璁板繂
+              💾 保存记忆
             </button>
           </div>
         </div>
@@ -1067,27 +1067,27 @@ body {
         <!-- Search -->
         <div class="search-bar">
           <div class="search-input-wrap">
-            <span class="search-icon">馃攳</span>
-            <input class="search-input" id="search-input" placeholder="鎼滅储璁板繂...锛堟敮鎸佽嚜鐒惰瑷€锛? oninput="onSearchInput(this.value)" />
+            <span class="search-icon">🔍</span>
+            <input class="search-input" id="search-input" placeholder="搜索记忆...（支持自然语言）" oninput="onSearchInput(this.value)" />
           </div>
           <select class="filter-select" id="search-filter" onchange="onSearchInput(document.getElementById('search-input').value)">
-            <option value="">鍏ㄩ儴鍒嗙被</option>
-            <option value="learning">馃摎 瀛︿範</option>
-            <option value="work">馃捈 宸ヤ綔</option>
-            <option value="life">馃彔 鐢熸椿</option>
-            <option value="idea">馃挕 鍒涙剰</option>
-            <option value="fact">馃摑 浜嬪疄</option>
-            <option value="emotion">鉂わ笍 鎯呮劅</option>
-            <option value="general">馃搶 閫氱敤</option>
+            <option value="">全部分类</option>
+            <option value="learning">📚 学习</option>
+            <option value="work">💼 工作</option>
+            <option value="life">🏠 生活</option>
+            <option value="idea">💡 创意</option>
+            <option value="fact">📝 事实</option>
+            <option value="emotion">❤️ 情感</option>
+            <option value="general">📌 通用</option>
           </select>
         </div>
 
         <!-- Memory List -->
         <div class="memory-list" id="memory-list">
           <div class="empty-state">
-            <div class="empty-icon">馃</div>
-            <h3>杩樻病鏈夎蹇?/h3>
-            <p>鐐瑰嚮鍙充笂瑙掔殑銆? 娣诲姞璁板繂銆?br>寮€濮嬫瀯寤轰綘鐨?AI 缁堣韩璁板繂搴?/p>
+            <div class="empty-icon">🧠</div>
+            <h3>还没有记忆</h3>
+            <p>点击右上角的「+ 添加记忆」<br>开始构建你的 AI 终身记忆库</p>
           </div>
         </div>
       </div>
@@ -1095,12 +1095,12 @@ body {
       <!-- STATS VIEW -->
       <div id="view-stats" style="display:none;">
         <h2 style="font-family:var(--font-display);font-size:1.5rem;margin-bottom:1.5rem;letter-spacing:1px;">
-          馃搳 璁板繂缁熻
+          📊 记忆统计
         </h2>
         <div class="stats-grid" id="stats-grid">
           <div class="stat-card">
             <div class="stat-value cyan" id="s-total">0</div>
-            <div class="stat-label">鎬昏蹇嗘暟</div>
+            <div class="stat-label">总记忆数</div>
           </div>
           <div class="stat-card">
             <div class="stat-value purple" id="s-internal">0</div>
@@ -1116,11 +1116,11 @@ body {
           </div>
           <div class="stat-card">
             <div class="stat-value green" id="s-db-size">0</div>
-            <div class="stat-label">鏁版嵁搴撳ぇ灏?/div>
+            <div class="stat-label">数据库大小</div>
           </div>
           <div class="stat-card">
             <div class="stat-value cyan" id="s-cats">0</div>
-            <div class="stat-label">娲昏穬鍒嗙被</div>
+            <div class="stat-label">活跃分类</div>
           </div>
         </div>
       </div>
@@ -1128,34 +1128,34 @@ body {
       <!-- PRIVACY VIEW -->
       <div id="view-privacy" style="display:none;">
         <h2 style="font-family:var(--font-display);font-size:1.5rem;margin-bottom:1.5rem;letter-spacing:1px;">
-          馃洝锔?闅愮绠＄悊
+          🛡️ 隐私管理
         </h2>
         <div class="privacy-panel" style="margin-bottom:1rem;">
-          <h3>馃敀 鍚堣鐘舵€?/h3>
+          <h3>🔒 合规状态</h3>
           <div class="compliance-bar">
             <div class="compliance-fill" id="compliance-fill" style="width:0%"></div>
           </div>
           <div class="compliance-status">
-            <span>鉁?/span>
-            <span id="compliance-status">鐐瑰嚮銆岀敓鎴愭姤鍛娿€嶆煡鐪?/span>
+            <span>✅</span>
+            <span id="compliance-status">点击「生成报告」查看</span>
           </div>
         </div>
         <div class="features-grid" id="privacy-features">
           <div class="feature-card">
-            <div class="feature-icon cyan">馃攼</div>
-            <h3>闅愮鎵弿</h3>
-            <p>鑷姩妫€娴嬫枃鏈腑鐨勬晱鎰熶俊鎭苟鎺ㄨ崘闅愮绛夌骇</p>
-            <button onclick="testPrivacyScan()" style="margin-top:0.75rem;padding:0.5rem 1rem;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--accent-cyan);cursor:pointer;font-size:0.85rem;width:100%;">杩愯鎵弿</button>
+            <div class="feature-icon cyan">🔐</div>
+            <h3>隐私扫描</h3>
+            <p>自动检测文本中的敏感信息并推荐隐私等级</p>
+            <button onclick="testPrivacyScan()" style="margin-top:0.75rem;padding:0.5rem 1rem;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--accent-cyan);cursor:pointer;font-size:0.85rem;width:100%;">运行扫描</button>
           </div>
           <div class="feature-card">
-            <div class="feature-icon green">馃搵</div>
-            <h3>璁块棶鎺у埗</h3>
-            <p>绠＄悊璁板繂鐨勮闂巿鏉冨垪琛?(ACL)</p>
+            <div class="feature-icon green">📋</div>
+            <h3>访问控制</h3>
+            <p>管理记忆的访问授权列表 (ACL)</p>
           </div>
           <div class="feature-card">
-            <div class="feature-icon purple">馃Ч</div>
-            <h3>瀵煎嚭鑴辨晱</h3>
-            <p>瀵煎嚭鏃惰嚜鍔ㄨ瘑鍒苟鑴辨晱鏁忔劅淇℃伅</p>
+            <div class="feature-icon purple">🧹</div>
+            <h3>导出脱敏</h3>
+            <p>导出时自动识别并脱敏敏感信息</p>
           </div>
         </div>
         <div id="scan-result" style="display:none;margin-top:1rem;padding:1rem;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;"></div>
@@ -1169,9 +1169,9 @@ body {
     <div class="modal" id="modal">
       <div class="modal-header">
         <div class="modal-meta" id="modal-meta"></div>
-        <button class="modal-close" onclick="closeModal()">鉁?/button>
+        <button class="modal-close" onclick="closeModal()">✕</button>
       </div>
-      <div class="modal-content" id="modal-content">鍔犺浇涓?..</div>
+      <div class="modal-content" id="modal-content">加载中...</div>
       <div class="modal-footer" id="modal-footer"></div>
     </div>
   </div>
@@ -1196,45 +1196,23 @@ const state = {
 };
 
 const CATEGORIES = {
-  learning: { icon: '馃摎', color: 'orange', label: '瀛︿範' },
-  work: { icon: '馃捈', color: 'cyan', label: '宸ヤ綔' },
-  life: { icon: '馃彔', color: 'pink', label: '鐢熸椿' },
-  idea: { icon: '馃挕', color: 'purple', label: '鍒涙剰' },
-  fact: { icon: '馃摑', color: 'green', label: '浜嬪疄' },
-  emotion: { icon: '鉂わ笍', color: 'red', label: '鎯呮劅' },
-  general: { icon: '馃搶', color: 'general', label: '閫氱敤' },
+  learning: { icon: '📚', color: 'orange', label: '学习' },
+  work: { icon: '💼', color: 'cyan', label: '工作' },
+  life: { icon: '🏠', color: 'pink', label: '生活' },
+  idea: { icon: '💡', color: 'purple', label: '创意' },
+  fact: { icon: '📝', color: 'green', label: '事实' },
+  emotion: { icon: '❤️', color: 'red', label: '情感' },
+  general: { icon: '📌', color: 'general', label: '通用' },
 };
 
 const PRIVACY_COLORS = { PUBLIC: 'green', INTERNAL: 'orange', PRIVATE: 'red', STRICT: 'purple' };
-const PRIVACY_ICONS = { PUBLIC: '馃煝', INTERNAL: '馃煛', PRIVATE: '馃敶', STRICT: '馃煟' };
+const PRIVACY_ICONS = { PUBLIC: '🟢', INTERNAL: '🟡', PRIVATE: '🔴', STRICT: '🟣' };
 
-// ===== DEMO NOTICE =====
-function showDemoNotice() {
-  const notice = document.createElement('div');
-  notice.id = 'demo-notice';
-  notice.style = 'position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1a1a2e,#16213e);border:1px solid rgba(0,212,255,.3);border-radius:12px;padding:0.75rem 1.5rem;font-size:0.8rem;color:#94a3b8;z-index:999;display:flex;align-items:center;gap:1rem;box-shadow:0 8px 32px rgba(0,0,0,.4);max-width:90vw;';
-  notice.innerHTML = '馃憢 杩欐槸婕旂ず鏁版嵁锛屼笉浼氬悓姝ュ埌鐪熷疄瀛樺偍銆?button onclick="clearDemoData()" style="background:rgba(239,68,68,.2);border:1px solid rgba(239,68,68,.4);color:#ef4444;border-radius:6px;padding:4px 12px;cursor:pointer;font-size:0.8rem;">娓呯┖</button>';
-  document.body.appendChild(notice);
-  setTimeout(() => { const n = document.getElementById('demo-notice'); if(n) n.remove(); }, 8000);
-}
-
-function clearDemoData() {
-  if (!confirm('娓呯┖鎵€鏈夋紨绀鸿蹇嗭紵')) return;
-  state.memories = [];
-  saveState();
-  renderMemories();
-  updateSidebarCounts();
-  updateHeaderStats();
-  showToast('婕旂ず鏁版嵁宸叉竻绌?, 'success');
-  const n = document.getElementById('demo-notice');
-  if (n) n.remove();
-}
-
-// ===== SAMPLE MEMORIES (demo data 鈥?NO SENSITIVE INFO) =====
+// ===== SAMPLE MEMORIES (demo data) =====
 const SAMPLE_MEMORIES = [
   {
     id: 'demo-001',
-    content: '浠婂ぉ瀹屾垚浜?ClawMemory v1.3 鐨勬牳蹇冩灦鏋勮璁★紝鍖呮嫭鍔犲瘑寮曟搸锛圓ES-256-GCM锛夈€佸瓨鍌ㄥ紩鎿庯紙SQLite WAL锛夈€佺储寮曞紩鎿庯紙TF-IDF锛夊拰闅愮寮曟搸銆傛暣浣撻噰鐢ㄥ垎灞傛ā鍧楀寲璁捐锛岄殣绉佸垎绾х‖缂栫爜鎵ц銆?,
+    content: '今天完成了 ClawMemory v1.0 的核心架构设计。包括加密引擎（AES-256-GCM）、存储引擎（SQLite WAL）、索引引擎（TF-IDF）和隐私引擎。整体采用分层模块化设计，隐私分级硬编码执行。',
     category: 'learning',
     tags: ['ai', 'architecture', 'python'],
     privacy: 'INTERNAL',
@@ -1245,7 +1223,7 @@ const SAMPLE_MEMORIES = [
   },
   {
     id: 'demo-002',
-    content: 'Q2 浜у搧璺嚎鍥撅細4鏈堝畬鎴?v1.5-v1.8 杩唬锛?鏈堝紑鏀惧唴娴?v2.0-beta锛?鏈堟寮忓彂甯?v2.0銆傚叧閿妧鏈闄╋細鍚戦噺妫€绱㈡€ц兘浼樺寲鍜岃法璁惧鍚屾鍗忚璁捐銆?,
+    content: 'Q2 产品路线图：6月前完成核心功能，9月支持多 Agent 协同记忆，12月实现跨设备同步（可选加密云盘）。关键技术风险：向量检索性能在百万级条目下的优化。',
     category: 'work',
     tags: ['roadmap', 'planning'],
     privacy: 'INTERNAL',
@@ -1256,7 +1234,7 @@ const SAMPLE_MEMORIES = [
   },
   {
     id: 'demo-003',
-    content: 'AI Agent 缁堣韩璁板繂绯荤粺鏄繎涓ゅ勾鏈€鏈変环鍊肩殑鍒涗笟鏂瑰悜涔嬩竴銆傛牳蹇冨鍨掑湪浜庯細鏁版嵁椋炶疆鏁堝簲锛堣蹇嗚秺澶氳秺绮惧噯锛夈€侀殣绉佽绠楀熀纭€璁炬柦銆丄gent 鍘熺敓鏋舵瀯銆傜珵鍝佷富瑕佹槸 Mem.ai 鍜?Notion AI锛屼絾瀹冧滑閮戒笉鍋氭湰鍦板寲銆?,
+    content: 'AI Agent 终身记忆系统是近两年最有价值的创业方向之一。核心壁垒在于：数据飞轮效应（记忆越多越精准）、隐私计算基础设施、Agent 原生架构。竞品主要是 Mem.ai 和 Notion AI，但它们都不做本地化。',
     category: 'idea',
     tags: ['startup', 'ai', 'memory'],
     privacy: 'PUBLIC',
@@ -1267,7 +1245,7 @@ const SAMPLE_MEMORIES = [
   },
   {
     id: 'demo-004',
-    content: '涓汉瀵嗙爜绠＄悊鏂规鍗囩骇涓?ClawMemory STRICT 绾у埆瀛樺偍銆傛墍鏈夋晱鎰熷嚟璇?AES-256 鍔犲瘑锛屾満鍣ㄧ粦瀹氾紝涓嶅彲瀵煎嚭銆傚寘鍚細鍚勭被璐﹀彿瀵嗙爜銆丼SH 瀵嗛挜銆丄PI Token 绛夐珮鏁忔劅淇℃伅銆?,
+    content: '个人密码管理器已升级为 ClawMemory STRICT 级别存储。包含：银行登录、邮箱、服务器 SSH 密钥、加密钱包助记词。所有数据 AES-256 加密，机器绑定。',
     category: 'fact',
     tags: ['password', 'security'],
     privacy: 'STRICT',
@@ -1276,7 +1254,19 @@ const SAMPLE_MEMORIES = [
     updated_at: Date.now() - 86400000 * 7,
     access_count: 2,
   },
+  {
+    id: 'demo-005',
+    content: '项目进度：ClawMemory 核心引擎完成 80%，预计周末前完成全部模块和适配器。下周开始测试 OpenClaw 集成和 Claude Code MCP 适配。',
+    category: 'work',
+    tags: ['project', 'progress'],
+    privacy: 'INTERNAL',
+    importance: 2,
+    created_at: Date.now() - 3600000 * 6,
+    updated_at: Date.now() - 3600000 * 6,
+    access_count: 1,
+  },
 ];
+
 // ===== INIT =====
 function init() {
   // Check if we have stored state
@@ -1291,14 +1281,13 @@ function init() {
   renderMemories();
   updateSidebarCounts();
   updateHeaderStats();
-  showDemoNotice();
 }
 
 function updateHeaderStats() {
   const el = document.getElementById('stat-total');
   if (el) {
     const active = state.memories.filter(m => !m._deleted);
-    el.textContent = active.length + ' 鏉¤蹇?;
+    el.textContent = active.length + ' 条记忆';
   }
 }
 
@@ -1346,9 +1335,9 @@ function renderMemories() {
   if (filtered.length === 0) {
     container.innerHTML = `
       <div class="empty-state">
-        <div class="empty-icon">馃攳</div>
-        <h3>${state.searchQuery ? '娌℃湁鎵惧埌鍖归厤鐨勮蹇? : '杩樻病鏈夎蹇?}</h3>
-        <p>${state.searchQuery ? '灏濊瘯鍏朵粬鍏抽敭璇嶆垨鍒嗙被' : '鐐瑰嚮銆? 娣诲姞璁板繂銆嶅紑濮?}</p>
+        <div class="empty-icon">🔍</div>
+        <h3>${state.searchQuery ? '没有找到匹配的记忆' : '还没有记忆'}</h3>
+        <p>${state.searchQuery ? '尝试其他关键词或分类' : '点击「+ 添加记忆」开始'}</p>
       </div>`;
     return;
   }
@@ -1373,7 +1362,7 @@ function renderMemories() {
           </div>
           <div style="display:flex;gap:0.5rem;align-items:center;">
             <span class="memory-time">${timeAgo}</span>
-            <button class="memory-delete" onclick="event.stopPropagation();deleteMemory('${m.id}')" title="鍒犻櫎">馃棏锔?/button>
+            <button class="memory-delete" onclick="event.stopPropagation();deleteMemory('${m.id}')" title="删除">🗑️</button>
           </div>
         </div>
       </div>`;
@@ -1388,8 +1377,8 @@ function openMemory(id) {
     <span class="tag-chip ${m.category}">${cat.icon} ${cat.label}</span>
     <span class="privacy-dot ${PRIVACY_COLORS[m.privacy].toLowerCase()}"></span>
     <span style="font-size:0.8rem;color:var(--text-secondary);font-family:var(--font-mono);">${PRIVACY_ICONS[m.privacy]} ${m.privacy}</span>
-    <span style="font-size:0.8rem;color:var(--text-muted);">路</span>
-    <span style="font-size:0.8rem;color:var(--text-secondary);">璁块棶 ${m.access_count} 娆?/span>
+    <span style="font-size:0.8rem;color:var(--text-muted);">·</span>
+    <span style="font-size:0.8rem;color:var(--text-secondary);">访问 ${m.access_count} 次</span>
   `;
   document.getElementById('modal-content').textContent = m.content;
   document.getElementById('modal-footer').innerHTML = `
@@ -1442,7 +1431,7 @@ function hideAddForm() {
 
 function addMemory() {
   const content = document.getElementById('add-content').value.trim();
-  if (!content) { showToast('璇疯緭鍏ヨ蹇嗗唴瀹?, 'error'); return; }
+  if (!content) { showToast('请输入记忆内容', 'error'); return; }
 
   const cat = document.getElementById('add-category').value;
   const tags = document.getElementById('add-tags-input').value.split(',').map(t => t.trim()).filter(Boolean);
@@ -1475,27 +1464,27 @@ function addMemory() {
   renderMemories();
   updateSidebarCounts();
   updateHeaderStats();
-  showToast('璁板繂宸蹭繚瀛?鉁?, 'success');
+  showToast('记忆已保存 ✨', 'success');
 }
 
 function deleteMemory(id) {
-  if (!confirm('纭鍒犻櫎杩欐潯璁板繂锛?)) return;
+  if (!confirm('确认删除这条记忆？')) return;
   const m = state.memories.find(x => x.id === id);
   if (m) m._deleted = true;
   saveState();
   renderMemories();
   updateSidebarCounts();
   updateHeaderStats();
-  showToast('璁板繂宸插垹闄?, 'info');
+  showToast('记忆已删除', 'info');
 }
 
 function autoSuggestCategory(text) {
   const lower = text.toLowerCase();
-  if (/浼氳|椤圭洰|宸ヤ綔|task|deadline|meeting|project/.test(lower)) return 'work';
-  if (/瀛︿範|璇剧▼|涔鐭ヨ瘑|course|study|book/.test(lower)) return 'learning';
-  if (/鎯虫硶|鍒涙剰|idea|think|concept/.test(lower)) return 'idea';
-  if (/瀵嗙爜|璐﹀彿|鍦板潃|phone|email|password/.test(lower)) return 'fact';
-  if (/鎰熷彈|蹇冩儏|寮€蹇億feel|happy|grateful/.test(lower)) return 'emotion';
+  if (/会议|项目|工作|task|deadline|meeting|project/.test(lower)) return 'work';
+  if (/学习|课程|书|知识|course|study|book/.test(lower)) return 'learning';
+  if (/想法|创意|idea|think|concept/.test(lower)) return 'idea';
+  if (/密码|账号|地址|phone|email|password/.test(lower)) return 'fact';
+  if (/感受|心情|开心|feel|happy|grateful/.test(lower)) return 'emotion';
   return 'general';
 }
 
@@ -1511,8 +1500,8 @@ function scanPrivacy(text) {
   const types = [];
   if (/1[3-9]\d{9}/.test(text)) types.push('PHONE');
   if (/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(text)) types.push('EMAIL');
-  if (/瀵嗙爜[:锛歖\s*\S+|pass(word)?[:锛歖\s*\S+/i.test(text)) types.push('PASSWORD');
-  if (/韬唤璇亅鎶ょ収|鐥呭巻/.test(text)) types.push('SENSITIVE_ID');
+  if (/密码[:：]\s*\S+|pass(word)?[:：]\s*\S+/i.test(text)) types.push('PASSWORD');
+  if (/身份证|护照|病历/.test(text)) types.push('SENSITIVE_ID');
 
   let level = 'INTERNAL';
   if (types.includes('PASSWORD') || types.includes('SENSITIVE_ID')) level = 'STRICT';
@@ -1522,9 +1511,9 @@ function scanPrivacy(text) {
 
 function testPrivacyScan() {
   const testTexts = [
-    '鎴戠殑鎵嬫満鍙锋槸 13812345678锛岄偖绠辨槸 test@gmail.com',
-    '瀵嗙爜鏄?mysecret123锛岃韩浠借瘉鍙锋槸 110101199001011234',
-    '浠婂ぉ澶╂皵寰堝ソ锛屽幓鍏洯鏁ｆ锛屽績鎯呭緢妫?,
+    '我的手机号是 13812345678，邮箱是 test@gmail.com',
+    '密码是 mysecret123，身份证号是 110101199001011234',
+    '今天天气很好，去公园散步，心情很棒',
   ];
   const results = testTexts.map(t => {
     const scan = scanPrivacy(t);
@@ -1535,8 +1524,8 @@ function testPrivacyScan() {
     <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--bg-input);border-radius:8px;">
       <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.25rem;">${r.text}</div>
       <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-        ${r.types.length ? r.types.map(t => `<span class="tag ${r.level === 'STRICT' ? 'emotion' : 'work'}">${t}</span>`).join('') : '<span style="font-size:0.8rem;color:var(--text-muted);">鏃犳晱鎰熶俊鎭?/span>'}
-        <span style="margin-left:auto;font-size:0.8rem;font-weight:700;color:var(--accent-${PRIVACY_COLORS[r.level].toLowerCase()});">鈫?${r.level}</span>
+        ${r.types.length ? r.types.map(t => `<span class="tag ${r.level === 'STRICT' ? 'emotion' : 'work'}">${t}</span>`).join('') : '<span style="font-size:0.8rem;color:var(--text-muted);">无敏感信息</span>'}
+        <span style="margin-left:auto;font-size:0.8rem;font-weight:700;color:var(--accent-${PRIVACY_COLORS[r.level].toLowerCase()});">→ ${r.level}</span>
       </div>
     </div>`).join('');
 }
@@ -1560,18 +1549,17 @@ function switchView(view) {
 }
 
 function loadStats() {
-  const active = state.memories.filter(m => !m._deleted);
   const byPrivacy = { PUBLIC: 0, INTERNAL: 0, PRIVATE: 0, STRICT: 0 };
   const cats = new Set();
-  active.forEach(m => {
+  state.memories.forEach(m => {
     if (byPrivacy[m.privacy] !== undefined) byPrivacy[m.privacy]++;
     cats.add(m.category);
   });
-  document.getElementById('s-total').textContent = active.length;
+  document.getElementById('s-total').textContent = state.memories.length;
   document.getElementById('s-internal').textContent = byPrivacy.INTERNAL;
   document.getElementById('s-private').textContent = byPrivacy.PRIVATE;
   document.getElementById('s-strict').textContent = byPrivacy.STRICT;
-  document.getElementById('s-db-size').textContent = (active.length * 2.1).toFixed(1) + ' KB';
+  document.getElementById('s-db-size').textContent = (state.memories.length * 2.1).toFixed(1) + ' KB';
   document.getElementById('s-cats').textContent = cats.size;
 }
 
@@ -1582,84 +1570,29 @@ function initPrivacyView() {
   const strictCount = state.memories.filter(m => m.privacy === 'STRICT').length;
   const pass = strictCount === 0;
   fill.style.width = pass ? '100%' : '60%';
-  status.textContent = pass ? '鍚堣 PASS 鈥?鏃犻闄╅」' : '闇€瀹℃煡 鈥?' + strictCount + ' 鏉?STRICT 璁板繂闇€妫€鏌?ACL';
+  status.textContent = pass ? '合规 PASS — 无风险项' : '需审查 — ' + strictCount + ' 条 STRICT 记忆需检查 ACL';
   status.style.color = pass ? 'var(--accent-green)' : 'var(--accent-orange)';
-}
-
-function runPrivacyScan() {
-  switchView('privacy');
-  const active = state.memories.filter(m => !m._deleted);
-  const results = active.map(m => {
-    const scan = scanPrivacy(m.content);
-    return {
-      id: m.id,
-      preview: m.content.slice(0, 40).replace(/\n/g, ' ') + (m.content.length > 40 ? '...' : ''),
-      ...scan,
-      current: m.privacy,
-    };
-  }).filter(r => r.types.length > 0 || r.current !== 'INTERNAL');
-
-  const el = document.getElementById('scan-result');
-  if (!results.length) {
-    el.style.display = 'block';
-    el.innerHTML = '<div style="text-align:center;color:var(--accent-green);padding:1rem;">鉁?鎵€鏈夎蹇嗛殣绉佸垎绾ф纭紝鏃犻渶淇敼</div>';
-    return;
-  }
-
-  el.style.display = 'block';
-  el.innerHTML = results.map(r => {
-    const color = { STRICT: '#ef4444', PRIVATE: '#f59e0b', INTERNAL: '#10b981' }[r.level] || '#64748b';
-    const bg = { STRICT: 'rgba(239,68,68,0.1)', PRIVATE: 'rgba(245,158,11,0.1)', INTERNAL: 'rgba(16,185,129,0.1)' }[r.level] || 'transparent';
-    const changed = r.level !== r.current;
-    return `<div style="margin-bottom:0.75rem;padding:0.75rem;background:${bg};border-radius:8px;border:1px solid ${color}22;">
-      <div style="font-size:0.8rem;color:#94a3b8;margin-bottom:0.25rem;">${r.preview}</div>
-      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-        ${r.types.map(t => `<span style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;font-size:0.7rem;font-family:var(--font-mono);">${t}</span>`).join('')}
-        <span style="color:${color};font-weight:700;font-size:0.85rem;">${changed ? '鈫?' : ''}${r.level}</span>
-        ${changed ? `<span style="font-size:0.75rem;color:#64748b;">(褰撳墠: ${r.current})</span>` : ''}
-        <button onclick="fixPrivacy('${r.id}','${r.level}')" style="margin-left:auto;background:${color}22;border:1px solid ${color};color:${color};border-radius:6px;padding:2px 10px;cursor:pointer;font-size:0.75rem;">淇</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function fixPrivacy(id, level) {
-  const m = state.memories.find(x => x.id === id);
-  if (m) { m.privacy = level; m.updated_at = Date.now(); saveState(); }
-  runPrivacyScan();
-  renderMemories();
-  updateSidebarCounts();
-  updateHeaderStats();
 }
 
 function runCompliance() {
   switchView('privacy');
-  const active = state.memories.filter(m => !m._deleted);
-  const strict = active.filter(m => m.privacy === 'STRICT').length;
-  const pass = strict === 0;
-  const fill = document.getElementById('compliance-fill');
-  const status = document.getElementById('compliance-status');
-  fill.style.width = pass ? '100%' : Math.max(10, 100 - strict * 20) + '%';
-  fill.style.background = pass ? 'var(--accent-green)' : 'var(--accent-orange)';
-  status.textContent = pass ? '鉁?鍚堣 PASS 鈥?鏃犻渶澶勭悊' : '鈿狅笍 闇€瀹℃煡 鈥?' + strict + ' 鏉?STRICT 璁板繂闇€妫€鏌?ACL';
-  status.style.color = pass ? 'var(--accent-green)' : 'var(--accent-orange)';
 }
 
 function runBackup() {
   saveState(true);
-  showToast('澶囦唤宸插垱寤?馃捑', 'success');
+  showToast('备份已创建 💾', 'success');
 }
 
 // ===== EXPORT =====
 function exportMemories() {
   const data = {
-    version: '1.4.0',
+    version: '1.3.0',
     exported_at: new Date().toISOString(),
     count: state.memories.filter(m => !m._deleted).length,
     memories: state.memories.filter(m => !m._deleted).map(m => ({
       id: m.id,
       category: m.category,
-      content: m.privacy === 'STRICT' ? '[鑴辨晱鍐呭]' : m.content,
+      content: m.privacy === 'STRICT' ? '[脱敏内容]' : m.content,
       privacy: m.privacy,
       created_at: m.created_at,
     })),
@@ -1671,7 +1604,7 @@ function exportMemories() {
   a.download = 'clawmemory_export_' + new Date().toISOString().slice(0, 10) + '.json';
   a.click();
   URL.revokeObjectURL(url);
-  showToast('瀵煎嚭鎴愬姛 馃摛', 'success');
+  showToast('导出成功 📤', 'success');
 }
 
 // ===== IMPORT =====
@@ -1687,7 +1620,7 @@ function handleImportFile(event) {
     try {
       const data = JSON.parse(e.target.result);
       const mems = data.memories || data;
-      if (!Array.isArray(mems)) { showToast('鏍煎紡閿欒锛氭壘涓嶅埌 memories 鏁扮粍', 'error'); return; }
+      if (!Array.isArray(mems)) { showToast('格式错误：找不到 memories 数组', 'error'); return; }
       let added = 0;
       mems.forEach(m => {
         if (!m.id || !m.content) return;
@@ -1712,9 +1645,9 @@ function handleImportFile(event) {
       renderMemories();
       updateSidebarCounts();
       updateHeaderStats();
-      showToast('鉁?瀵煎叆鎴愬姛锛氭柊澧?' + added + ' 鏉¤蹇?, 'success');
+      showToast('✅ 导入成功：新增 ' + added + ' 条记忆', 'success');
     } catch(err) {
-      showToast('鉂?瑙ｆ瀽澶辫触锛? + err.message, 'error');
+      showToast('❌ 解析失败：' + err.message, 'error');
     }
     event.target.value = '';
   };
@@ -1735,7 +1668,7 @@ function toggleSelect(id) {
 }
 function deleteSelected() {
   if (state.selectedIds.length === 0) return;
-  if (!confirm('纭鍒犻櫎閫変腑鐨?' + state.selectedIds.length + ' 鏉¤蹇嗭紵')) return;
+  if (!confirm('确认删除选中的 ' + state.selectedIds.length + ' 条记忆？')) return;
   state.selectedIds.forEach(id => {
     const m = state.memories.find(x => x.id === id);
     if (m) m._deleted = true;
@@ -1745,19 +1678,19 @@ function deleteSelected() {
   renderMemories();
   updateSidebarCounts();
   updateHeaderStats();
-  showToast('宸插垹闄ら€変腑璁板繂', 'info');
+  showToast('已删除选中记忆', 'info');
 }
 function clearAllMemories() {
   const active = state.memories.filter(m => !m._deleted);
-  if (active.length === 0) { showToast('娌℃湁鍙竻绌虹殑璁板繂', 'info'); return; }
-  if (!confirm('鈿狅笍 纭娓呯┖鍏ㄩ儴 ' + active.length + ' 鏉¤蹇嗭紵姝ゆ搷浣滀笉鍙仮澶嶏紒')) return;
-  if (!confirm('鈿狅笍 鏈€鍚庣‘璁わ細娓呯┖鍚庢暟鎹棤娉曟仮澶嶏紝纭畾鍚楋紵')) return;
+  if (active.length === 0) { showToast('没有可清空的记忆', 'info'); return; }
+  if (!confirm('⚠️ 确认清空全部 ' + active.length + ' 条记忆？此操作不可恢复！')) return;
+  if (!confirm('⚠️ 最后确认：清空后数据无法恢复，确定吗？')) return;
   state.memories.forEach(m => m._deleted = true);
   saveState();
   renderMemories();
   updateSidebarCounts();
   updateHeaderStats();
-  showToast('宸叉竻绌哄叏閮ㄨ蹇?, 'success');
+  showToast('已清空全部记忆', 'success');
 }
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
@@ -1781,7 +1714,7 @@ function toggleTheme() {
   const isDark = html.getAttribute('data-theme') !== 'light';
   html.setAttribute('data-theme', isDark ? 'light' : 'dark');
   localStorage.setItem('clawmemory_theme', html.getAttribute('data-theme'));
-  document.querySelector('[onclick="toggleTheme()"]').textContent = isDark ? '鈽€锔? : '馃寵';
+  document.querySelector('[onclick="toggleTheme()"]').textContent = isDark ? '☀️' : '🌙';
 }
 (function() {
   const saved = localStorage.getItem('clawmemory_theme');
@@ -1795,12 +1728,12 @@ function saveState(isBackup) {
 function formatTimeAgo(ts) {
   const diff = Date.now() - ts;
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return '鍒氬垰';
-  if (mins < 60) return mins + ' 鍒嗛挓鍓?;
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return mins + ' 分钟前';
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return hrs + ' 灏忔椂鍓?;
+  if (hrs < 24) return hrs + ' 小时前';
   const days = Math.floor(hrs / 24);
-  if (days < 30) return days + ' 澶╁墠';
+  if (days < 30) return days + ' 天前';
   return new Date(ts).toLocaleDateString('zh-CN');
 }
 
@@ -1883,5 +1816,5 @@ function showToast(msg, type) {
 // ===== START =====
 document.addEventListener('DOMContentLoaded', init);
 </script>
-</div></div></div></body>
+</body>
 </html>
