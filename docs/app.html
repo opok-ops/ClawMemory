@@ -1575,8 +1575,63 @@ function initPrivacyView() {
   status.style.color = pass ? 'var(--accent-green)' : 'var(--accent-orange)';
 }
 
+function runPrivacyScan() {
+  switchView('privacy');
+  const active = state.memories.filter(m => !m._deleted);
+  const results = active.map(m => {
+    const scan = scanPrivacy(m.content);
+    return {
+      id: m.id,
+      preview: m.content.slice(0, 40).replace(/\n/g, ' ') + (m.content.length > 40 ? '...' : ''),
+      ...scan,
+      current: m.privacy,
+    };
+  }).filter(r => r.types.length > 0 || r.current !== 'INTERNAL');
+
+  const el = document.getElementById('scan-result');
+  if (!results.length) {
+    el.style.display = 'block';
+    el.innerHTML = '<div style="text-align:center;color:var(--accent-green);padding:1rem;">✅ 所有记忆隐私分级正确，无需修改</div>';
+    return;
+  }
+
+  el.style.display = 'block';
+  el.innerHTML = results.map(r => {
+    const color = { STRICT: '#ef4444', PRIVATE: '#f59e0b', INTERNAL: '#10b981' }[r.level] || '#64748b';
+    const bg = { STRICT: 'rgba(239,68,68,0.1)', PRIVATE: 'rgba(245,158,11,0.1)', INTERNAL: 'rgba(16,185,129,0.1)' }[r.level] || 'transparent';
+    const changed = r.level !== r.current;
+    return `<div style="margin-bottom:0.75rem;padding:0.75rem;background:${bg};border-radius:8px;border:1px solid ${color}22;">
+      <div style="font-size:0.8rem;color:#94a3b8;margin-bottom:0.25rem;">${r.preview}</div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+        ${r.types.map(t => `<span style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;font-size:0.7rem;font-family:var(--font-mono);">${t}</span>`).join('')}
+        <span style="color:${color};font-weight:700;font-size:0.85rem;">${changed ? '→ ' : ''}${r.level}</span>
+        ${changed ? `<span style="font-size:0.75rem;color:#64748b;">(当前: ${r.current})</span>` : ''}
+        <button onclick="fixPrivacy('${r.id}','${r.level}')" style="margin-left:auto;background:${color}22;border:1px solid ${color};color:${color};border-radius:6px;padding:2px 10px;cursor:pointer;font-size:0.75rem;">修复</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function fixPrivacy(id, level) {
+  const m = state.memories.find(x => x.id === id);
+  if (m) { m.privacy = level; m.updated_at = Date.now(); saveState(); }
+  runPrivacyScan();
+  renderMemories();
+  updateSidebarCounts();
+  updateHeaderStats();
+}
+
 function runCompliance() {
   switchView('privacy');
+  const active = state.memories.filter(m => !m._deleted);
+  const strict = active.filter(m => m.privacy === 'STRICT').length;
+  const pass = strict === 0;
+  const fill = document.getElementById('compliance-fill');
+  const status = document.getElementById('compliance-status');
+  fill.style.width = pass ? '100%' : Math.max(10, 100 - strict * 20) + '%';
+  fill.style.background = pass ? 'var(--accent-green)' : 'var(--accent-orange)';
+  status.textContent = pass ? '✅ 合规 PASS — 无需处理' : '⚠️ 需审查 — ' + strict + ' 条 STRICT 记忆需检查 ACL';
+  status.style.color = pass ? 'var(--accent-green)' : 'var(--accent-orange)';
 }
 
 function runBackup() {
