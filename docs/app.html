@@ -2,7 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#04060d">
+<meta name="format-detection" content="telephone=no">
+<meta name="mobile-web-app-capable" content="yes">
+
 <title>ClawMemory - AI Agent 记忆中心</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -108,6 +114,8 @@ input, textarea, select { font-size: 16px !important; }
 
 
 /* ===== RESPONSIVE / MOBILE ===== */
+.sidebar.collapsed { display: none !important; }
+.sidebar-toggle { background: none; border: none; color: var(--text-primary); font-size: 1.25rem; cursor: pointer; margin-right: 0.5rem; }
 @media (max-width: 768px) {
   .header { flex-wrap: wrap; padding: 0.5rem 1rem; }
   .header-nav { order: 3; width: 100%; justify-content: center; }
@@ -139,6 +147,226 @@ body { overflow: auto; height: 100%; -webkit-overflow-scrolling: touch; }
 
 .sidebar-btn.active { border-color: var(--accent-cyan); color: var(--accent-cyan); background: rgba(0,212,255,0.1); }
 
+
+/* ===== MOBILE OPTIMIZATION ===== */
+.sidebar.collapsed { display: none !important; }
+.sidebar-toggle { background: none; border: none; color: var(--text-primary); font-size: 1.25rem; cursor: pointer; margin-right: 0.5rem; }
+@media (max-width: 768px) {
+  /* Header - stack vertically on very small screens */
+  .header {
+    padding: 0.5rem 0.75rem !important;
+    flex-wrap: wrap !important;
+    gap: 0.5rem !important;
+  }
+  
+  .header-logo { flex-shrink: 0; }
+  .header-logo-icon { width: 28px; height: 28px; font-size: 0.9rem; }
+  .header-title { font-size: 0.85rem !important; letter-spacing: 1px; }
+  
+  /* Nav buttons - smaller */
+  .header-nav { 
+    order: 3; 
+    width: 100%; 
+    justify-content: center; 
+    padding: 3px !important;
+  }
+  .header-nav button {
+    padding: 0.25rem 0.6rem !important;
+    font-size: 0.7rem !important;
+  }
+  
+  /* Actions - wrap and center */
+  .header-actions { 
+    order: 2; 
+    width: 100%; 
+    justify-content: center; 
+    flex-wrap: wrap;
+    gap: 0.3rem !important;
+  }
+  .header-btn {
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.7rem !important;
+  }
+  
+  /* Online users - smaller badge */
+  .online-users {
+    order: 4;
+    width: 100%;
+    justify-content: center;
+    font-size: 0.7rem !important;
+    padding: 0.2rem 0.5rem !important;
+    margin-left: 0 !important;
+    margin-top: 0.25rem;
+  }
+  
+  /* Sidebar - horizontal scrollable */
+  .sidebar {
+    width: 100% !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    padding: 0.5rem !important;
+    gap: 0.4rem !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border) !important;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .sidebar::-webkit-scrollbar { display: none; }
+  
+  .sidebar-btn {
+    flex: 0 0 auto !important;
+    white-space: nowrap;
+    padding: 0.4rem 0.6rem !important;
+    font-size: 0.75rem !important;
+  }
+  .sidebar-btn .btn-text { display: inline !important; }
+  
+  /* Hide stats on mobile sidebar to save space */
+  .stats-grid { display: none !important; }
+  
+  /* Main content - full width */
+  .main {
+    padding: 0.75rem !important;
+  }
+  
+  /* Memory cards - single column */
+  .memory-grid {
+    grid-template-columns: 1fr !important;
+    gap: 0.75rem !important;
+  }
+  
+  .memory-card {
+    padding: 0.75rem !important;
+    border-radius: 8px !important;
+  }
+  
+  .card-content {
+    font-size: 0.85rem !important;
+    line-height: 1.5 !important;
+  }
+  
+  .card-tags { gap: 0.3rem !important; }
+  .card-tag { font-size: 0.65rem !important; padding: 0.15rem 0.4rem !important; }
+  
+  .card-actions { gap: 0.3rem !important; }
+  .card-action { font-size: 0.7rem !important; padding: 0.2rem 0.4rem !important; }
+  
+  /* Search bar - stack vertically */
+  .search-bar {
+    flex-direction: column !important;
+    gap: 0.5rem !important;
+  }
+  .search-input, .search-select {
+    font-size: 1rem !important;
+    padding: 0.5rem 0.75rem !important;
+  }
+  
+  /* Modal - full screen on mobile */
+  .modal {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+  .modal-overlay { padding: 0 !important; }
+  .modal-body {
+    max-height: 70vh !important;
+    padding: 1rem !important;
+  }
+  .modal-footer { padding: 0.75rem 1rem !important; flex-wrap: wrap; }
+  .modal-footer .toolbar-btn { flex: 1; min-width: 80px; }
+  
+  /* Form inputs - prevent zoom */
+  .form-input, .form-textarea, .form-select {
+    font-size: 16px !important;
+    padding: 0.6rem 0.75rem !important;
+  }
+  .form-textarea { min-height: 100px !important; }
+  
+  /* Empty state */
+  .empty-state { padding: 2rem 1rem !important; }
+  .empty-icon { font-size: 3rem !important; }
+  .empty-text { font-size: 1rem !important; }
+}
+
+/* Very small screens (iPhone SE) */
+@media (max-width: 360px) {
+  .header-title { font-size: 0.75rem !important; }
+  .header-nav button { padding: 0.2rem 0.4rem !important; font-size: 0.65rem !important; }
+  .header-btn { padding: 0.2rem 0.4rem !important; font-size: 0.65rem !important; }
+}
+
+/* Landscape mobile */
+@media (max-height: 500px) and (orientation: landscape) {
+  .header { padding: 0.25rem 0.5rem !important; }
+  .sidebar { padding: 0.25rem !important; }
+  .sidebar-btn { padding: 0.25rem 0.5rem !important; }
+  .main { padding: 0.5rem !important; }
+}
+
+/* Touch improvements */
+@media (hover: none) and (pointer: coarse) {
+  button, .sidebar-btn, .memory-card, .toolbar-btn, .card-action, .header-btn {
+    -webkit-tap-highlight-color: rgba(0, 212, 255, 0.2) !important;
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Larger tap targets */
+  .header-nav button { min-height: 36px; }
+  .sidebar-btn { min-height: 40px; }
+  .card-action { min-height: 36px; }
+  
+  /* Active state feedback */
+  button:active, .sidebar-btn:active, .toolbar-btn:active {
+    opacity: 0.7;
+    transform: scale(0.98);
+  }
+}
+
+/* Safe area for notched phones */
+@supports (padding: env(safe-area-inset-top)) {
+  .header {
+    padding-top: max(0.75rem, env(safe-area-inset-top)) !important;
+    padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
+    padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
+  }
+  .sidebar {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom)) !important;
+    padding-left: max(0.5rem, env(safe-area-inset-left)) !important;
+    padding-right: max(0.5rem, env(safe-area-inset-right)) !important;
+  }
+  .main {
+    padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
+    padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom)) !important;
+  }
+}
+
+/* iOS-specific */
+@supports (-webkit-touch-callout: none) {
+  html { height: -webkit-fill-available; }
+  body { min-height: -webkit-fill-available; }
+  
+  /* Prevent pull-to-refresh and bounce */
+  body {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+  }
+  .app-wrapper {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    height: 100%;
+  }
+}
+
 </style>
 
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -150,6 +378,7 @@ body { overflow: auto; height: 100%; -webkit-overflow-scrolling: touch; }
 <body>
 <div class="app-wrapper">
 <div class="header">
+<button class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('collapsed')" style="display:none;background:none;border:none;color:var(--text-primary);font-size:1.25rem;cursor:pointer;margin-right:0.5rem;">☰</button>
 <div class="header-logo">
 <div class="header-logo-icon">🧠</div>
 <div class="header-title">ClawMemory <span>v1.5</span></div>
@@ -490,7 +719,7 @@ window.organizeMemories = function() {
     alert(result);
 };
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', function() { init(); initMobileSidebar(); });
 </script>
 </body>
 </html>
