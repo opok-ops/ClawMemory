@@ -1,0 +1,1668 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClawMemory — AI Agent 记忆中心</title>
+<style>
+/* ===== RESET ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-void: #04060d;
+  --bg-deep: #070b14;
+  --bg-card: #0d1422;
+  --bg-card-hover: #111a2e;
+  --bg-input: #0a1020;
+  --accent-cyan: #00d4ff;
+  --accent-purple: #a855f7;
+  --accent-pink: #f472b6;
+  --accent-green: #10b981;
+  --accent-orange: #f59e0b;
+  --accent-red: #ef4444;
+  --text-primary: #e2e8f0;
+  --text-secondary: #64748b;
+  --text-muted: #334155;
+  --border: rgba(0, 212, 255, 0.12);
+  --border-hover: rgba(0, 212, 255, 0.3);
+  --glow-cyan: 0 0 20px rgba(0, 212, 255, 0.3);
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  --font-body: 'Inter', 'Segoe UI', sans-serif;
+  --font-display: 'Orbitron', monospace;
+}
+
+html { font-size: 16px; }
+
+body {
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+#bg-canvas {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  z-index: 0; pointer-events: none; opacity: 0.2;
+}
+
+.app-wrapper {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ===== HEADER ===== */
+.header {
+  position: sticky;
+  top: 0; z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.5rem;
+  backdrop-filter: blur(20px);
+  background: rgba(4, 6, 13, 0.85);
+  border-bottom: 1px solid var(--border);
+  gap: 1rem;
+}
+
+.header-logo {
+  display: flex; align-items: center; gap: 0.75rem;
+  text-decoration: none; flex-shrink: 0;
+}
+
+.header-logo-icon {
+  width: 32px; height: 32px;
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem;
+  box-shadow: var(--glow-cyan);
+}
+
+.header-title {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text-primary);
+}
+
+.header-title span { color: var(--accent-cyan); }
+
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.header-nav button {
+  padding: 0.35rem 1rem;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: var(--font-body);
+}
+
+.header-nav button:hover { color: var(--text-primary); background: rgba(255,255,255,0.05); }
+.header-nav button.active {
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+  color: #fff;
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.3);
+}
+
+.header-actions { display: flex; gap: 0.5rem; align-items: center; flex-shrink: 0; }
+
+.header-btn {
+  padding: 0.35rem 1rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: var(--font-body);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.header-btn:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+
+.header-btn.primary {
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+  border: none;
+  color: #fff;
+  box-shadow: var(--glow-cyan);
+}
+
+.header-btn.primary:hover { box-shadow: 0 0 30px rgba(0, 212, 255, 0.5); }
+
+.header-stats {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.stat-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  animation: pulse 2s infinite;
+  display: inline-block;
+}
+
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
+
+/* ===== LAYOUT ===== */
+.app-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ===== SIDEBAR ===== */
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  padding: 1.5rem 1rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sidebar-section-label {
+  font-size: 0.65rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0.75rem 0.5rem 0.5rem;
+  font-weight: 600;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+}
+
+.sidebar-item:hover {
+  background: rgba(0, 212, 255, 0.05);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.sidebar-item.active {
+  background: rgba(0, 212, 255, 0.1);
+  color: var(--accent-cyan);
+  border-color: rgba(0, 212, 255, 0.2);
+}
+
+.sidebar-icon { font-size: 1rem; flex-shrink: 0; }
+.sidebar-count {
+  margin-left: auto;
+  font-size: 0.7rem;
+  background: rgba(0, 212, 255, 0.1);
+  color: var(--accent-cyan);
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-family: var(--font-mono);
+}
+
+.sidebar-divider { height: 1px; background: var(--border); margin: 0.5rem 0; }
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 100px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid;
+}
+
+.tag-chip.ai { background: rgba(168,85,247,0.1); border-color: rgba(168,85,247,0.3); color: var(--accent-purple); }
+.tag-chip.work { background: rgba(0,212,255,0.1); border-color: rgba(0,212,255,0.3); color: var(--accent-cyan); }
+.tag-chip.life { background: rgba(244,114,182,0.1); border-color: rgba(244,114,182,0.3); color: var(--accent-pink); }
+.tag-chip.learning { background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.3); color: var(--accent-orange); }
+.tag-chip.fact { background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.3); color: var(--accent-green); }
+.tag-chip.emotion { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); color: var(--accent-red); }
+.tag-chip.general { background: rgba(100,116,139,0.15); border-color: rgba(100,116,139,0.3); color: var(--text-secondary); }
+
+/* ===== MAIN CONTENT ===== */
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* ===== INIT SCREEN ===== */
+.init-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  text-align: center;
+  padding: 4rem;
+}
+
+.init-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 3rem;
+  max-width: 480px;
+  width: 100%;
+}
+
+.init-icon { font-size: 3rem; margin-bottom: 1.5rem; }
+
+.init-card h2 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  margin-bottom: 0.75rem;
+  letter-spacing: 1px;
+}
+
+.init-card p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-bottom: 2rem;
+  line-height: 1.7;
+}
+
+.init-input-group { margin-bottom: 1.5rem; text-align: left; }
+
+.init-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  letter-spacing: 0.5px;
+}
+
+.init-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-family: var(--font-body);
+  transition: border-color 0.2s;
+  outline: none;
+}
+
+.init-input:focus { border-color: var(--accent-cyan); box-shadow: 0 0 0 3px rgba(0,212,255,0.1); }
+.init-input::placeholder { color: var(--text-muted); }
+
+.init-btn {
+  width: 100%;
+  padding: 0.875rem;
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+  border: none;
+  border-radius: 12px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: var(--glow-cyan);
+  font-family: var(--font-body);
+}
+
+.init-btn:hover { transform: translateY(-1px); box-shadow: 0 0 40px rgba(0,212,255,0.5); }
+
+/* ===== ADD MEMORY FORM ===== */
+.add-form {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.add-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.add-form-title {
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--accent-cyan);
+}
+
+.add-textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 0.875rem 1rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-family: var(--font-body);
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  line-height: 1.6;
+}
+
+.add-textarea:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 3px rgba(0,212,255,0.1);
+}
+
+.add-textarea::placeholder { color: var(--text-muted); }
+
+.add-form-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.add-select {
+  padding: 0.5rem 1rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  outline: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: border-color 0.2s;
+}
+
+.add-select:focus { border-color: var(--accent-cyan); }
+.add-select option { background: var(--bg-card); }
+
+.add-tags-input {
+  flex: 1;
+  min-width: 150px;
+  padding: 0.5rem 1rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.2s;
+  font-family: var(--font-body);
+}
+
+.add-tags-input:focus { border-color: var(--accent-cyan); }
+.add-tags-input::placeholder { color: var(--text-muted); }
+
+.add-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.privacy-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.privacy-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+}
+
+.privacy-dot.public { background: var(--accent-green); }
+.privacy-dot.internal { background: var(--accent-orange); }
+.privacy-dot.private { background: var(--accent-red); }
+.privacy-dot.strict { background: var(--accent-purple); }
+
+.submit-btn {
+  padding: 0.6rem 1.5rem;
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: var(--glow-cyan);
+  font-family: var(--font-body);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.submit-btn:hover { transform: translateY(-1px); box-shadow: 0 0 30px rgba(0,212,255,0.5); }
+.submit-btn:active { transform: scale(0.98); }
+
+/* ===== SEARCH BAR ===== */
+.search-bar {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.search-input-wrap {
+  flex: 1;
+  position: relative;
+}
+
+.search-icon {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1rem;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.75rem 1rem 0.75rem 2.75rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-family: var(--font-body);
+  outline: none;
+  transition: all 0.2s;
+}
+
+.search-input:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 3px rgba(0,212,255,0.08), var(--glow-cyan);
+}
+
+.search-input::placeholder { color: var(--text-muted); }
+
+.filter-select {
+  padding: 0.75rem 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  outline: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+}
+
+.filter-select:focus { border-color: var(--accent-cyan); }
+
+/* ===== MEMORY LIST ===== */
+.memory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.memory-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.25rem;
+  cursor: pointer;
+  transition: all 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+
+.memory-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  border-radius: 14px 14px 0 0;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.memory-card:hover {
+  transform: translateX(4px);
+  border-color: rgba(0, 212, 255, 0.2);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+.memory-card:hover::before { opacity: 1; }
+
+.memory-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.memory-card-content {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  line-height: 1.7;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.memory-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.memory-tags { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+.tag {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.tag.ai { background: rgba(168,85,247,0.15); color: var(--accent-purple); }
+.tag.work { background: rgba(0,212,255,0.12); color: var(--accent-cyan); }
+.tag.life { background: rgba(244,114,182,0.12); color: var(--accent-pink); }
+.tag.learning { background: rgba(245,158,11,0.12); color: var(--accent-orange); }
+.tag.fact { background: rgba(16,185,129,0.12); color: var(--accent-green); }
+.tag.emotion { background: rgba(239,68,68,0.12); color: var(--accent-red); }
+.tag.general { background: rgba(100,116,139,0.15); color: var(--text-secondary); }
+
+.memory-time {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.memory-relevance {
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  color: var(--accent-cyan);
+  background: rgba(0,212,255,0.1);
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+
+.memory-delete {
+  position: absolute;
+  top: 0.75rem; right: 0.75rem;
+  width: 24px; height: 24px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(239,68,68,0.1);
+  color: var(--accent-red);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  opacity: 0;
+  transition: opacity 0.2s;
+  font-family: var(--font-body);
+}
+
+.memory-card:hover .memory-delete { opacity: 1; }
+
+/* ===== EMPTY STATE ===== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.empty-icon { font-size: 3rem; margin-bottom: 1rem; opacity: 0.5; }
+.empty-state h3 { font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--text-secondary); }
+.empty-state p { font-size: 0.9rem; line-height: 1.6; }
+
+/* ===== MEMORY DETAIL MODAL ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 13, 0.8);
+  backdrop-filter: blur(8px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+.modal-overlay.active {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.modal {
+  background: var(--bg-card);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 20px;
+  padding: 2rem;
+  max-width: 640px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+  transform: translateY(20px) scale(0.98);
+  transition: transform 0.3s;
+  box-shadow: 0 0 60px rgba(0,212,255,0.1);
+}
+
+.modal-overlay.active .modal {
+  transform: translateY(0) scale(1);
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.modal-meta { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+
+.modal-close {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+  transition: all 0.2s;
+  font-family: var(--font-body);
+}
+
+.modal-close:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+
+.modal-content {
+  font-size: 0.95rem;
+  line-height: 1.8;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 1rem;
+  background: var(--bg-input);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  margin-bottom: 1rem;
+  min-height: 100px;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.modal-info-item {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  padding: 0.3rem 0.6rem;
+  background: rgba(0,212,255,0.05);
+  border-radius: 6px;
+  border: 1px solid rgba(0,212,255,0.1);
+}
+
+.modal-info-item strong { color: var(--text-primary); }
+
+/* ===== TOAST ===== */
+.toast-container {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 0.75rem 1.25rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  animation: slideIn 0.3s ease-out, fadeOut 0.3s ease-in 2.7s both;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  max-width: 320px;
+}
+
+.toast.success { background: rgba(16,185,129,0.9); color: #fff; }
+.toast.error { background: rgba(239,68,68,0.9); color: #fff; }
+.toast.info { background: rgba(0,212,255,0.9); color: #000; }
+
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fadeOut {
+  to { opacity: 0; }
+}
+
+/* ===== STATS PANEL ===== */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+}
+
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.25rem;
+  text-align: center;
+  transition: all 0.3s;
+}
+
+.stat-card:hover {
+  border-color: rgba(0,212,255,0.3);
+  box-shadow: var(--glow-cyan);
+  transform: translateY(-2px);
+}
+
+.stat-value {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 900;
+  margin-bottom: 0.25rem;
+}
+
+.stat-value.cyan { color: var(--accent-cyan); }
+.stat-value.purple { color: var(--accent-purple); }
+.stat-value.green { color: var(--accent-green); }
+.stat-value.orange { color: var(--accent-orange); }
+.stat-value.pink { color: var(--accent-pink); }
+
+.stat-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+}
+
+/* ===== PRIVACY SECTION ===== */
+.privacy-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.5rem;
+}
+
+.privacy-panel h3 {
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  letter-spacing: 1px;
+  color: var(--accent-cyan);
+  margin-bottom: 1rem;
+}
+
+.compliance-bar {
+  height: 8px;
+  background: rgba(16,185,129,0.2);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+}
+
+.compliance-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent-green), var(--accent-cyan));
+  transition: width 1s ease-out;
+}
+
+.compliance-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent-green);
+}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,212,255,0.3); border-radius: 3px; }
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .header-nav { display: none; }
+  .app-body { flex-direction: column; }
+}
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+
+<div class="app-wrapper">
+
+  <!-- HEADER -->
+  <header class="header">
+    <a href="index.html" class="header-logo">
+      <div class="header-logo-icon">🧠</div>
+      <span class="header-title">Claw<span>Memory</span></span>
+    </a>
+
+    <nav class="header-nav">
+      <button class="active" onclick="switchView('memories')">记忆</button>
+      <button onclick="switchView('search')">搜索</button>
+      <button onclick="switchView('stats')">统计</button>
+      <button onclick="switchView('privacy')">隐私</button>
+    </nav>
+
+    <div class="header-stats">
+      <span class="stat-dot"></span>
+      <span id="stat-total">0 条记忆</span>
+    </div>
+
+    <div class="header-actions">
+      <button class="header-btn" onclick="exportMemories()">📤 导出</button>
+      <button class="header-btn primary" onclick="showAddForm()">+ 添加记忆</button>
+    </div>
+  </header>
+
+  <!-- APP BODY -->
+  <div class="app-body">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-section-label">分类</div>
+      <div class="sidebar-item active" onclick="filterByCategory('all', this)">
+        <span class="sidebar-icon">📋</span> 全部
+        <span class="sidebar-count" id="count-all">0</span>
+      </div>
+      <div class="sidebar-item" onclick="filterByCategory('learning', this)">
+        <span class="sidebar-icon">📚</span> 学习
+        <span class="sidebar-count" id="count-learning">0</span>
+      </div>
+      <div class="sidebar-item" onclick="filterByCategory('work', this)">
+        <span class="sidebar-icon">💼</span> 工作
+        <span class="sidebar-count" id="count-work">0</span>
+      </div>
+      <div class="sidebar-item" onclick="filterByCategory('life', this)">
+        <span class="sidebar-icon">🏠</span> 生活
+        <span class="sidebar-count" id="count-life">0</span>
+      </div>
+      <div class="sidebar-item" onclick="filterByCategory('idea', this)">
+        <span class="sidebar-icon">💡</span> 创意
+        <span class="sidebar-count" id="count-idea">0</span>
+      </div>
+      <div class="sidebar-item" onclick="filterByCategory('fact', this)">
+        <span class="sidebar-icon">📝</span> 事实
+        <span class="sidebar-count" id="count-fact">0</span>
+      </div>
+      <div class="sidebar-item" onclick="filterByCategory('emotion', this)">
+        <span class="sidebar-icon">❤️</span> 情感
+        <span class="sidebar-count" id="count-emotion">0</span>
+      </div>
+
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-section-label">隐私分级</div>
+      <div class="sidebar-item" onclick="filterByPrivacy('PUBLIC', this)">
+        <span class="sidebar-icon">🟢</span> PUBLIC
+      </div>
+      <div class="sidebar-item" onclick="filterByPrivacy('INTERNAL', this)">
+        <span class="sidebar-icon">🟡</span> INTERNAL
+      </div>
+      <div class="sidebar-item" onclick="filterByPrivacy('PRIVATE', this)">
+        <span class="sidebar-icon">🔴</span> PRIVATE
+      </div>
+      <div class="sidebar-item" onclick="filterByPrivacy('STRICT', this)">
+        <span class="sidebar-icon">🟣</span> STRICT
+      </div>
+
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-section-label">快速操作</div>
+      <div class="sidebar-item" onclick="runCompliance()">
+        <span class="sidebar-icon">🛡️</span> 合规报告
+      </div>
+      <div class="sidebar-item" onclick="runBackup()">
+        <span class="sidebar-icon">💾</span> 备份数据
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-content" id="main-content">
+
+      <!-- MEMORIES VIEW -->
+      <div id="view-memories">
+        <!-- Add Form (hidden by default) -->
+        <div class="add-form" id="add-form" style="display:none;">
+          <div class="add-form-header">
+            <div class="add-form-title">✏️ 添加新记忆</div>
+            <button onclick="hideAddForm()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:1.2rem;">✕</button>
+          </div>
+          <textarea class="add-textarea" id="add-content" placeholder="写下你想记住的内容...&#10;&#10;系统会自动分析内容并推荐分类、标签和隐私等级。"></textarea>
+          <div class="add-form-row">
+            <select class="add-select" id="add-category">
+              <option value="">分类（自动建议）</option>
+              <option value="learning">📚 学习</option>
+              <option value="work">💼 工作</option>
+              <option value="life">🏠 生活</option>
+              <option value="idea">💡 创意</option>
+              <option value="fact">📝 事实</option>
+              <option value="emotion">❤️ 情感</option>
+              <option value="general">📌 通用</option>
+            </select>
+            <select class="add-select" id="add-importance">
+              <option value="MEDIUM">⭐ 中等</option>
+              <option value="LOW">📋 低</option>
+              <option value="HIGH">🔥 高</option>
+              <option value="CRITICAL">💎 关键</option>
+            </select>
+            <input class="add-tags-input
+=" placeholder="标签（逗号分隔）" />
+          </div>
+          <div class="add-form-actions">
+            <div class="privacy-indicator">
+              <span class="privacy-dot internal" id="add-privacy-dot"></span>
+              <span id="add-privacy-label">隐私：INTERNAL</span>
+              <label style="margin-left:0.75rem;display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;color:var(--text-secondary);cursor:pointer;">
+                <input type="checkbox" id="add-auto-privacy" checked style="accent-color:var(--accent-cyan);" />
+                自动隐私检测
+              </label>
+            </div>
+            <button class="submit-btn" onclick="addMemory()">
+              💾 保存记忆
+            </button>
+          </div>
+        </div>
+
+        <!-- Search -->
+        <div class="search-bar">
+          <div class="search-input-wrap">
+            <span class="search-icon">🔍</span>
+            <input class="search-input" id="search-input" placeholder="搜索记忆...（支持自然语言）" oninput="onSearchInput(this.value)" />
+          </div>
+          <select class="filter-select" id="search-filter" onchange="onSearchInput(document.getElementById('search-input').value)">
+            <option value="">全部分类</option>
+            <option value="learning">📚 学习</option>
+            <option value="work">💼 工作</option>
+            <option value="life">🏠 生活</option>
+            <option value="idea">💡 创意</option>
+            <option value="fact">📝 事实</option>
+            <option value="emotion">❤️ 情感</option>
+            <option value="general">📌 通用</option>
+          </select>
+        </div>
+
+        <!-- Memory List -->
+        <div class="memory-list" id="memory-list">
+          <div class="empty-state">
+            <div class="empty-icon">🧠</div>
+            <h3>还没有记忆</h3>
+            <p>点击右上角的「+ 添加记忆」<br>开始构建你的 AI 终身记忆库</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- STATS VIEW -->
+      <div id="view-stats" style="display:none;">
+        <h2 style="font-family:var(--font-display);font-size:1.5rem;margin-bottom:1.5rem;letter-spacing:1px;">
+          📊 记忆统计
+        </h2>
+        <div class="stats-grid" id="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value cyan" id="s-total">0</div>
+            <div class="stat-label">总记忆数</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value purple" id="s-internal">0</div>
+            <div class="stat-label">INTERNAL</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value orange" id="s-private">0</div>
+            <div class="stat-label">PRIVATE</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value pink" id="s-strict">0</div>
+            <div class="stat-label">STRICT</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value green" id="s-db-size">0</div>
+            <div class="stat-label">数据库大小</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value cyan" id="s-cats">0</div>
+            <div class="stat-label">活跃分类</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PRIVACY VIEW -->
+      <div id="view-privacy" style="display:none;">
+        <h2 style="font-family:var(--font-display);font-size:1.5rem;margin-bottom:1.5rem;letter-spacing:1px;">
+          🛡️ 隐私管理
+        </h2>
+        <div class="privacy-panel" style="margin-bottom:1rem;">
+          <h3>🔒 合规状态</h3>
+          <div class="compliance-bar">
+            <div class="compliance-fill" id="compliance-fill" style="width:0%"></div>
+          </div>
+          <div class="compliance-status">
+            <span>✅</span>
+            <span id="compliance-status">点击「生成报告」查看</span>
+          </div>
+        </div>
+        <div class="features-grid" id="privacy-features">
+          <div class="feature-card">
+            <div class="feature-icon cyan">🔐</div>
+            <h3>隐私扫描</h3>
+            <p>自动检测文本中的敏感信息并推荐隐私等级</p>
+            <button onclick="testPrivacyScan()" style="margin-top:0.75rem;padding:0.5rem 1rem;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--accent-cyan);cursor:pointer;font-size:0.85rem;width:100%;">运行扫描</button>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon green">📋</div>
+            <h3>访问控制</h3>
+            <p>管理记忆的访问授权列表 (ACL)</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon purple">🧹</div>
+            <h3>导出脱敏</h3>
+            <p>导出时自动识别并脱敏敏感信息</p>
+          </div>
+        </div>
+        <div id="scan-result" style="display:none;margin-top:1rem;padding:1rem;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;"></div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- MODAL -->
+  <div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" id="modal">
+      <div class="modal-header">
+        <div class="modal-meta" id="modal-meta"></div>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-content" id="modal-content">加载中...</div>
+      <div class="modal-footer" id="modal-footer"></div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast-container" id="toast-container"></div>
+
+</div>
+
+<canvas id="bg-canvas2" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:0.15;display:none;"></canvas>
+
+<script>
+// ===== MOCK DATA STORE =====
+const state = {
+  initialized: false,
+  password: '',
+  memories: [],
+  currentFilter: 'all',
+  currentPrivacy: null,
+  searchQuery: '',
+};
+
+const CATEGORIES = {
+  learning: { icon: '📚', color: 'orange', label: '学习' },
+  work: { icon: '💼', color: 'cyan', label: '工作' },
+  life: { icon: '🏠', color: 'pink', label: '生活' },
+  idea: { icon: '💡', color: 'purple', label: '创意' },
+  fact: { icon: '📝', color: 'green', label: '事实' },
+  emotion: { icon: '❤️', color: 'red', label: '情感' },
+  general: { icon: '📌', color: 'general', label: '通用' },
+};
+
+const PRIVACY_COLORS = { PUBLIC: 'green', INTERNAL: 'orange', PRIVATE: 'red', STRICT: 'purple' };
+const PRIVACY_ICONS = { PUBLIC: '🟢', INTERNAL: '🟡', PRIVATE: '🔴', STRICT: '🟣' };
+
+// ===== SAMPLE MEMORIES (demo data) =====
+const SAMPLE_MEMORIES = [
+  {
+    id: 'demo-001',
+    content: '今天完成了 ClawMemory v1.0 的核心架构设计。包括加密引擎（AES-256-GCM）、存储引擎（SQLite WAL）、索引引擎（TF-IDF）和隐私引擎。整体采用分层模块化设计，隐私分级硬编码执行。',
+    category: 'learning',
+    tags: ['ai', 'architecture', 'python'],
+    privacy: 'INTERNAL',
+    importance: 3,
+    created_at: Date.now() - 86400000 * 2,
+    updated_at: Date.now() - 86400000 * 2,
+    access_count: 5,
+  },
+  {
+    id: 'demo-002',
+    content: 'Q2 产品路线图：6月前完成核心功能，9月支持多 Agent 协同记忆，12月实现跨设备同步（可选加密云盘）。关键技术风险：向量检索性能在百万级条目下的优化。',
+    category: 'work',
+    tags: ['roadmap', 'planning'],
+    privacy: 'INTERNAL',
+    importance: 3,
+    created_at: Date.now() - 86400000,
+    updated_at: Date.now() - 86400000,
+    access_count: 3,
+  },
+  {
+    id: 'demo-003',
+    content: 'AI Agent 终身记忆系统是近两年最有价值的创业方向之一。核心壁垒在于：数据飞轮效应（记忆越多越精准）、隐私计算基础设施、Agent 原生架构。竞品主要是 Mem.ai 和 Notion AI，但它们都不做本地化。',
+    category: 'idea',
+    tags: ['startup', 'ai', 'memory'],
+    privacy: 'PUBLIC',
+    importance: 2,
+    created_at: Date.now() - 86400000 * 5,
+    updated_at: Date.now() - 86400000 * 3,
+    access_count: 8,
+  },
+  {
+    id: 'demo-004',
+    content: '个人密码管理器已升级为 ClawMemory STRICT 级别存储。包含：银行登录、邮箱、服务器 SSH 密钥、加密钱包助记词。所有数据 AES-256 加密，机器绑定。',
+    category: 'fact',
+    tags: ['password', 'security'],
+    privacy: 'STRICT',
+    importance: 4,
+    created_at: Date.now() - 86400000 * 10,
+    updated_at: Date.now() - 86400000 * 7,
+    access_count: 2,
+  },
+  {
+    id: 'demo-005',
+    content: '项目进度：ClawMemory 核心引擎完成 80%，预计周末前完成全部模块和适配器。下周开始测试 OpenClaw 集成和 Claude Code MCP 适配。',
+    category: 'work',
+    tags: ['project', 'progress'],
+    privacy: 'INTERNAL',
+    importance: 2,
+    created_at: Date.now() - 3600000 * 6,
+    updated_at: Date.now() - 3600000 * 6,
+    access_count: 1,
+  },
+];
+
+// ===== INIT =====
+function init() {
+  // Check if we have stored state
+  const stored = localStorage.getItem('clawmemory_demo');
+  if (stored) {
+    const data = JSON.parse(stored);
+    state.memories = data.memories || SAMPLE_MEMORIES;
+    state.initialized = true;
+  } else {
+    state.memories = SAMPLE_MEMORIES;
+  }
+  renderMemories();
+  updateSidebarCounts();
+  updateHeaderStats();
+}
+
+function updateHeaderStats() {
+  const el = document.getElementById('stat-total');
+  if (el) el.textContent = state.memories.length + ' 条记忆';
+}
+
+function updateSidebarCounts() {
+  const cats = ['all', 'learning', 'work', 'life', 'idea', 'fact', 'emotion'];
+  cats.forEach(cat => {
+    const el = document.getElementById('count-' + cat);
+    if (el) {
+      el.textContent = cat === 'all' ? state.memories.length : state.memories.filter(m => m.category === cat).length;
+    }
+  });
+}
+
+// ===== RENDER MEMORIES =====
+function renderMemories() {
+  const container = document.getElementById('memory-list');
+  if (!container) return;
+
+  let filtered = state.memories.filter(m => !m._deleted);
+
+  // Category filter
+  if (state.currentFilter && state.currentFilter !== 'all') {
+    filtered = filtered.filter(m => m.category === state.currentFilter);
+  }
+
+  // Privacy filter
+  if (state.currentPrivacy) {
+    filtered = filtered.filter(m => m.privacy === state.currentPrivacy);
+  }
+
+  // Search
+  if (state.searchQuery) {
+    const q = state.searchQuery.toLowerCase();
+    filtered = filtered.filter(m =>
+      m.content.toLowerCase().includes(q) ||
+      m.tags.some(t => t.toLowerCase().includes(q)) ||
+      m.category.toLowerCase().includes(q)
+    );
+  }
+
+  // Sort by updated_at
+  filtered.sort((a, b) => b.updated_at - a.updated_at);
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🔍</div>
+        <h3>${state.searchQuery ? '没有找到匹配的记忆' : '还没有记忆'}</h3>
+        <p>${state.searchQuery ? '尝试其他关键词或分类' : '点击「+ 添加记忆」开始'}</p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map(m => {
+    const cat = CATEGORIES[m.category] || CATEGORIES.general;
+    const timeAgo = formatTimeAgo(m.updated_at);
+    return `
+      <div class="memory-card" id="card-${m.id}" onclick="openMemory('${m.id}')" style="--card-accent: var(--accent-${cat.color});">
+        <style>#card-${m.id}:hover::before { background: linear-gradient(90deg, var(--accent-${cat.color}), transparent); }</style>
+        <div class="memory-card-meta">
+          <span class="tag-chip ${m.category}">${cat.icon} ${cat.label}</span>
+          <span class="privacy-dot ${PRIVACY_COLORS[m.privacy].toLowerCase()}" title="${m.privacy}"></span>
+          <span style="font-size:0.75rem;color:var(--text-muted);font-family:var(--font-mono);">${PRIVACY_ICONS[m.privacy]} ${m.privacy}</span>
+        </div>
+        <div class="memory-card-content">${escapeHtml(m.content)}</div>
+        <div class="memory-card-footer">
+          <div class="memory-tags">
+            ${m.tags.slice(0, 4).map(t => `<span class="tag ${m.category}">#${t}</span>`).join('')}
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;">
+            <span class="memory-time">${timeAgo}</span>
+            <button class="memory-delete" onclick="event.stopPropagation();deleteMemory('${m.id}')" title="删除">🗑️</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function openMemory(id) {
+  const m = state.memories.find(x => x.id === id);
+  if (!m) return;
+  const cat = CATEGORIES[m.category] || CATEGORIES.general;
+  document.getElementById('modal-meta').innerHTML = `
+    <span class="tag-chip ${m.category}">${cat.icon} ${cat.label}</span>
+    <span class="privacy-dot ${PRIVACY_COLORS[m.privacy].toLowerCase()}"></span>
+    <span style="font-size:0.8rem;color:var(--text-secondary);font-family:var(--font-mono);">${PRIVACY_ICONS[m.privacy]} ${m.privacy}</span>
+    <span style="font-size:0.8rem;color:var(--text-muted);">·</span>
+    <span style="font-size:0.8rem;color:var(--text-secondary);">访问 ${m.access_count} 次</span>
+  `;
+  document.getElementById('modal-content').textContent = m.content;
+  document.getElementById('modal-footer').innerHTML = `
+    <div style="display:flex;gap:0.4rem;flex-wrap:wrap;flex:1;">
+      ${m.tags.map(t => `<span class="tag ${m.category}">#${t}</span>`).join('')}
+    </div>
+    <div style="font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);">
+      ${formatDate(m.created_at)}
+    </div>
+  `;
+  document.getElementById('modal-overlay').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('active');
+}
+
+// ===== FILTERS =====
+function filterByCategory(cat, el) {
+  state.currentFilter = cat;
+  state.currentPrivacy = null;
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  if (el) el.classList.add('active');
+  renderMemories();
+}
+
+function filterByPrivacy(p, el) {
+  state.currentPrivacy = state.currentPrivacy === p ? null : p;
+  state.currentFilter = 'all';
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  if (el) el.classList.add('active');
+  renderMemories();
+}
+
+function onSearchInput(q) {
+  state.searchQuery = q;
+  renderMemories();
+}
+
+// ===== ADD MEMORY =====
+function showAddForm() {
+  const form = document.getElementById('add-form');
+  form.style.display = 'flex';
+  document.getElementById('add-content').focus();
+}
+
+function hideAddForm() {
+  document.getElementById('add-form').style.display = 'none';
+}
+
+function addMemory() {
+  const content = document.getElementById('add-content').value.trim();
+  if (!content) { showToast('请输入记忆内容', 'error'); return; }
+
+  const cat = document.getElementById('add-category').value;
+  const tags = document.getElementById('add-tags-input').value.split(',').map(t => t.trim()).filter(Boolean);
+  const importance = document.getElementById('add-importance').value;
+  const autoPrivacy = document.getElementById('add-auto-privacy').checked;
+
+  let privacy = 'INTERNAL';
+  if (autoPrivacy) {
+    const scan = scanPrivacy(content);
+    privacy = scan.level;
+  }
+
+  const mem = {
+    id: 'mem-' + Date.now(),
+    content,
+    category: cat || autoSuggestCategory(content),
+    tags: tags.length ? tags : autoSuggestTags(content),
+    privacy,
+    importance: { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 }[importance] || 2,
+    created_at: Date.now(),
+    updated_at: Date.now(),
+    access_count: 0,
+  };
+
+  state.memories.unshift(mem);
+  saveState();
+  hideAddForm();
+  document.getElementById('add-content').value = '';
+  document.getElementById('add-tags-input').value = '';
+  renderMemories();
+  updateSidebarCounts();
+  updateHeaderStats();
+  showToast('记忆已保存 ✨', 'success');
+}
+
+function deleteMemory(id) {
+  if (!confirm('确认删除这条记忆？')) return;
+  const m = state.memories.find(x => x.id === id);
+  if (m) m._deleted = true;
+  saveState();
+  renderMemories();
+  updateSidebarCounts();
+  updateHeaderStats();
+  showToast('记忆已删除', 'info');
+}
+
+function autoSuggestCategory(text) {
+  const lower = text.toLowerCase();
+  if (/会议|项目|工作|task|deadline|meeting|project/.test(lower)) return 'work';
+  if (/学习|课程|书|知识|course|study|book/.test(lower)) return 'learning';
+  if (/想法|创意|idea|think|concept/.test(lower)) return 'idea';
+  if (/密码|账号|地址|phone|email|password/.test(lower)) return 'fact';
+  if (/感受|心情|开心|feel|happy|grateful/.test(lower)) return 'emotion';
+  return 'general';
+}
+
+function autoSuggestTags(text) {
+  const tags = [];
+  const mentionMatches = text.match(/[@#](\w+)/g);
+  if (mentionMatches) tags.push(...mentionMatches.map(t => t.slice(1).toLowerCase()));
+  return tags.slice(0, 5);
+}
+
+// ===== PRIVACY SCAN =====
+function scanPrivacy(text) {
+  const types = [];
+  if (/1[3-9]\d{9}/.test(text)) types.push('PHONE');
+  if (/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(text)) types.push('EMAIL');
+  if (/密码[:：]\s*\S+|pass(word)?[:：]\s*\S+/i.test(text)) types.push('PASSWORD');
+  if (/身份证|护照|病历/.test(text)) types.push('SENSITIVE_ID');
+
+  let level = 'INTERNAL';
+  if (types.includes('PASSWORD') || types.includes('SENSITIVE_ID')) level = 'STRICT';
+  else if (types.includes('PHONE') || types.includes('EMAIL')) level = 'PRIVATE';
+  return { types, level };
+}
+
+function testPrivacyScan() {
+  const testTexts = [
+    '我的手机号是 13812345678，邮箱是 test@gmail.com',
+    '密码是 mysecret123，身份证号是 110101199001011234',
+    '今天天气很好，去公园散步，心情很棒',
+  ];
+  const results = testTexts.map(t => {
+    const scan = scanPrivacy(t);
+    return { text: t.slice(0, 30) + '...', ...scan };
+  });
+  document.getElementById('scan-result').style.display = 'block';
+  document.getElementById('scan-result').innerHTML = results.map(r => `
+    <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--bg-input);border-radius:8px;">
+      <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.25rem;">${r.text}</div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+        ${r.types.length ? r.types.map(t => `<span class="tag ${r.level === 'STRICT' ? 'emotion' : 'work'}">${t}</span>`).join('') : '<span style="font-size:0.8rem;color:var(--text-muted);">无敏感信息</span>'}
+        <span style="margin-left:auto;font-size:0.8rem;font-weight:700;color:var(--accent-${PRIVACY_COLORS[r.level].toLowerCase()});">→ ${r.level}</span>
+      </div>
+    </div>`).join('');
+}
+
+// ===== VIEWS =====
+function switchView(view) {
+  document.querySelectorAll('[id^=view-]').forEach(v => v.style.display = 'none');
+  document.querySelectorAll('.header-nav button').forEach(b => b.classList.remove('active'));
+
+  const viewMap = { memories: 'view-memories', search: 'view-memories', stats: 'view-stats', privacy: 'view-privacy' };
+  const el = document.getElementById(viewMap[view] || 'view-memories');
+  if (el) el.style.display = 'flex';
+  el.style.flexDirection = 'column';
+
+  if (view === 'stats') loadStats();
+  if (view === 'privacy') initPrivacyView();
+
+  const navBtns = document.querySelectorAll('.header-nav button');
+  const navMap = { memories: 0, search: 1, stats: 2, privacy: 3 };
+  if (navBtns[navMap[view]]) navBtns[navMap[view]].classList.add('active');
+}
+
+function loadStats() {
+  const byPrivacy = { PUBLIC: 0, INTERNAL: 0, PRIVATE: 0, STRICT: 0 };
+  const cats = new Set();
+  state.memories.forEach(m => {
+    if (byPrivacy[m.privacy] !== undefined) byPrivacy[m.privacy]++;
+    cats.add(m.category);
+  });
+  document.getElementById('s-total').textContent = state.memories.length;
+  document.getElementById('s-internal').textContent = byPrivacy.INTERNAL;
+  document.getElementById('s-private').textContent = byPrivacy.PRIVATE;
+  document.getElementById('s-strict').textContent = byPrivacy.STRICT;
+  document.getElementById('s-db-size').textContent = (state.memories.length * 2.1).toFixed(1) + ' KB';
+  document.getElementById('s-cats').textContent = cats.size;
+}
+
+function initPrivacyView() {
+  document.getElementById('scan-result').style.display = 'none';
+  const fill = document.getElementById('compliance-fill');
+  const status = document.getElementById('compliance-status');
+  const strictCount = state.memories.filter(m => m.privacy === 'STRICT').length;
+  const pass = strictCount === 0;
+  fill.style.width = pass ? '100%' : '60%';
+  status.textContent = pass ? '合规 PASS — 无风险项' : '需审查 — ' + strictCount + ' 条 STRICT 记忆需检查 ACL';
+  status.style.color = pass ? 'var(--accent-green)' : 'var(--accent-orange)';
+}
+
+function runCompliance() {
+  switchView('privacy');
+}
+
+function runBackup() {
+  saveState(true);
+  showToast('备份已创建 💾', 'success');
+}
+
+// ===== EXPORT =====
+function exportMemories() {
+  const data = {
+    version: '1.0.0',
+    exported_at: new Date().toISOString(),
+    count: state.memories.length,
+    memories: state.memories.map(m => ({
+      id: m.id,
+      category: m.category,
+      content: m.privacy === 'STRICT' ? '[脱敏内容]' : m.content,
+      privacy: m.privacy,
+      created_at: m.created_at,
+    })),
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'clawmemory_export_' + new Date().toISOString().slice(0, 10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('导出成功 📤', 'success');
+}
+
+// ===== UTILS =====
+function saveState(isBackup) {
+  const data = { memories: state.memories, savedAt: Date.now(), isBackup };
+  localStorage.setItem('clawmemory_demo', JSON.stringify(data));
+}
+
+function formatTimeAgo(ts) {
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return mins + ' 分钟前';
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + ' 小时前';
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return days + ' 天前';
+  return new Date(ts).toLocaleDateString('zh-CN');
+}
+
+function formatDate(ts) {
+  return new Date(ts).toLocaleString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function showToast(msg, type) {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.innerHTML = msg;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+// ===== BACKGROUND ANIMATION =====
+(function() {
+  const canvas = document.getElementById('bg-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const nodes = [];
+  for (let i = 0; i < 40; i++) {
+    nodes.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: (Math.random() - 0.5) * 0.3,
+      r: Math.random() * 1.5 + 0.5,
+      hue: Math.random() > 0.5 ? 190 : 270,
+    });
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const dx = nodes[i].x - nodes[j].x;
+        const dy = nodes[i].y - nodes[j].y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 150) {
+          ctx.beginPath();
+          ctx.strokeStyle = `rgba(0,212,255,${(1 - dist / 150) * 0.15})`;
+          ctx.lineWidth = 0.5;
+          ctx.moveTo(nodes[i].x, nodes[i].y);
+          ctx.lineTo(nodes[j].x, nodes[j].y);
+          ctx.stroke();
+        }
+      }
+      nodes[i].x += nodes[i].vx;
+      nodes[i].y += nodes[i].vy;
+      if (nodes[i].x < 0 || nodes[i].x > canvas.width) nodes[i].vx *= -1;
+      if (nodes[i].y < 0 || nodes[i].y > canvas.height) nodes[i].vy *= -1;
+
+      const g = ctx.createRadialGradient(nodes[i].x, nodes[i].y, 0, nodes[i].x, nodes[i].y, nodes[i].r * 3);
+      g.addColorStop(0, `hsla(${nodes[i].hue},90%,65%,0.6)`);
+      g.addColorStop(1, `hsla(${nodes[i].hue},90%,65%,0)`);
+      ctx.beginPath();
+      ctx.arc(nodes[i].x, nodes[i].y, nodes[i].r * 3, 0, Math.PI * 2);
+      ctx.fillStyle = g;
+      ctx.fill();
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// ===== START =====
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
