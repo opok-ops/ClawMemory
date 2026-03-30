@@ -401,6 +401,7 @@ function clearDemoData() {
         saveMemories();
         renderMemories();
         updateStats();
+        document.getElementById('online-count').textContent = '0';
     }
 }
 
@@ -420,7 +421,7 @@ function initOnlineUsers() {
         users[userId] = now;
         localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
         const count = Object.keys(users).length + Math.floor(Math.random()*20) + 10;
-        document.getElementById('online-count').textContent = count;
+        document.getElementById('online-count').textContent = memories.length > 0 ? count : '0';
     }
     update();
     setInterval(update, 30000);
