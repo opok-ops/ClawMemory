@@ -31,6 +31,26 @@
   --font-display: 'Orbitron', monospace;
 }
 
+[data-theme="light"] {
+  --bg-void: #f0f4f8;
+  --bg-deep: #e2e8f0;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f8fafc;
+  --bg-input: #f1f5f9;
+  --accent-cyan: #0891b2;
+  --accent-purple: #7c3aed;
+  --accent-pink: #db2777;
+  --accent-green: #059669;
+  --accent-orange: #d97706;
+  --accent-red: #dc2626;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --border: rgba(0, 0, 0, 0.1);
+  --border-hover: rgba(0, 0, 0, 0.2);
+  --glow-cyan: 0 0 10px rgba(8, 145, 178, 0.15);
+}
+
 html { font-size: 16px; }
 
 body {
@@ -625,6 +645,14 @@ body {
   border-radius: 5px;
 }
 
+.memory-card.selected {
+  border-color: var(--accent-cyan) !important;
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.3) !important;
+}
+.card-check {
+  position: absolute; top: 10px; left: 10px; width: 18px; height: 18px;
+  cursor: pointer; z-index: 2; accent-color: var(--accent-cyan);
+}
 .memory-delete {
   position: absolute;
   top: 0.75rem; right: 0.75rem;
@@ -911,6 +939,7 @@ body {
       <button onclick="switchView('search')">搜索</button>
       <button onclick="switchView('stats')">统计</button>
       <button onclick="switchView('privacy')">隐私</button>
+      <button onclick="toggleTheme()" title="切换主题" style="padding:4px 10px;font-size:0.85rem">🌙</button>
     </nav>
 
     <div class="header-stats">
@@ -919,9 +948,11 @@ body {
     </div>
 
     <div class="header-actions">
-      <button class="header-btn" onclick="importMemories()" title="从JSON文件导入记忆">📥 导入</button>
+      <button class="header-btn" id="select-btn" onclick="toggleSelectMode()" title="批量选择">☐ 选择</button>
+      <button class="header-btn" onclick="importMemories()" title="从JSON导入">📥 导入</button>
       <button class="header-btn" onclick="exportMemories()">📤 导出</button>
       <button class="header-btn primary" onclick="showAddForm()">+ 添加记忆</button>
+      <button class="header-btn" onclick="clearAllMemories()" title="清空全部记忆（不可恢复）" style="color:var(--accent-red)">🗑️ 清空</button>
     </div>
     <input type="file" id="import-file-input" accept=".json" style="display:none" onchange="handleImportFile(event)">
   </header>
@@ -1161,6 +1192,7 @@ const state = {
   currentFilter: 'all',
   currentPrivacy: null,
   searchQuery: '',
+  selectedIds: [],
 };
 
 const CATEGORIES = {
@@ -1253,7 +1285,10 @@ function init() {
 
 function updateHeaderStats() {
   const el = document.getElementById('stat-total');
-  if (el) el.textContent = state.memories.length + ' 条记忆';
+  if (el) {
+    const active = state.memories.filter(m => !m._deleted);
+    el.textContent = active.length + ' 条记忆';
+  }
 }
 
 function updateSidebarCounts() {
@@ -1310,8 +1345,10 @@ function renderMemories() {
   container.innerHTML = filtered.map(m => {
     const cat = CATEGORIES[m.category] || CATEGORIES.general;
     const timeAgo = formatTimeAgo(m.updated_at);
+    const isSelected = state.selectedIds.includes(m.id);
     return `
-      <div class="memory-card" id="card-${m.id}" onclick="openMemory('${m.id}')" style="--card-accent: var(--accent-${cat.color});">
+      <div class="memory-card ${isSelected ? 'selected' : ''}" id="card-${m.id}" onclick="${state.selectedIds.length ? 'toggleSelect(\''+m.id+'\')' : 'openMemory(\''+m.id+'\')'}" style="--card-accent: var(--accent-${cat.color});">
+        ${state.selectedIds.length ? `<input type="checkbox" class="card-check" ${isSelected?'checked':''} onclick="event.stopPropagation();toggleSelect('${m.id}')">` : ''}
         <style>#card-${m.id}:hover::before { background: linear-gradient(90deg, var(--accent-${cat.color}), transparent); }</style>
         <div class="memory-card-meta">
           <span class="tag-chip ${m.category}">${cat.icon} ${cat.label}</span>
@@ -1549,7 +1586,7 @@ function runBackup() {
 // ===== EXPORT =====
 function exportMemories() {
   const data = {
-    version: '1.2.0',
+    version: '1.3.0',
     exported_at: new Date().toISOString(),
     count: state.memories.filter(m => !m._deleted).length,
     memories: state.memories.filter(m => !m._deleted).map(m => ({
@@ -1617,7 +1654,72 @@ function handleImportFile(event) {
   reader.readAsText(file, 'utf-8');
 }
 
-// ===== UTILS =====
+// ===== BATCH OPERATIONS =====
+function toggleSelectMode() {
+  state.selectedIds = [];
+  renderMemories();
+  document.getElementById('select-btn').classList.toggle('active', false);
+}
+function toggleSelect(id) {
+  const idx = state.selectedIds.indexOf(id);
+  if (idx === -1) state.selectedIds.push(id);
+  else state.selectedIds.splice(idx, 1);
+  renderMemories();
+}
+function deleteSelected() {
+  if (state.selectedIds.length === 0) return;
+  if (!confirm('确认删除选中的 ' + state.selectedIds.length + ' 条记忆？')) return;
+  state.selectedIds.forEach(id => {
+    const m = state.memories.find(x => x.id === id);
+    if (m) m._deleted = true;
+  });
+  state.selectedIds = [];
+  saveState();
+  renderMemories();
+  updateSidebarCounts();
+  updateHeaderStats();
+  showToast('已删除选中记忆', 'info');
+}
+function clearAllMemories() {
+  const active = state.memories.filter(m => !m._deleted);
+  if (active.length === 0) { showToast('没有可清空的记忆', 'info'); return; }
+  if (!confirm('⚠️ 确认清空全部 ' + active.length + ' 条记忆？此操作不可恢复！')) return;
+  if (!confirm('⚠️ 最后确认：清空后数据无法恢复，确定吗？')) return;
+  state.memories.forEach(m => m._deleted = true);
+  saveState();
+  renderMemories();
+  updateSidebarCounts();
+  updateHeaderStats();
+  showToast('已清空全部记忆', 'success');
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    if (state.selectedIds.length) { state.selectedIds = []; renderMemories(); }
+    closeModal();
+  }
+  if (e.ctrlKey && e.key === 'a' && !e.target.matches('input,textarea')) {
+    e.preventDefault();
+    state.selectedIds = state.memories.filter(m => !m._deleted).map(m => m.id);
+    renderMemories();
+  }
+  if (e.ctrlKey && e.key === 'd' && state.selectedIds.length) {
+    e.preventDefault();
+    deleteSelected();
+  }
+});
+
+// ===== THEME TOGGLE =====
+function toggleTheme() {
+  const html = document.documentElement;
+  const isDark = html.getAttribute('data-theme') !== 'light';
+  html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  localStorage.setItem('clawmemory_theme', html.getAttribute('data-theme'));
+  document.querySelector('[onclick="toggleTheme()"]').textContent = isDark ? '☀️' : '🌙';
+}
+(function() {
+  const saved = localStorage.getItem('clawmemory_theme');
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+})();
 function saveState(isBackup) {
   const data = { memories: state.memories, savedAt: Date.now(), isBackup };
   localStorage.setItem('clawmemory_demo', JSON.stringify(data));
