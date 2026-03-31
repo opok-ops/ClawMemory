@@ -518,6 +518,7 @@ function init() {
     renderMemories();
     updateStats();
     initOnlineUsers();
+    updateExportBtn();
 }
 
 function loadMemories() {
@@ -558,6 +559,9 @@ function renderMemories() {
         return;
     }
     empty.style.display = 'none';
+    // Update export button state
+    var exportBtn = document.querySelector('.header-btn[onclick="exportData()"]');
+    if (exportBtn) exportBtn.disabled = memories.length === 0;
     grid.innerHTML = filtered.map(m => `
         <div class="memory-card">
             <div class="card-header">
@@ -572,6 +576,11 @@ function renderMemories() {
             </div>
         </div>
     `).join('');
+}
+
+function updateExportBtn() {
+    var exportBtn = document.querySelector('.header-btn[onclick="exportData()"]');
+    if (exportBtn) exportBtn.disabled = memories.length === 0;
 }
 
 function updateStats() {
@@ -624,6 +633,7 @@ function saveMemory() {
     saveMemories();
     renderMemories();
     updateStats();
+    updateExportBtn();
     closeModal();
 }
 
@@ -688,6 +698,10 @@ function autoCategorize(text) {
 
 // ===== IMPORT/EXPORT =====
 function exportData() {
+    if (memories.length === 0) {
+        alert('暂无记忆可导出');
+        return;
+    }
     const data = JSON.stringify(memories, null, 2);
     const blob = new Blob([data], {type:'application/json'});
     const url = URL.createObjectURL(blob);
