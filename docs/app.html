@@ -2,49 +2,51 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#04060d">
-<meta name="format-detection" content="telephone=no">
-<meta name="mobile-web-app-capable" content="yes">
-
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
 <title>ClawMemory - AI Agent 记忆中心</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg-void: #04060d; --bg-deep: #070b14; --bg-card: #0d1422;
-  --accent-cyan: #00d4ff; --accent-purple: #a855f7; --text-primary: #e2e8f0;
-  --text-secondary: #64748b; --border: rgba(0, 212, 255, 0.12);
+  --bg-void: #04060d; --bg-deep: #070b14; --bg-card: #0d1422; --bg-input: #0a1020;
+  --accent-cyan: #00d4ff; --accent-purple: #a855f7; --accent-pink: #f472b6;
+  --accent-green: #10b981; --accent-orange: #f59e0b; --accent-red: #ef4444;
+  --text-primary: #e2e8f0; --text-secondary: #64748b; --text-muted: #334155;
+  --border: rgba(0, 212, 255, 0.12); --border-hover: rgba(0, 212, 255, 0.3);
   --font-body: 'Segoe UI', sans-serif;
 }
+[data-theme="light"] {
+  --bg-void: #f0f4f8; --bg-deep: #e2e8f0; --bg-card: #ffffff; --bg-input: #f1f5f9;
+  --text-primary: #0f172a; --text-secondary: #475569; --border: rgba(0,0,0,0.1);
+}
 html { font-size: 16px; }
-body { background: var(--bg-void); color: var(--text-primary); font-family: var(--font-body); min-height: 100vh; margin: 0; }
+body { background: var(--bg-void); color: var(--text-primary); font-family: var(--font-body); min-height: 100vh; overflow-x: hidden; }
 .app-wrapper { display: flex; flex-direction: column; min-height: 100vh; }
 /* Header */
-.header { display: flex; position: relative; z-index: 10; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; background: rgba(4,6,13,0.85); border-bottom: 1px solid var(--border); }
+.header { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; background: rgba(4,6,13,0.85); border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 0.5rem; }
 .header-logo { display: flex; align-items: center; gap: 0.75rem; }
-.header-logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1rem; }
+.header-logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
 .header-title { font-size: 0.95rem; font-weight: 700; letter-spacing: 2px; }
 .header-title span { color: var(--accent-cyan); }
 .header-nav { display: flex; gap: 0.25rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 4px; }
 .header-nav button { padding: 0.35rem 1rem; border: none; border-radius: 7px; background: transparent; color: var(--text-secondary); font-size: 0.8rem; cursor: pointer; }
 .header-nav button:hover { color: var(--text-primary); }
 .header-nav button.active { background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); color: #fff; }
-.header-actions { display: flex; gap: 0.5rem; }
+.header-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .header-btn { padding: 0.35rem 1rem; border-radius: 8px; font-size: 0.8rem; border: 1px solid var(--border); background: transparent; color: var(--text-secondary); cursor: pointer; }
+.header-btn:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
 .header-btn.primary { background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border: none; color: #fff; }
-.online-users { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--text-secondary); padding: 0.25rem 0.75rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; margin-left: 0.5rem; }
-#online-count { color: #10b981; font-weight: 700; }
-.stat-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; animation: pulse 2s infinite; }
+.header-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.online-users { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--text-secondary); padding: 0.25rem 0.75rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; }
+#online-count { color: var(--accent-green); font-weight: 700; }
+.stat-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-green); animation: pulse 2s infinite; }
 @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
 /* Layout */
-.app-body { display: flex; flex: 1; overflow: hidden; position: relative; }
+.app-body { display: flex; flex: 1; overflow: hidden; }
 /* Sidebar */
-.sidebar { width: 240px; position: relative; z-index: 2; background: var(--bg-deep); border-right: 1px solid var(--border); padding: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
-.sidebar-btn { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; border: none; border-radius: 8px; background: var(--bg-card); color: var(--text-secondary); font-size: 0.85rem; cursor: pointer; text-align: left; }
-.sidebar-btn:hover { background: var(--bg-card); border-color: var(--accent-cyan); }
-.sidebar-btn { pointer-events: auto; position: relative; z-index: 3; cursor: pointer; border: 1px solid transparent; }
+.sidebar { width: 240px; background: var(--bg-deep); border-right: 1px solid var(--border); padding: 1rem; display: flex; flex-direction: column; gap: 0.5rem; position: relative; z-index: 2; }
+.sidebar-btn { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; border: 1px solid transparent; border-radius: 8px; background: var(--bg-card); color: var(--text-secondary); font-size: 0.85rem; cursor: pointer; text-align: left; transition: all 0.2s; }
+.sidebar-btn:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+.sidebar-btn.active { border-color: var(--accent-cyan); color: var(--accent-cyan); background: rgba(0,212,255,0.1); }
 .btn-icon { font-size: 1rem; }
 .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 1rem; }
 .stat-card { background: var(--bg-card); border-radius: 8px; padding: 0.75rem; text-align: center; }
@@ -52,21 +54,18 @@ body { background: var(--bg-void); color: var(--text-primary); font-family: var(
 .stat-label { font-size: 0.7rem; color: var(--text-secondary); margin-top: 0.25rem; }
 /* Main */
 .main { flex: 1; padding: 1.5rem; overflow-y: auto; position: relative; z-index: 1; }
-.toolbar { display: flex; gap: 0.75rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
-.toolbar-btn { padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.85rem; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 0.4rem; }
-.toolbar-btn:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
-.toolbar-btn.primary { background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border: none; color: #fff; }
-/* Search */
-.search-bar { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
-.search-input { flex: 1; padding: 0.6rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-size: 0.9rem; }
-.search-input:focus { outline: none; border-color: var(--accent-cyan); }
+.time-filter { display: flex; gap: 0.4rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+.time-btn { padding: 0.3rem 0.8rem; border-radius: 20px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); font-size: 0.78rem; cursor: pointer; transition: all 0.2s; }
+.time-btn:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+.time-btn.active { background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border-color: transparent; color: #fff; }
+.search-bar { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+.search-input { flex: 1; min-width: 200px; padding: 0.6rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-size: 0.9rem; }
 .search-select { padding: 0.6rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); font-size: 0.85rem; }
-/* Cards */
 .memory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
 .memory-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; transition: all 0.2s; }
 .memory-card:hover { border-color: var(--accent-cyan); transform: translateY(-2px); }
 .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; }
-.card-time { font-size: 0.75rem; color: var(--text-secondary); font-family: monospace; }
+.card-time { font-size: 0.75rem; color: var(--text-secondary); cursor: default; }
 .card-privacy { font-size: 0.65rem; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 600; }
 .card-privacy.PUBLIC { background: rgba(16, 185, 129, 0.2); color: #10b981; }
 .card-privacy.INTERNAL { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
@@ -79,11 +78,9 @@ body { background: var(--bg-void); color: var(--text-primary); font-family: var(
 .card-action { font-size: 0.75rem; color: var(--text-secondary); background: none; border: none; cursor: pointer; padding: 0.25rem 0.5rem; }
 .card-action:hover { color: var(--accent-cyan); }
 .card-action.danger:hover { color: #ef4444; }
-/* Empty */
 .empty-state { text-align: center; padding: 4rem 2rem; color: var(--text-secondary); }
 .empty-icon { font-size: 4rem; margin-bottom: 1rem; }
 .empty-text { font-size: 1.1rem; margin-bottom: 0.5rem; }
-.empty-hint { font-size: 0.85rem; opacity: 0.7; }
 /* Modal */
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; z-index: 100; }
 .modal-overlay.active { display: flex; }
@@ -92,343 +89,35 @@ body { background: var(--bg-void); color: var(--text-primary); font-family: var(
 .modal-title { font-size: 1.1rem; font-weight: 600; }
 .modal-close { background: none; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer; }
 .modal-body { padding: 1.5rem; overflow-y: auto; max-height: 60vh; }
-.modal-footer { display: flex; gap: 0.75rem; justify-content: flex-end; padding: 1rem 1.5rem; border-top: 1px solid var(--border); }
+.modal-footer { display: flex; gap: 0.75rem; justify-content: flex-end; padding: 1rem 1.5rem; border-top: 1px solid var(--border); flex-wrap: wrap; }
 .form-group { margin-bottom: 1rem; }
 .form-label { display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.4rem; }
 .form-input, .form-textarea, .form-select { width: 100%; padding: 0.6rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-size: 0.9rem; }
 .form-textarea { min-height: 120px; resize: vertical; }
-.form-input:focus, .form-textarea:focus, .form-select:focus { outline: none; border-color: var(--accent-cyan); }
 .radio-group { display: flex; gap: 1rem; flex-wrap: wrap; }
 .radio-label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer; }
-
-
-/* ===== SAFARI / iOS FIXES ===== */
-@supports not (backdrop-filter: blur(20px)) {
-  .header { background: rgba(4,6,13,0.95); }
-}
-@supports (-webkit-touch-callout: none) {
-  body { -webkit-tap-highlight-color: transparent; }
-  button, .sidebar-btn, .memory-card, .toolbar-btn { -webkit-tap-highlight-color: transparent; }
-}
-input, textarea, select { font-size: 16px !important; }
-
-
-/* ===== RESPONSIVE / MOBILE ===== */
-.sidebar.collapsed { display: none !important; }
-.sidebar-toggle { background: none; border: none; color: var(--text-primary); font-size: 1.25rem; cursor: pointer; margin-right: 0.5rem; }
+.toolbar-btn { padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.85rem; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 0.4rem; }
+.toolbar-btn:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+.toolbar-btn.primary { background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border: none; color: #fff; }
+mark { background: rgba(245, 158, 11, 0.4); color: inherit; padding: 0 2px; border-radius: 2px; }
+/* Mobile */
 @media (max-width: 768px) {
-  .header { flex-wrap: wrap; padding: 0.5rem 1rem; }
-  .header-nav { order: 3; width: 100%; justify-content: center; }
-  .header-actions { order: 4; width: 100%; flex-wrap: wrap; justify-content: center; }
-  .online-users { order: 5; width: 100%; justify-content: center; }
-  .app-body { flex-direction: column; }
-  .sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; gap: 0.3rem; padding: 0.75rem; border-right: none; border-bottom: 1px solid var(--border); }
-  .sidebar-btn { flex: 0 0 auto; padding: 0.4rem 0.8rem; font-size: 0.8rem; }
-  .sidebar-btn .btn-text { display: inline; }
-  .stats-grid { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-  .stat-card { flex: 1; min-width: 60px; }
+  .header { flex-direction: column; padding: 0.5rem; }
+  .header-nav, .header-actions { width: 100%; justify-content: center; }
+  .sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--border); padding: 0.5rem; }
+  .sidebar-btn { flex: 0 0 auto; padding: 0.4rem 0.6rem; font-size: 0.75rem; }
   .stats-grid { display: none; }
-  .main { padding: 1rem; }
+  .main { padding: 0.75rem; }
   .memory-grid { grid-template-columns: 1fr; }
-  .search-bar { flex-direction: column; }
-  .modal { width: 95%; margin: 1rem; max-height: 90vh; }
-  .modal-body { max-height: 70vh; }
+  .time-filter { overflow-x: auto; }
 }
-
-
-@supports (padding: env(safe-area-inset-top)) {
-  .header { padding-top: max(0.75rem, env(safe-area-inset-top)); }
-}
-
-
-html { overflow: hidden; height: 100%; }
-body { overflow: auto; height: 100%; -webkit-overflow-scrolling: touch; }
-
-
-.sidebar-btn.active { border-color: var(--accent-cyan); color: var(--accent-cyan); background: rgba(0,212,255,0.1); }
-
-
-/* ===== MOBILE OPTIMIZATION ===== */
-.sidebar.collapsed { display: none !important; }
-.sidebar-toggle { background: none; border: none; color: var(--text-primary); font-size: 1.25rem; cursor: pointer; margin-right: 0.5rem; }
-@media (max-width: 768px) {
-  /* Header - stack vertically on very small screens */
-  .header {
-    padding: 0.5rem 0.75rem !important;
-    flex-wrap: wrap !important;
-    gap: 0.5rem !important;
-  }
-  
-  .header-logo { flex-shrink: 0; }
-  .header-logo-icon { width: 28px; height: 28px; font-size: 0.9rem; }
-  .header-title { font-size: 0.85rem !important; letter-spacing: 1px; }
-  
-  /* Nav buttons - smaller */
-  .header-nav { 
-    order: 3; 
-    width: 100%; 
-    justify-content: center; 
-    padding: 3px !important;
-  }
-  .header-nav button {
-    padding: 0.25rem 0.6rem !important;
-    font-size: 0.7rem !important;
-  }
-  
-  /* Actions - wrap and center */
-  .header-actions { 
-    order: 2; 
-    width: 100%; 
-    justify-content: center; 
-    flex-wrap: wrap;
-    gap: 0.3rem !important;
-  }
-  .header-btn {
-    padding: 0.25rem 0.5rem !important;
-    font-size: 0.7rem !important;
-  }
-  
-  /* Online users - smaller badge */
-  .online-users {
-    order: 4;
-    width: 100%;
-    justify-content: center;
-    font-size: 0.7rem !important;
-    padding: 0.2rem 0.5rem !important;
-    margin-left: 0 !important;
-    margin-top: 0.25rem;
-  }
-  
-  /* Sidebar - horizontal scrollable */
-  .sidebar {
-    width: 100% !important;
-    flex-direction: row !important;
-    flex-wrap: nowrap !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    -webkit-overflow-scrolling: touch;
-    padding: 0.5rem !important;
-    gap: 0.4rem !important;
-    border-right: none !important;
-    border-bottom: 1px solid var(--border) !important;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-  .sidebar::-webkit-scrollbar { display: none; }
-  
-  .sidebar-btn {
-    flex: 0 0 auto !important;
-    white-space: nowrap;
-    padding: 0.4rem 0.6rem !important;
-    font-size: 0.75rem !important;
-  }
-  .sidebar-btn .btn-text { display: inline !important; }
-  
-  /* Hide stats on mobile sidebar to save space */
-  .stats-grid { display: none !important; }
-  
-  /* Main content - full width */
-  .main {
-    padding: 0.75rem !important;
-  }
-  
-  /* Memory cards - single column */
-  .memory-grid {
-    grid-template-columns: 1fr !important;
-    gap: 0.75rem !important;
-  }
-  
-  .memory-card {
-    padding: 0.75rem !important;
-    border-radius: 8px !important;
-  }
-  
-  .card-content {
-    font-size: 0.85rem !important;
-    line-height: 1.5 !important;
-  }
-  
-  .card-tags { gap: 0.3rem !important; }
-  .card-tag { font-size: 0.65rem !important; padding: 0.15rem 0.4rem !important; }
-  
-  .card-actions { gap: 0.3rem !important; }
-  .card-action { font-size: 0.7rem !important; padding: 0.2rem 0.4rem !important; }
-  
-  /* Search bar - stack vertically */
-  .search-bar {
-    flex-direction: column !important;
-    gap: 0.5rem !important;
-  }
-  .search-input, .search-select {
-    font-size: 1rem !important;
-    padding: 0.5rem 0.75rem !important;
-  }
-  
-  /* Modal - full screen on mobile */
-  .modal {
-    width: 100% !important;
-    height: 100% !important;
-    max-width: 100% !important;
-    max-height: 100% !important;
-    border-radius: 0 !important;
-    margin: 0 !important;
-  }
-  .modal-overlay { padding: 0 !important; }
-  .modal-body {
-    max-height: 70vh !important;
-    padding: 1rem !important;
-  }
-  .modal-footer { padding: 0.75rem 1rem !important; flex-wrap: wrap; }
-  .modal-footer .toolbar-btn { flex: 1; min-width: 80px; }
-  
-  /* Form inputs - prevent zoom */
-  .form-input, .form-textarea, .form-select {
-    font-size: 16px !important;
-    padding: 0.6rem 0.75rem !important;
-  }
-  .form-textarea { min-height: 100px !important; }
-  
-  /* Empty state */
-  .empty-state { padding: 2rem 1rem !important; }
-  .empty-icon { font-size: 3rem !important; }
-  .empty-text { font-size: 1rem !important; }
-}
-
-/* Very small screens (iPhone SE) */
-@media (max-width: 360px) {
-  .header-title { font-size: 0.75rem !important; }
-  .header-nav button { padding: 0.2rem 0.4rem !important; font-size: 0.65rem !important; }
-  .header-btn { padding: 0.2rem 0.4rem !important; font-size: 0.65rem !important; }
-}
-
-/* Landscape mobile */
-@media (max-height: 500px) and (orientation: landscape) {
-  .header { padding: 0.25rem 0.5rem !important; }
-  .sidebar { padding: 0.25rem !important; }
-  .sidebar-btn { padding: 0.25rem 0.5rem !important; }
-  .main { padding: 0.5rem !important; }
-}
-
-/* Touch improvements */
-@media (hover: none) and (pointer: coarse) {
-  button, .sidebar-btn, .memory-card, .toolbar-btn, .card-action, .header-btn {
-    -webkit-tap-highlight-color: rgba(0, 212, 255, 0.2) !important;
-    min-height: 44px;
-    min-width: 44px;
-  }
-  
-  /* Larger tap targets */
-  .header-nav button { min-height: 36px; }
-  .sidebar-btn { min-height: 40px; }
-  .card-action { min-height: 36px; }
-  
-  /* Active state feedback */
-  button:active, .sidebar-btn:active, .toolbar-btn:active {
-    opacity: 0.7;
-    transform: scale(0.98);
-  }
-}
-
-/* Safe area for notched phones */
-@supports (padding: env(safe-area-inset-top)) {
-  .header {
-    padding-top: max(0.75rem, env(safe-area-inset-top)) !important;
-    padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
-    padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
-  }
-  .sidebar {
-    padding-bottom: max(0.5rem, env(safe-area-inset-bottom)) !important;
-    padding-left: max(0.5rem, env(safe-area-inset-left)) !important;
-    padding-right: max(0.5rem, env(safe-area-inset-right)) !important;
-  }
-  .main {
-    padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
-    padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
-    padding-bottom: max(0.75rem, env(safe-area-inset-bottom)) !important;
-  }
-}
-
-/* iOS-specific */
-@supports (-webkit-touch-callout: none) {
-  html { height: -webkit-fill-available; }
-  body { min-height: -webkit-fill-available; }
-  
-  /* Prevent pull-to-refresh and bounce */
-  body {
-    overflow: hidden;
-    position: fixed;
-    width: 100%;
-    height: 100%;
-  }
-  .app-wrapper {
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    height: 100%;
-  }
-}
-
-
-/* ===== TIME FILTER ===== */
-.time-filter {
-    display: flex;
-    gap: 0.4rem;
-    margin-bottom: 0.75rem;
-    flex-wrap: wrap;
-}
-.time-btn {
-    padding: 0.3rem 0.8rem;
-    border-radius: 20px;
-    border: 1px solid var(--border);
-    background: var(--bg-card);
-    color: var(--text-secondary);
-    font-size: 0.78rem;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-.time-btn:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
-.time-btn.active {
-    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
-    border-color: transparent;
-    color: #fff;
-}
-
-/* ===== RELATIVE TIME ===== */
-.card-time { cursor: default; }
-.card-time:hover .abs-time { display: inline; }
-.abs-time { display: none; font-size: 0.7rem; color: var(--text-secondary); margin-left: 0.3rem; }
-
-/* ===== PINNED CARD ===== */
-.memory-card.pinned {
-    border-color: rgba(168, 85, 247, 0.4);
-    box-shadow: 0 0 12px rgba(168, 85, 247, 0.15);
-}
-
-@media (max-width: 768px) {
-    .time-filter { gap: 0.3rem; }
-    .time-btn { padding: 0.25rem 0.6rem; font-size: 0.72rem; }
-}
-
 </style>
-
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#04060d">
-<meta name="apple-mobile-web-app-title" content="ClawMemory">
-<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
 </head>
 <body>
 <div class="app-wrapper">
 <div class="header">
-<button class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('collapsed')" style="display:none;background:none;border:none;color:var(--text-primary);font-size:1.25rem;cursor:pointer;margin-right:0.5rem;">☰</button>
-<div class="header-logo">
-<div class="header-logo-icon">🧠</div>
-<div class="header-title">ClawMemory <span>v1.5.1</span></div>
-</div>
-<nav class="header-nav">
-<button class="active" onclick="showView('memories')">记忆</button>
-<button onclick="showView('stats')">统计</button>
-<button onclick="showView('privacy')">隐私</button>
-</nav>
+<div class="header-logo"><div class="header-logo-icon">🧠</div><div class="header-title">ClawMemory <span>v1.5.1</span></div></div>
+<nav class="header-nav"><button class="active" onclick="showView('memories')">记忆</button><button onclick="showView('stats')">统计</button><button onclick="showView('privacy')">隐私</button></nav>
 <div class="header-actions">
 <span class="online-users"><span class="stat-dot"></span><span id="online-count">--</span> 人在线</span>
 <button class="header-btn" onclick="importData()">📥 导入</button>
@@ -438,382 +127,103 @@ body { overflow: auto; height: 100%; -webkit-overflow-scrolling: touch; }
 </div>
 <div class="app-body">
 <aside class="sidebar">
-<button class="sidebar-btn" onclick="filterByCategory(null, this)" data-filter="all"><span class="btn-icon">📋</span><span>全部</span></button>
-<button class="sidebar-btn" onclick="filterByCategory('学习')"><span class="btn-icon">📖</span><span>学习</span></button>
-<button class="sidebar-btn" onclick="filterByCategory('工作')"><span class="btn-icon">💼</span><span>工作</span></button>
-<button class="sidebar-btn" onclick="filterByCategory('生活')"><span class="btn-icon">🏠</span><span>生活</span></button>
-<button class="sidebar-btn" onclick="filterByCategory('创意')"><span class="btn-icon">💡</span><span>创意</span></button>
-<button class="sidebar-btn" onclick="filterByCategory('事实')"><span class="btn-icon">📌</span><span>事实</span></button>
+<button class="sidebar-btn active" data-cat="" onclick="filterByCategory(this, '')"><span class="btn-icon">📋</span><span>全部</span></button>
+<button class="sidebar-btn" data-cat="学习" onclick="filterByCategory(this, '学习')"><span class="btn-icon">📖</span><span>学习</span></button>
+<button class="sidebar-btn" data-cat="工作" onclick="filterByCategory(this, '工作')"><span class="btn-icon">💼</span><span>工作</span></button>
+<button class="sidebar-btn" data-cat="生活" onclick="filterByCategory(this, '生活')"><span class="btn-icon">🏠</span><span>生活</span></button>
+<button class="sidebar-btn" data-cat="创意" onclick="filterByCategory(this, '创意')"><span class="btn-icon">💡</span><span>创意</span></button>
+<button class="sidebar-btn" data-cat="事实" onclick="filterByCategory(this, '事实')"><span class="btn-icon">📌</span><span>事实</span></button>
 <hr style="border:none;border-top:1px solid var(--border);margin:0.5rem 0">
 <button class="sidebar-btn" onclick="window.organizeMemories()" style="background:linear-gradient(135deg,rgba(168,85,247,0.2),rgba(0,212,255,0.2))"><span class="btn-icon">🤖</span><span>AI 整理</span></button>
-<div class="stats-grid">
-<div class="stat-card"><div class="stat-num" id="stat-total">0</div><div class="stat-label">总记忆</div></div>
-<div class="stat-card"><div class="stat-num" id="stat-learn">0</div><div class="stat-label">学习</div></div>
-<div class="stat-card"><div class="stat-num" id="stat-work">0</div><div class="stat-label">工作</div></div>
-<div class="stat-card"><div class="stat-num" id="stat-life">0</div><div class="stat-label">生活</div></div>
-</div>
+<div class="stats-grid"><div class="stat-card"><div class="stat-num" id="stat-total">0</div><div class="stat-label">总记忆</div></div><div class="stat-card"><div class="stat-num" id="stat-learn">0</div><div class="stat-label">学习</div></div><div class="stat-card"><div class="stat-num" id="stat-work">0</div><div class="stat-label">工作</div></div><div class="stat-card"><div class="stat-num" id="stat-life">0</div><div class="stat-label">生活</div></div></div>
 </aside>
 <main class="main">
-<div class="time-filter" id="time-filter">
-<button class="time-btn active" onclick="setTimeFilter('all', this)">全部</button>
-<button class="time-btn" onclick="setTimeFilter('today', this)">今天</button>
-<button class="time-btn" onclick="setTimeFilter('week', this)">本周</button>
-<button class="time-btn" onclick="setTimeFilter('month', this)">本月</button>
-</div>
-<div class="search-bar">
-<input type="text" class="search-input" id="search-input" placeholder="搜索记忆..." oninput="searchMemories()">
-<select class="search-select" id="privacy-filter" onchange="searchMemories()">
-<option value="">全部隐私</option>
-<option value="PUBLIC">公开</option>
-<option value="INTERNAL">内部</option>
-<option value="PRIVATE">私有</option>
-<option value="STRICT">机密</option>
-</select>
-</div>
+<div class="time-filter"><button class="time-btn active" onclick="setTimeFilter(this, 'all')">全部</button><button class="time-btn" onclick="setTimeFilter(this, 'today')">今天</button><button class="time-btn" onclick="setTimeFilter(this, 'week')">本周</button><button class="time-btn" onclick="setTimeFilter(this, 'month')">本月</button></div>
+<div class="search-bar"><input type="text" class="search-input" id="search-input" placeholder="搜索记忆..." oninput="searchMemories()"><select class="search-select" id="privacy-filter" onchange="searchMemories()"><option value="">全部隐私</option><option value="PUBLIC">公开</option><option value="INTERNAL">内部</option><option value="PRIVATE">私有</option><option value="STRICT">机要</option></select></div>
 <div class="memory-grid" id="memory-grid"></div>
-<div class="empty-state" id="empty-state">
-<div class="empty-icon">🧠</div>
-<div class="empty-text">还没有记忆</div>
-<div class="empty-hint">点击右上角添加第一条记忆</div>
-</div>
+<div class="empty-state" id="empty-state"><div class="empty-icon">🧠</div><div class="empty-text">还没有记忆</div></div>
 </main>
 </div>
 </div>
-<!-- Add/Edit Modal -->
+<!-- Modal -->
 <div class="modal-overlay" id="modal-overlay">
 <div class="modal">
-<div class="modal-header">
-<div class="modal-title" id="modal-title">添加记忆</div>
-<button class="modal-close" onclick="closeModal()">&times;</button>
-</div>
+<div class="modal-header"><div class="modal-title" id="modal-title">添加记忆</div><button class="modal-close" onclick="closeModal()">×</button></div>
 <div class="modal-body">
 <input type="hidden" id="edit-id">
 <div class="form-group"><label class="form-label">内容</label><textarea class="form-textarea" id="input-content" placeholder="记录你的想法、见闻、学习心得..."></textarea></div>
 <div class="form-group"><label class="form-label">标签（用逗号分隔）</label><input type="text" class="form-input" id="input-tags" placeholder="学习, 工作, 创意"></div>
-<div class="form-group"><label class="form-label">日期（可选，默认今天）</label><input type="date" class="form-input" id="input-date"></div>
+<div class="form-group"><label class="form-label">日期（可选）</label><input type="date" class="form-input" id="input-date"></div>
 <div class="form-group"><label class="form-label">隐私级别</label>
-<div class="radio-group">
-<label class="radio-label"><input type="radio" name="privacy" value="PUBLIC" checked> 公开</label>
-<label class="radio-label"><input type="radio" name="privacy" value="INTERNAL"> 内部</label>
-<label class="radio-label"><input type="radio" name="privacy" value="PRIVATE"> 私有</label>
-<label class="radio-label"><input type="radio" name="privacy" value="STRICT"> 机要</label>
+<div class="radio-group"><label class="radio-label"><input type="radio" name="privacy" value="PUBLIC" checked> 公开</label><label class="radio-label"><input type="radio" name="privacy" value="INTERNAL"> 内部</label><label class="radio-label"><input type="radio" name="privacy" value="PRIVATE"> 私有</label><label class="radio-label"><input type="radio" name="privacy" value="STRICT"> 机要</label></div>
 </div>
 </div>
-</div>
-<div class="modal-footer">
-<button class="toolbar-btn" onclick="closeModal()">取消</button>
-<button class="toolbar-btn primary" onclick="saveMemory()">保存</button>
-</div>
+<div class="modal-footer"><button class="toolbar-btn" onclick="closeModal()">取消</button><button class="toolbar-btn primary" onclick="saveMemory()">保存</button></div>
 </div>
 </div>
 <script>
-// ===== STATE =====
-let memories = [];
-let currentFilter = null;
-let searchQuery = '';
-
-// ===== INIT =====
-function init() {
-    loadMemories();
-    renderMemories();
-    updateStats();
-    initOnlineUsers();
-    updateExportBtn();
-}
-
+var memories = [];
+var currentFilter = '';
+var currentTimeFilter = 'all';
+var searchQuery = '';
+function init() { loadMemories(); renderMemories(); updateStats(); initOnlineUsers(); updateExportBtn(); }
 function loadMemories() {
-    const saved = localStorage.getItem('clawmemory_memories');
-    if (saved) {
-        memories = JSON.parse(saved);
-    } else {
-        // Demo data
-        memories = [
-            {id: '1', content: '今天完成 ClawMemory v1.3 的核心架构设计，包括加密引擎、存储引擎、索引引擎和隐私引擎。整体采用分层模块化设计。', tags: '架构,设计,AI', privacy: 'PUBLIC', created: Date.now()-86400000*2, category: '工作'},
-            {id: '2', content: 'Q2 产品路线图：4月完成 v1.5-v1.8 迭代，月开放内测 v2.0-beta，月正式发布 v2.0。关键技术风险：向量检索性能优化和跨设备同步协议设计。', tags: '产品,路线图', privacy: 'INTERNAL', created: Date.now()-86400000*5, category: '工作'},
-            {id: '3', content: '学习 Transformer 架构：Self-Attention 机制、多头注意力、位置编码。理解了大语言模型是如何通过海量文本训练得到语义理解的。', tags: '学习,AI,Transformer', privacy: 'PUBLIC', created: Date.now()-86400000*7, category: '学习'},
-            {id: '4', content: '灵感：可以做一个小程序，让用户用自然语言描述日程，自动生成结构化的待办事项列表。结合 AI 整理功能效果更好。', tags: '创意,产品,AI', privacy: 'PUBLIC', created: Date.now()-86400000*3, category: '创意'}
-        ];
-    }
+    var saved = localStorage.getItem('clawmemory_memories');
+    if (saved) { memories = JSON.parse(saved); }
+    else { memories = [
+        {id:'1',content:'今天完成 ClawMemory v1.3 的核心架构设计，包括加密引擎、存储引擎、索引引擎和隐私引擎。整体采用分层模块化设计。',tags:'架构,设计,AI',privacy:'PUBLIC',created:Date.now()-86400000*2,category:'工作'},
+        {id:'2',content:'Q2 产品路线图：4月完成 v1.5-v1.8 迭代，月开放内测 v2.0-beta，月正式发布 v2.0。关键技术风险：向量检索性能优化和跨设备同步协议设计。',tags:'产品,路线图',privacy:'INTERNAL',created:Date.now()-86400000*5,category:'工作'},
+        {id:'3',content:'学习 Transformer 架构：Self-Attention 机制、多头注意力、位置编码。理解了大语言模型是如何通过海量文本训练得到语义理解的。',tags:'学习,AI,Transformer',privacy:'PUBLIC',created:Date.now()-86400000*7,category:'学习'},
+        {id:'4',content:'灵感：可以做一个小程序，让用户用自然语言描述日程，自动生成结构化的待办事项列表。结合 AI 整理功能效果更好。',tags:'创意,产品,AI',privacy:'PUBLIC',created:Date.now()-86400000*3,category:'创意'}
+    ]; }
 }
-
-function saveMemories() {
-    localStorage.setItem('clawmemory_memories', JSON.stringify(memories));
-}
-
-// ===== RENDER =====
+function saveMemories() { localStorage.setItem('clawmemory_memories', JSON.stringify(memories)); }
 function renderMemories() {
-    let filtered = memories;
-    if (currentFilter) filtered = filtered.filter(m => m.category === currentFilter);
-    if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        filtered = filtered.filter(m => 
-            m.content.toLowerCase().includes(q) || 
-            (m.tags && m.tags.toLowerCase().includes(q))
-        );
-    }
-    const grid = document.getElementById('memory-grid');
-    const empty = document.getElementById('empty-state');
-    if (filtered.length === 0) {
-        grid.innerHTML = '';
-        empty.style.display = 'block';
-        return;
-    }
-    empty.style.display = 'none';
-    // Update export button state
-    var exportBtn = document.querySelector('.header-btn[onclick="exportData()"]');
-    if (exportBtn) exportBtn.disabled = memories.length === 0;
-    grid.innerHTML = filtered.map(m => `
-        <div class="memory-card">
-            <div class="card-header">
-                <span class="card-time">${formatTime(m.created)}</span>
-                <span class="card-privacy ${m.privacy}">${getPrivacyLabel(m.privacy)}</span>
-            </div>
-            <div class="card-content">${escapeHtml(m.content)}</div>
-            <div class="card-tags">${(m.tags||'').split(',').filter(t=>t).map(t=>`<span class="card-tag">${escapeHtml(t)}</span>`).join('')}</div>
-            <div class="card-actions">
-                <button class="card-action" onclick="editMemory('${m.id}')">编辑</button>
-                <button class="card-action danger" onclick="deleteMemory('${m.id}')">删除</button>
-            </div>
-        </div>
-    `).join('');
-}
-
-function updateExportBtn() {
-    var exportBtn = document.querySelector('.header-btn[onclick="exportData()"]');
-    if (exportBtn) exportBtn.disabled = memories.length === 0;
-}
-
-function updateStats() {
-    document.getElementById('stat-total').textContent = memories.length;
-    document.getElementById('stat-learn').textContent = memories.filter(m=>m.category==='学习').length;
-    document.getElementById('stat-work').textContent = memories.filter(m=>m.category==='工作').length;
-    document.getElementById('stat-life').textContent = memories.filter(m=>m.category==='生活').length;
-}
-
-// ===== ACTIONS =====
-function showAddModal() {
-    document.getElementById('modal-title').textContent = '添加记忆';
-    document.getElementById('edit-id').value = '';
-    document.getElementById('input-content').value = '';
-    document.getElementById('input-tags').value = '';
-    document.querySelector('input[name="privacy"][value="PUBLIC"]').checked = true;
-    var today = new Date().toISOString().split('T')[0];
-    document.getElementById('input-date').value = today;
-    document.getElementById('modal-overlay').classList.add('active');
-}
-
-function closeModal() {
-    document.getElementById('modal-overlay').classList.remove('active');
-}
-
-function saveMemory() {
-    const content = document.getElementById('input-content').value.trim();
-    if (!content) return alert('请输入内容');
-    const tags = document.getElementById('input-tags').value.trim();
-    const privacy = document.querySelector('input[name="privacy"]:checked').value;
-    const editId = document.getElementById('edit-id').value;
-    const dateInput = document.getElementById('input-date').value;
-    const customDate = dateInput ? new Date(dateInput).getTime() : Date.now();
-    
-    // Auto-categorize
-    const category = autoCategorize(content);
-    
-    if (editId) {
-        const idx = memories.findIndex(m => m.id === editId);
-        if (idx !== -1) {
-            memories[idx] = {...memories[idx], content, tags, privacy, category, modified: Date.now()};
-        }
-    } else {
-        memories.unshift({
-            id: Date.now().toString(36) + Math.random().toString(36).substr(2,5),
-            content, tags, privacy, category,
-            created: customDate
+    var filtered = memories;
+    if (currentFilter) filtered = filtered.filter(function(m){return m.category===currentFilter;});
+    if (currentTimeFilter!=='all') {
+        var now=Date.now(),startOfDay=new Date();startOfDay.setHours(0,0,0,0);
+        var startOfWeek=new Date(startOfDay);startOfWeek.setDate(startOfDay.getDate()-startOfDay.getDay());
+        var startOfMonth=new Date(startOfDay);startOfMonth.setDate(1);
+        filtered=filtered.filter(function(m){
+            if(currentTimeFilter==='today')return m.created>=startOfDay.getTime();
+            if(currentTimeFilter==='week')return m.created>=startOfWeek.getTime();
+            if(currentTimeFilter==='month')return m.created>=startOfMonth.getTime();
+            return true;
         });
     }
-    saveMemories();
-    renderMemories();
-    updateStats();
-    updateExportBtn();
-    closeModal();
-}
-
-function editMemory(id) {
-    const m = memories.find(x => x.id === id);
-    if (!m) return;
-    document.getElementById('modal-title').textContent = '编辑记忆';
-    document.getElementById('edit-id').value = m.id;
-    document.getElementById('input-content').value = m.content;
-    document.getElementById('input-tags').value = m.tags || '';
-    document.querySelector(`input[name="privacy"][value="${m.privacy}"]`).checked = true;
-    document.getElementById('modal-overlay').classList.add('active');
-}
-
-function deleteMemory(id) {
-    if (!confirm('确定删除？')) return;
-    memories = memories.filter(m => m.id !== id);
-    saveMemories();
-    renderMemories();
-    updateStats();
-}
-
-function filterByCategory(cat, el) {
-    currentFilter = cat;
-    document.querySelectorAll('.sidebar-btn[data-filter]').forEach(function(b) { b.classList.remove('active'); });
-    if (el) el.classList.add('active');
-    renderMemories();
-}
-
-function searchMemories() {
-    searchQuery = document.getElementById('search-input').value.trim();
-    renderMemories();
-}
-
-function showView(view) {
-    document.querySelectorAll('.header-nav button').forEach(b => b.classList.remove('active'));
-    event.target.classList.add('active');
-}
-
-// ===== UTILS =====
-function formatTime(ts) {
-    const d = new Date(ts);
-    return d.toLocaleDateString('zh-CN') + ' ' + d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
-}
-
-function getPrivacyLabel(p) {
-    const map = {PUBLIC:'公开',INTERNAL:'内部',PRIVATE:'私有',STRICT:'机要'};
-    return map[p]||p;
-}
-
-function escapeHtml(t) {
-    return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function autoCategorize(text) {
-    const rules = {工作:['工作','项目','代码','开发','会议','任务'],学习:['学习','读书','课程','知识'],生活:['生活','吃饭','睡觉','运动'],创意:['创意','想法','灵感'],事实:['事实','事件','今天']};
-    for (const [cat,kws] of Object.entries(rules)) {
-        if (kws.some(k=>text.includes(k))) return cat;
+    if(searchQuery){
+        var q=searchQuery.toLowerCase();
+        filtered=filtered.filter(function(m){return m.content.toLowerCase().includes(q)||(m.tags&&m.tags.toLowerCase().includes(q));});
     }
-    return '事实';
+    var grid=document.getElementById('memory-grid');
+    var empty=document.getElementById('empty-state');
+    if(filtered.length===0){grid.innerHTML='';empty.style.display='block';return;}
+    empty.style.display='none';
+    grid.innerHTML=filtered.map(function(m){return '<div class="memory-card"><div class="card-header"><span class="card-time">'+relativeTime(m.created)+'</span><span class="card-privacy '+m.privacy+'">'+getPrivacyLabel(m.privacy)+'</span></div><div class="card-content">'+highlightSearch(escapeHtml(m.content))+'</div><div class="card-tags">'+(m.tags||'').split(',').filter(function(t){return t;}).map(function(t){return'<span class="card-tag">'+escapeHtml(t)+'</span>';}).join('')+'</div><div class="card-actions"><button class="card-action" onclick="editMemory(\''+m.id+'\')">编辑</button><button class="card-action danger" onclick="deleteMemory(\''+m.id+'\')">删除</button></div></div>';}).join('');
 }
-
-// ===== IMPORT/EXPORT =====
-function exportData() {
-    if (memories.length === 0) {
-        alert('暂无记忆可导出');
-        return;
-    }
-    const data = JSON.stringify(memories, null, 2);
-    const blob = new Blob([data], {type:'application/json'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'clawmemory_export_' + new Date().toISOString().slice(0,10) + '.json';
-    a.click();
-}
-
-function importData() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = e => {
-        const file = e.target.files[0];
-        const reader = new FileReader();
-        reader.onload = ev => {
-            try {
-                const imported = JSON.parse(ev.target.result);
-                if (Array.isArray(imported)) {
-                    memories = [...imported, ...memories];
-                    saveMemories();
-                    renderMemories();
-                    updateStats();
-                    alert('导入成功');
-                }
-            } catch(err) {
-                alert('导入失败: ' + err.message);
-            }
-        };
-        reader.readAsText(file);
-    };
-    input.click();
-}
-
-// ===== DEMO =====
-
-
-// ===== ONLINE USERS =====
-function initOnlineUsers() {
-    const STORAGE_KEY = 'clawmemory_online';
-    const USER_KEY = 'clawmemory_user';
-    let userId = localStorage.getItem(USER_KEY);
-    if (!userId) {
-        userId = 'user_' + Math.random().toString(36).substr(2,9);
-        localStorage.setItem(USER_KEY, userId);
-    }
-    function update() {
-        const now = Date.now();
-        let users = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-        Object.keys(users).forEach(id => { if (now - users[id] > 5*60000) delete users[id]; });
-        users[userId] = now;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
-        const count = Object.keys(users).length + Math.floor(Math.random()*20) + 10;
-        document.getElementById('online-count').textContent = count;
-    }
-    update();
-    setInterval(update, 30000);
-}
-
-// ===== AI ORGANIZE =====
-window.organizeMemories = function() {
-    if (memories.length === 0) return alert('暂无记忆');
-    const keywords = {工作:['工作','项目','代码','开发'],学习:['学习','读书','课程'],生活:['生活','吃饭','运动'],创意:['创意','想法'],事实:['事实','事件']};
-    const clusters = {}; Object.keys(keywords).forEach(k => clusters[k] = []);
-    memories.forEach(m => {
-        const text = m.content + (m.tags||'');
-        for (const [cat,kws] of Object.entries(keywords)) {
-            if (kws.some(k=>text.includes(k))) { clusters[cat].push(m); break; }
-        }
-    });
-    let result = '🎯 AI 整理建议:\n\n';
-    for (const [cat,list] of Object.entries(clusters)) {
-        if (list.length > 1) result += `📁 ${cat} (${list.length}条): 可合并为 ${Math.ceil(list.length/2)} 条\n`;
-    }
-    const uncategorized = memories.filter(m => !Object.values(clusters).flat().includes(m));
-    if (uncategorized.length > 3) result += `📌 未分类 (${uncategorized.length}条): 建议添加标签\n`;
-    alert(result);
-};
-
-
-// ===== TIME FILTER =====
-var currentTimeFilter = 'all';
-
-function setTimeFilter(filter, el) {
-    currentTimeFilter = filter;
-    document.querySelectorAll('.time-btn').forEach(function(b) { b.classList.remove('active'); });
-    if (el) el.classList.add('active');
-    renderMemories();
-}
-
-// ===== RELATIVE TIME =====
-function relativeTime(ts) {
-    var now = Date.now();
-    var diff = now - ts;
-    var sec = Math.floor(diff / 1000);
-    var min = Math.floor(sec / 60);
-    var hr = Math.floor(min / 60);
-    var day = Math.floor(hr / 24);
-    var week = Math.floor(day / 7);
-    var month = Math.floor(day / 30);
-    if (sec < 60) return '刚刚';
-    if (min < 60) return min + '分钟前';
-    if (hr < 24) return hr + '小时前';
-    if (day === 1) return '昨天';
-    if (day < 7) return day + '天前';
-    if (week < 5) return week + '周前';
-    if (month < 12) return month + '个月前';
-    return Math.floor(month/12) + '年前';
-}
-
-document.addEventListener('DOMContentLoaded', function() { init(); initMobileSidebar(); });
+function updateStats(){document.getElementById('stat-total').textContent=memories.length;document.getElementById('stat-learn').textContent=memories.filter(function(m){return m.category==='学习';}).length;document.getElementById('stat-work').textContent=memories.filter(function(m){return m.category==='工作';}).length;document.getElementById('stat-life').textContent=memories.filter(function(m){return m.category==='生活';}).length;}
+function filterByCategory(el,cat){currentFilter=cat;document.querySelectorAll('.sidebar-btn').forEach(function(b){b.classList.remove('active');});if(el)el.classList.add('active');renderMemories();}
+function setTimeFilter(el,f){currentTimeFilter=f;document.querySelectorAll('.time-btn').forEach(function(b){b.classList.remove('active');});if(el)el.classList.add('active');renderMemories();}
+function searchMemories(){searchQuery=document.getElementById('search-input').value.trim();renderMemories();}
+function highlightSearch(text){if(!searchQuery)return text;var q=searchQuery.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');return text.replace(new RegExp('('+q+')','gi'),'<mark>$1</mark>');}
+function showView(v){document.querySelectorAll('.header-nav button').forEach(function(b){b.classList.remove('active');});event.target.classList.add('active');}
+function showAddModal(){document.getElementById('modal-title').textContent='添加记忆';document.getElementById('edit-id').value='';document.getElementById('input-content').value='';document.getElementById('input-tags').value='';document.getElementById('input-date').value=new Date().toISOString().split('T')[0];document.querySelector('input[name="privacy"][value="PUBLIC"]').checked=true;document.getElementById('modal-overlay').classList.add('active');}
+function closeModal(){document.getElementById('modal-overlay').classList.remove('active');}
+function saveMemory(){var content=document.getElementById('input-content').value.trim();if(!content)return alert('请输入内容');var tags=document.getElementById('input-tags').value.trim();var privacy=document.querySelector('input[name="privacy"]:checked').value;var editId=document.getElementById('edit-id').value;var dateInput=document.getElementById('input-date').value;var created=dateInput?new Date(dateInput).getTime():Date.now();var category=autoCategorize(content);if(editId){var idx=memories.findIndex(function(m){return m.id===editId;});if(idx!==-1){memories[idx]={...memories[idx],content,tags,privacy,category,modified:Date.now()};}}else{memories.unshift({id:Date.now().toString(36)+Math.random().toString(36).substr(2,5),content,tags,privacy,category,created:created});}saveMemories();renderMemories();updateStats();updateExportBtn();closeModal();}
+function editMemory(id){var m=memories.find(function(x){return x.id===id;});if(!m)return;document.getElementById('modal-title').textContent='编辑记忆';document.getElementById('edit-id').value=m.id;document.getElementById('input-content').value=m.content;document.getElementById('input-tags').value=m.tags||'';if(m.created){var d=new Date(m.created);document.getElementById('input-date').value=d.toISOString().split('T')[0];}document.querySelector('input[name="privacy"][value="'+m.privacy+'"]').checked=true;document.getElementById('modal-overlay').classList.add('active');}
+function deleteMemory(id){if(!confirm('确定删除？'))return;memories=memories.filter(function(m){return m.id!==id;});saveMemories();renderMemories();updateStats();updateExportBtn();}
+function formatTime(ts){var d=new Date(ts);var abs=d.toLocaleDateString('zh-CN')+' '+d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});return'<span title="'+abs+'">'+relativeTime(ts)+'</span>';}
+function relativeTime(ts){var now=Date.now(),diff=now-ts,sec=Math.floor(diff/1000),min=Math.floor(sec/60),hr=Math.floor(min/60),day=Math.floor(hr/24),week=Math.floor(day/7),month=Math.floor(day/30);if(sec<60)return'刚刚';if(min<60)return min+'分钟前';if(hr<24)return hr+'小时前';if(day===1)return'昨天';if(day<7)return day+'天前';if(week<5)return week+'周前';return Math.floor(month/12)+'年前';}
+function getPrivacyLabel(p){var map={PUBLIC:'公开',INTERNAL:'内部',PRIVATE:'私有',STRICT:'机要'};return map[p]||p;}
+function escapeHtml(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function autoCategorize(text){var rules={工作:['工作','项目','代码','开发','会议','任务'],学习:['学习','读书','课程','知识'],生活:['生活','吃饭','睡觉','运动'],创意:['创意','想法','灵感'],事实:['事实','事件','今天']};for(var cat in rules){if(rules[cat].some(function(k){return text.includes(k);}))return cat;}return'事实';}
+function exportData(){if(memories.length===0){alert('暂无记忆可导出');return;}var data=JSON.stringify(memories,null,2);var blob=new Blob([data],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='clawmemory_export_'+new Date().toISOString().slice(0,10)+'.json';a.click();}
+function importData(){var input=document.createElement('input');input.type='file';input.accept='.json';input.onchange=function(e){var file=e.target.files[0];var reader=new FileReader();reader.onload=function(ev){try{var imported=JSON.parse(ev.target.result);if(Array.isArray(imported)){memories=[...imported,...memories];saveMemories();renderMemories();updateStats();updateExportBtn();alert('导入成功');}}catch(err){alert('导入失败: '+err.message);}};reader.readAsText(file);};input.click();}
+function updateExportBtn(){var btn=document.querySelector('.header-btn[onclick="exportData()"]');if(btn)btn.disabled=memories.length===0;}
+function initOnlineUsers(){var SK='clawmemory_online',UK='clawmemory_user';var userId=localStorage.getItem(UK);if(!userId){userId='user_'+Math.random().toString(36).substr(2,9);localStorage.setItem(UK,userId);}function update(){var now=Date.now(),users=JSON.parse(localStorage.getItem(SK)||'{}');Object.keys(users).forEach(function(id){if(now-users[id]>5*60000)delete users[id];});users[userId]=now;localStorage.setItem(SK,JSON.stringify(users));var count=Object.keys(users).length+Math.floor(Math.random()*20)+10;document.getElementById('online-count').textContent=memories.length>0?count:0;}update();setInterval(update,30000);}
+window.organizeMemories=function(){if(memories.length===0)return alert('暂无记忆');var keywords={工作:['工作','项目','代码','开发'],学习:['学习','读书','课程'],生活:['生活','吃饭','运动'],创意:['创意','想法'],事实:['事实','事件']};var clusters={};Object.keys(keywords).forEach(function(k){clusters[k]=[];});memories.forEach(function(m){var text=m.content+(m.tags||'');for(var cat in keywords){if(keywords[cat].some(function(k){return text.includes(k);})){clusters[cat].push(m);break;}}});var result='🎯 AI 整理建议:\n\n';for(var cat in clusters){if(clusters[cat].length>1)result+='📁 '+cat+' ('+clusters[cat].length+'条): 可合并为 '+Math.ceil(clusters[cat].length/2)+' 条\n';}var uncategorized=memories.filter(function(m){return!Object.values(clusters).flat().includes(m);});if(uncategorized.length>3)result+='📌 未分类 ('+uncategorized.length+'条): 建议添加标签\n';alert(result);};
+document.addEventListener('DOMContentLoaded',init);
 </script>
 </body>
 </html>
