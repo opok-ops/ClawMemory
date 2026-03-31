@@ -2,7 +2,7 @@
 # Copyright (c) 2026 ClawMemory Project
 # License: MIT + ClawMemory Privacy Addendum
 
-__version__ = "1.0.0"
+__version__ = "1.5.2"
 __author__ = "ClawMemory Project"
 
 from .core import (

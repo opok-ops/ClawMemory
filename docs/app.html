@@ -47,6 +47,7 @@ body { background: var(--bg-void); color: var(--text-primary); font-family: var(
 .sidebar-btn { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; border: 1px solid transparent; border-radius: 8px; background: var(--bg-card); color: var(--text-secondary); font-size: 0.85rem; cursor: pointer; text-align: left; transition: all 0.2s; }
 .sidebar-btn:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
 .sidebar-btn.active { border-color: var(--accent-cyan); color: var(--accent-cyan); background: rgba(0,212,255,0.1); }
+.sidebar-btn .cat-count { font-size: 0.7rem; color: var(--text-muted); margin-left: auto; }
 .btn-icon { font-size: 1rem; }
 .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 1rem; }
 .stat-card { background: var(--bg-card); border-radius: 8px; padding: 0.75rem; text-align: center; }
@@ -75,8 +76,9 @@ body { background: var(--bg-void); color: var(--text-primary); font-family: var(
 .card-tags { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .card-tag { font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 4px; background: rgba(168, 85, 247, 0.2); color: #a855f7; }
 .card-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+.card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+.card-category { font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 4px; background: rgba(168,85,247,0.2); color: #a855f7; }
 .card-action { font-size: 0.75rem; color: var(--text-secondary); background: none; border: none; cursor: pointer; padding: 0.25rem 0.5rem; }
-.card-action:hover { color: var(--accent-cyan); }
 .card-action.danger:hover { color: #ef4444; }
 .empty-state { text-align: center; padding: 4rem 2rem; color: var(--text-secondary); }
 .empty-icon { font-size: 4rem; margin-bottom: 1rem; }
@@ -100,6 +102,51 @@ body { background: var(--bg-void); color: var(--text-primary); font-family: var(
 .toolbar-btn:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
 .toolbar-btn.primary { background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border: none; color: #fff; }
 mark { background: rgba(245, 158, 11, 0.4); color: inherit; padding: 0 2px; border-radius: 2px; }
+/* Stats View */
+.stats-view { padding: 0.5rem; }
+.stats-view h2 { color: var(--text-primary); }
+.stats-overview { display: flex; gap: 1rem; margin-bottom: 2rem; }
+.stat-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; text-align: center; flex: 1; }
+.stat-box.total { background: linear-gradient(135deg, rgba(0,212,255,0.15), rgba(168,85,247,0.15)); border-color: var(--accent-cyan); }
+.stat-box .stat-num { font-size: 2.5rem; font-weight: 700; color: var(--accent-cyan); }
+.stat-box .stat-label { font-size: 0.9rem; color: var(--text-secondary); margin-top: 0.5rem; }
+.stats-section { margin-bottom: 2rem; }
+.stats-section h3 { font-size: 1rem; color: var(--text-secondary); margin-bottom: 1rem; }
+.stats-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
+.stats-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
+.stats-grid-3 .stat-card, .stats-grid-4 .stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; text-align: center; }
+.stats-grid-3 .stat-num, .stats-grid-4 .stat-num { font-size: 1.5rem; font-weight: 700; color: var(--accent-cyan); }
+.stats-grid-3 .stat-label, .stats-grid-4 .stat-label { font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem; }
+.stat-recent { display: flex; flex-direction: column; gap: 0.5rem; }
+.stat-recent-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; font-size: 0.85rem; }
+.stat-recent-cat { display: inline-block; background: rgba(168,85,247,0.2); color: #a855f7; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; margin-right: 0.5rem; }
+/* Privacy View */
+.privacy-view { padding: 0.5rem; }
+.privacy-view h2 { color: var(--text-primary); margin-bottom: 1rem; }
+.privacy-levels { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 1.5rem; }
+.privacy-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
+.privacy-card h4 { font-size: 0.95rem; margin-bottom: 0.5rem; }
+.privacy-card p { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5; }
+.privacy-card .count { display: inline-block; margin-top: 0.75rem; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+.privacy-card.public { border-left: 3px solid #10b981; }
+.privacy-card.public .count { background: rgba(16,185,129,0.2); color: #10b981; }
+.privacy-card.internal { border-left: 3px solid #3b82f6; }
+.privacy-card.internal .count { background: rgba(59,130,246,0.2); color: #3b82f6; }
+.privacy-card.private { border-left: 3px solid #f59e0b; }
+.privacy-card.private .count { background: rgba(245,158,11,0.2); color: #f59e0b; }
+.privacy-card.strict { border-left: 3px solid #ef4444; }
+.privacy-card.strict .count { background: rgba(239,68,68,0.2); color: #ef4444; }
+.scan-empty { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 1rem; color: #10b981; text-align: center; margin-bottom: 1rem; }
+.scan-result { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
+.scan-result h4 { font-size: 0.9rem; color: var(--text-primary); margin-bottom: 1rem; }
+.scan-item { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); border-radius: 8px; padding: 0.75rem; margin-bottom: 0.75rem; }
+.scan-content { font-size: 0.85rem; color: var(--text-primary); margin-bottom: 0.5rem; }
+.scan-tags { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.scan-found, .scan-suggested, .scan-current { font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 4px; }
+.scan-found { background: rgba(239,68,68,0.2); color: #ef4444; }
+.scan-suggested { background: rgba(245,158,11,0.2); color: #f59e0b; }
+.scan-current { background: rgba(59,130,246,0.2); color: #3b82f6; }
+@media (max-width:768px){.stats-grid-3,.stats-grid-4,.privacy-levels{grid-template-columns:1fr}}
 /* Mobile */
 @media (max-width: 768px) {
   .header { flex-direction: column; padding: 0.5rem; }
@@ -116,7 +163,7 @@ mark { background: rgba(245, 158, 11, 0.4); color: inherit; padding: 0 2px; bord
 <body>
 <div class="app-wrapper">
 <div class="header">
-<div class="header-logo"><div class="header-logo-icon">🧠</div><div class="header-title">ClawMemory <span>v1.5.1</span></div></div>
+<div class="header-logo"><div class="header-logo-icon">🧠</div><div class="header-title">ClawMemory <span>v1.5.2</span></div></div>
 <nav class="header-nav"><button class="active" onclick="showView('memories')">记忆</button><button onclick="showView('stats')">统计</button><button onclick="showView('privacy')">隐私</button></nav>
 <div class="header-actions">
 <span class="online-users"><span class="stat-dot"></span><span id="online-count">--</span> 人在线</span>
@@ -128,18 +175,19 @@ mark { background: rgba(245, 158, 11, 0.4); color: inherit; padding: 0 2px; bord
 <div class="app-body">
 <aside class="sidebar">
 <button class="sidebar-btn active" data-cat="" onclick="filterByCategory(this, '')"><span class="btn-icon">📋</span><span>全部</span></button>
-<button class="sidebar-btn" data-cat="学习" onclick="filterByCategory(this, '学习')"><span class="btn-icon">📖</span><span>学习</span></button>
-<button class="sidebar-btn" data-cat="工作" onclick="filterByCategory(this, '工作')"><span class="btn-icon">💼</span><span>工作</span></button>
-<button class="sidebar-btn" data-cat="生活" onclick="filterByCategory(this, '生活')"><span class="btn-icon">🏠</span><span>生活</span></button>
-<button class="sidebar-btn" data-cat="创意" onclick="filterByCategory(this, '创意')"><span class="btn-icon">💡</span><span>创意</span></button>
-<button class="sidebar-btn" data-cat="事实" onclick="filterByCategory(this, '事实')"><span class="btn-icon">📌</span><span>事实</span></button>
+<button class="sidebar-btn" data-cat="学习" onclick="filterByCategory(this, '学习')"><span class="btn-icon">📖</span><span>学习</span><span class="cat-count" data-cat="学习">(0)</span></button>
+<button class="sidebar-btn" data-cat="工作" onclick="filterByCategory(this, '工作')"><span class="btn-icon">💼</span><span>工作</span><span class="cat-count" data-cat="工作">(0)</span></button>
+<button class="sidebar-btn" data-cat="生活" onclick="filterByCategory(this, '生活')"><span class="btn-icon">🏠</span><span>生活</span><span class="cat-count" data-cat="生活">(0)</span></button>
+<button class="sidebar-btn" data-cat="创意" onclick="filterByCategory(this, '创意')"><span class="btn-icon">💡</span><span>创意</span><span class="cat-count" data-cat="创意">(0)</span></button>
+<button class="sidebar-btn" data-cat="事实" onclick="filterByCategory(this, '事实')"><span class="btn-icon">📌</span><span>事实</span><span class="cat-count" data-cat="事实">(0)</span></button>
+<button class="sidebar-btn" data-cat="情感" onclick="filterByCategory(this, '情感')"><span class="btn-icon">❤️</span><span>情感</span><span class="cat-count" data-cat="情感">(0)</span></button>
 <hr style="border:none;border-top:1px solid var(--border);margin:0.5rem 0">
 <button class="sidebar-btn" onclick="window.organizeMemories()" style="background:linear-gradient(135deg,rgba(168,85,247,0.2),rgba(0,212,255,0.2))"><span class="btn-icon">🤖</span><span>AI 整理</span></button>
 <div class="stats-grid"><div class="stat-card"><div class="stat-num" id="stat-total">0</div><div class="stat-label">总记忆</div></div><div class="stat-card"><div class="stat-num" id="stat-learn">0</div><div class="stat-label">学习</div></div><div class="stat-card"><div class="stat-num" id="stat-work">0</div><div class="stat-label">工作</div></div><div class="stat-card"><div class="stat-num" id="stat-life">0</div><div class="stat-label">生活</div></div></div>
 </aside>
 <main class="main">
 <div class="time-filter"><button class="time-btn active" onclick="setTimeFilter(this, 'all')">全部</button><button class="time-btn" onclick="setTimeFilter(this, 'today')">今天</button><button class="time-btn" onclick="setTimeFilter(this, 'week')">本周</button><button class="time-btn" onclick="setTimeFilter(this, 'month')">本月</button></div>
-<div class="search-bar"><input type="text" class="search-input" id="search-input" placeholder="搜索记忆..." oninput="searchMemories()"><select class="search-select" id="privacy-filter" onchange="searchMemories()"><option value="">全部隐私</option><option value="PUBLIC">公开</option><option value="INTERNAL">内部</option><option value="PRIVATE">私有</option><option value="STRICT">机要</option></select></div>
+<div class="search-bar"><div style="position:relative;flex:1;min-width:200px"><input type="text" class="search-input" id="search-input" placeholder="搜索记忆..." oninput="searchMemories()" style="padding-right:2rem"><button type="button" class="clear-search" onclick="clearSearch()">×</button></div><select class="search-select" id="privacy-filter" onchange="searchMemories()"><option value="">全部隐私</option><option value="PUBLIC">公开</option><option value="INTERNAL">内部</option><option value="PRIVATE">私有</option><option value="STRICT">机要</option></select></div>
 <div class="memory-grid" id="memory-grid"></div>
 <div class="empty-state" id="empty-state"><div class="empty-icon">🧠</div><div class="empty-text">还没有记忆</div></div>
 </main>
@@ -153,9 +201,7 @@ mark { background: rgba(245, 158, 11, 0.4); color: inherit; padding: 0 2px; bord
 <input type="hidden" id="edit-id">
 <div class="form-group"><label class="form-label">内容</label><textarea class="form-textarea" id="input-content" placeholder="记录你的想法、见闻、学习心得..."></textarea></div>
 <div class="form-group"><label class="form-label">标签（用逗号分隔）</label><input type="text" class="form-input" id="input-tags" placeholder="学习, 工作, 创意"></div>
-<div class="form-group"><label class="form-label">日期（可选）</label><input type="text" class="form-input" id="input-date" placeholder="点击选择日期" readonly onclick="this.showPicker && this.showPicker() || this.type='date'" onchange="this.type='text'" 
-       style="color-scheme: dark; background: var(--bg-card); color: var(--text-primary);"
-       onfocus="this.showPicker && this.showPicker()"></div>
+<div class="form-group"><label class="form-label">日期（可选）</label><input type="date" class="form-input" id="input-date" style="color-scheme: dark;"></div>
 <div class="form-group"><label class="form-label">隐私级别</label>
 <div class="radio-group"><label class="radio-label"><input type="radio" name="privacy" value="PUBLIC" checked> 公开</label><label class="radio-label"><input type="radio" name="privacy" value="INTERNAL"> 内部</label><label class="radio-label"><input type="radio" name="privacy" value="PRIVATE"> 私有</label><label class="radio-label"><input type="radio" name="privacy" value="STRICT"> 机要</label></div>
 </div>
@@ -202,14 +248,86 @@ function renderMemories() {
     var empty=document.getElementById('empty-state');
     if(filtered.length===0){grid.innerHTML='';empty.style.display='block';return;}
     empty.style.display='none';
-    grid.innerHTML=filtered.map(function(m){return '<div class="memory-card"><div class="card-header"><span class="card-time">'+relativeTime(m.created)+'</span><span class="card-privacy '+m.privacy+'">'+getPrivacyLabel(m.privacy)+'</span></div><div class="card-content">'+highlightSearch(escapeHtml(m.content))+'</div><div class="card-tags">'+(m.tags||'').split(',').filter(function(t){return t;}).map(function(t){return'<span class="card-tag">'+escapeHtml(t)+'</span>';}).join('')+'</div><div class="card-actions"><button class="card-action" onclick="editMemory(\''+m.id+'\')">编辑</button><button class="card-action danger" onclick="deleteMemory(\''+m.id+'\')">删除</button></div></div>';}).join('');
+    grid.innerHTML=filtered.map(function(m){var hasImportant=m.tags&&(m.tags.includes('重要')||m.tags.toLowerCase().includes('critical'));var star=hasImportant?' ⭐':'';return '<div class="memory-card"><div class="card-header"><span class="card-time">'+relativeTime(m.created)+'</span><span class="card-privacy '+m.privacy+'">'+getPrivacyLabel(m.privacy)+'</span></div><div class="card-content">'+highlightSearch(escapeHtml(m.content))+star+'</div><div class="card-tags">'+(m.tags||'').split(',').filter(function(t){return t;}).map(function(t){return'<span class="card-tag">'+escapeHtml(t.trim())+'</span>';}).join('')+'</div><div class="card-footer"><span class="card-category">'+m.category+'</span><div class="card-actions"><button class="card-action" onclick="editMemory(\''+m.id+'\')">编辑</button><button class="card-action danger" onclick="deleteMemory(\''+m.id+'\')">删除</button></div></div></div>';}).join('');
 }
-function updateStats(){document.getElementById('stat-total').textContent=memories.length;document.getElementById('stat-learn').textContent=memories.filter(function(m){return m.category==='学习';}).length;document.getElementById('stat-work').textContent=memories.filter(function(m){return m.category==='工作';}).length;document.getElementById('stat-life').textContent=memories.filter(function(m){return m.category==='生活';}).length;}
+function updateStats(){document.getElementById('stat-total').textContent=memories.length;document.getElementById('stat-learn').textContent=memories.filter(function(m){return m.category==='学习';}).length;document.getElementById('stat-work').textContent=memories.filter(function(m){return m.category==='工作';}).length;document.getElementById('stat-life').textContent=memories.filter(function(m){return m.category==='生活';}).length;document.querySelectorAll('.cat-count').forEach(function(el){var cat=el.getAttribute('data-cat');var count=memories.filter(function(m){return m.category===cat;}).length;el.textContent='('+count+')';});}
 function filterByCategory(el,cat){currentFilter=cat;document.querySelectorAll('.sidebar-btn').forEach(function(b){b.classList.remove('active');});if(el)el.classList.add('active');renderMemories();}
 function setTimeFilter(el,f){currentTimeFilter=f;document.querySelectorAll('.time-btn').forEach(function(b){b.classList.remove('active');});if(el)el.classList.add('active');renderMemories();}
-function searchMemories(){searchQuery=document.getElementById('search-input').value.trim();renderMemories();}
+function searchMemories(){searchQuery=document.getElementById('search-input').value.trim();document.querySelector('.clear-search').style.display=searchQuery?'block':'none';renderMemories();}
+function clearSearch(){document.getElementById('search-input').value='';searchQuery='';document.querySelector('.clear-search').style.display='none';renderMemories();}
 function highlightSearch(text){if(!searchQuery)return text;var q=searchQuery.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');return text.replace(new RegExp('('+q+')','gi'),'<mark>$1</mark>');}
-function showView(v){document.querySelectorAll('.header-nav button').forEach(function(b){b.classList.remove('active');});event.target.classList.add('active');}
+function showView(v){
+    document.querySelectorAll('.header-nav button').forEach(function(b){b.classList.remove('active');});
+    event.target.classList.add('active');
+    var main=document.querySelector('.main');
+    if(v==='memories'){
+        document.querySelector('.time-filter').style.display='flex';
+        document.querySelector('.search-bar').style.display='flex';
+        document.querySelector('.sidebar').style.display='flex';
+        renderMemories();
+    }else if(v==='stats'){
+        document.querySelector('.time-filter').style.display='none';
+        document.querySelector('.search-bar').style.display='none';
+        document.querySelector('.sidebar').style.display='none';
+        renderStatsView(main);
+    }else if(v==='privacy'){
+        document.querySelector('.time-filter').style.display='none';
+        document.querySelector('.search-bar').style.display='none';
+        document.querySelector('.sidebar').style.display='none';
+        renderPrivacyView(main);
+    }
+}
+function renderStatsView(container){
+    var total=memories.length;
+    var byCat={学习:0,工作:0,生活:0,创意:0,事实:0,情感:0};
+    var byPriv={PUBLIC:0,INTERNAL:0,PRIVATE:0,STRICT:0};
+    var now=Date.now(),today=new Date();today.setHours(0,0,0,0);
+    var week=new Date(today);week.setDate(today.getDate()-today.getDay());
+    var month=new Date(today);month.setDate(1);
+    var byTime={today:0,week:0,month:0,older:0};
+    memories.forEach(function(m){
+        if(byCat[m.category]!==undefined)byCat[m.category]++;
+        if(byPriv[m.privacy]!==undefined)byPriv[m.privacy]++;
+        if(m.created>=today.getTime())byTime.today++;
+        else if(m.created>=week.getTime())byTime.week++;
+        else if(m.created>=month.getTime())byTime.month++;
+        else byTime.older++;
+    });
+    var recent=memories.slice(0,5).map(function(m){return'<div class="stat-recent-item"><span class="stat-recent-cat">'+m.category+'</span>'+escapeHtml(m.content.substring(0,80))+'...</div>';}).join('');
+    container.innerHTML='<div class="stats-view"><h2 style="margin-bottom:1.5rem">📊 记忆统计</h2><div class="stats-overview"><div class="stat-box total"><div class="stat-num">'+total+'</div><div class="stat-label">总记忆</div></div></div><div class="stats-section"><h3>按分类</h3><div class="stats-grid-3">'+Object.keys(byCat).map(function(c){return'<div class="stat-card"><div class="stat-num">'+byCat[c]+'</div><div class="stat-label">'+c+'</div></div>';}).join('')+'</div></div><div class="stats-section"><h3>按隐私级别</h3><div class="stats-grid-3">'+Object.keys(byPriv).map(function(p){return'<div class="stat-card"><div class="stat-num">'+byPriv[p]+'</div><div class="stat-label">'+getPrivacyLabel(p)+'</div></div>';}).join('')+'</div></div><div class="stats-section"><h3>按时间</h3><div class="stats-grid-4"><div class="stat-card"><div class="stat-num">'+byTime.today+'</div><div class="stat-label">今天</div></div><div class="stat-card"><div class="stat-num">'+byTime.week+'</div><div class="stat-label">本周</div></div><div class="stat-card"><div class="stat-num">'+byTime.month+'</div><div class="stat-label">本月</div></div><div class="stat-card"><div class="stat-num">'+byTime.older+'</div><div class="stat-label">更早</div></div></div></div><div class="stats-section"><h3>最近添加</h3><div class="stat-recent">'+recent+'</div></div></div>';
+}
+function renderPrivacyView(container){
+    var byPriv={PUBLIC:0,INTERNAL:0,PRIVATE:0,STRICT:0};
+    memories.forEach(function(m){if(byPriv[m.privacy]!==undefined)byPriv[m.privacy]++});
+    var scanBtn='<button class="toolbar-btn primary" onclick="runPrivacyScan()" style="margin-bottom:1rem">🔍 隐私扫描</button>';
+    var resultDiv='<div id="scan-result"></div>';
+    container.innerHTML='<div class="privacy-view"><h2 style="margin-bottom:1rem">🔐 隐私管理</h2>'+scanBtn+resultDiv+'<div class="privacy-levels"><div class="privacy-card public"><h4>🔓 公开 (PUBLIC)</h4><p>任意模块、任意 Agent 可访问。无限制，适用于公开信息、一般知识分享。</p><span class="count">'+byPriv.PUBLIC+' 条</span></div><div class="privacy-card internal"><h4>🏢 内部 (INTERNAL)</h4><p>仅限同一 Agent 会话内访问。工作记录、项目进展，默认分级。</p><span class="count">'+byPriv.INTERNAL+' 条</span></div><div class="privacy-card private"><h4>🔒 私密 (PRIVATE)</h4><p>需显式 ACL 授权才能被其他 Agent 访问。个人偏好、私人信息。</p><span class="count">'+byPriv.PRIVATE+' 条</span></div><div class="privacy-card strict"><h4>⛔ 机要 (STRICT)</h4><p>物理隔离独立目录存储，需单独 ACL 授权。密码、证件号、财务信息。</p><span class="count">'+byPriv.STRICT+' 条</span></div></div></div>';
+}
+function runPrivacyScan(){
+    var sensitiveKeywords={phone:/1[3-9]\d{9}/,email:/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-Z]{2,}/,password:/(密码|pass)[:：]\s*\S+/i};
+    var suggestions=[];
+    memories.forEach(function(m){
+        var text=m.content+(m.tags||'');
+        var found=[];
+        if(sensitiveKeywords.phone.test(text))found.push('手机号');
+        if(sensitiveKeywords.email.test(text))found.push('邮箱');
+        if(sensitiveKeywords.password.test(text))found.push('密码');
+        if(found.length>0){
+            var suggested='INTERNAL';
+            if(found.includes('密码'))suggested='STRICT';
+            else if(found.includes('手机号')||found.includes('邮箱'))suggested='PRIVATE';
+            if(m.privacy!==suggested){
+                suggestions.push({id:m.id,content:m.content.substring(0,50),found:found,suggested:suggested,current:m.privacy});
+            }
+        }
+    });
+    var resultDiv=document.getElementById('scan-result');
+    if(suggestions.length===0){
+        resultDiv.innerHTML='<div class="scan-empty">✅ 未发现需要调整隐私级别的记忆</div>';
+    }else{
+        resultDiv.innerHTML='<div class="scan-result"><h4>⚠️ 发现 '+suggestions.length+' 条可能需要调整隐私级别的记忆：</h4>'+suggestions.map(function(s){return'<div class="scan-item"><div class="scan-content">'+escapeHtml(s.content)+'...</div><div class="scan-tags"><span class="scan-found">发现: '+s.found.join(',')+'</span><span class="scan-suggested">建议: '+s.suggested+'</span><span class="scan-current">当前: '+s.current+'</span></div></div>';}).join('')+'</div>';
+    }
+}
 function showAddModal(){document.getElementById('modal-title').textContent='添加记忆';document.getElementById('edit-id').value='';document.getElementById('input-content').value='';document.getElementById('input-tags').value='';document.getElementById('input-date').value=new Date().toISOString().split('T')[0];document.querySelector('input[name="privacy"][value="PUBLIC"]').checked=true;document.getElementById('modal-overlay').classList.add('active');}
 function closeModal(){document.getElementById('modal-overlay').classList.remove('active');}
 function saveMemory(){var content=document.getElementById('input-content').value.trim();if(!content)return alert('请输入内容');var tags=document.getElementById('input-tags').value.trim();var privacy=document.querySelector('input[name="privacy"]:checked').value;var editId=document.getElementById('edit-id').value;var created=Date.now();var category=autoCategorize(content);if(editId){var idx=memories.findIndex(function(m){return m.id===editId;});if(idx!==-1){memories[idx]={...memories[idx],content,tags,privacy,category,modified:Date.now()};}}else{memories.unshift({id:Date.now().toString(36)+Math.random().toString(36).substr(2,5),content,tags,privacy,category,created:created});}saveMemories();renderMemories();updateStats();updateExportBtn();closeModal();}
@@ -221,7 +339,7 @@ function getPrivacyLabel(p){var map={PUBLIC:'公开',INTERNAL:'内部',PRIVATE:'
 function escapeHtml(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function autoCategorize(text){var rules={工作:['工作','项目','代码','开发','会议','任务'],学习:['学习','读书','课程','知识'],生活:['生活','吃饭','睡觉','运动'],创意:['创意','想法','灵感'],事实:['事实','事件','今天']};for(var cat in rules){if(rules[cat].some(function(k){return text.includes(k);}))return cat;}return'事实';}
 function exportData(){if(memories.length===0){alert('暂无记忆可导出');return;}var data=JSON.stringify(memories,null,2);var blob=new Blob([data],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='clawmemory_export_'+new Date().toISOString().slice(0,10)+'.json';a.click();}
-function importData(){var input=document.createElement('input');input.type='file';input.accept='.json';input.onchange=function(e){var file=e.target.files[0];var reader=new FileReader();reader.onload=function(ev){try{var imported=JSON.parse(ev.target.result);if(Array.isArray(imported)){memories=[...imported,...memories];saveMemories();renderMemories();updateStats();updateExportBtn();alert('导入成功');}}catch(err){alert('导入失败: '+err.message);}};reader.readAsText(file);};input.click();}
+function importData(){var input=document.createElement('input');input.type='file';input.accept='.json';input.onchange=function(e){var file=e.target.files[0];var reader=new FileReader();reader.onload=function(ev){try{var imported=JSON.parse(ev.target.result);if(Array.isArray(imported)){var existing=memories.map(function(m){return m.content;});var newMemories=imported.filter(function(m){return m.content&&!existing.includes(m.content);});var skipped=imported.length-newMemories.length;memories=[...newMemories.map(function(m){return{id:Date.now().toString(36)+Math.random().toString(36).substr(2,5),content:m.content||m.plaintext_preview||'',tags:m.tags||'',privacy:m.privacy||'PUBLIC',category:m.category||'事实',created:m.created||Date.now()};}),...memories];saveMemories();renderMemories();updateStats();updateExportBtn();alert('导入成功: 添加 '+newMemories.length+' 条，跳过 '+skipped+' 条重复');}}else{alert('文件格式错误');}}catch(err){alert('导入失败: '+err.message);}};reader.readAsText(file);};input.click();}
 function updateExportBtn(){var btn=document.querySelector('.header-btn[onclick="exportData()"]');if(btn)btn.disabled=memories.length===0;}
 function initOnlineUsers(){var SK='clawmemory_online',UK='clawmemory_user';var userId=localStorage.getItem(UK);if(!userId){userId='user_'+Math.random().toString(36).substr(2,9);localStorage.setItem(UK,userId);}function update(){var now=Date.now(),users=JSON.parse(localStorage.getItem(SK)||'{}');Object.keys(users).forEach(function(id){if(now-users[id]>5*60000)delete users[id];});users[userId]=now;localStorage.setItem(SK,JSON.stringify(users));var count=Object.keys(users).length+Math.floor(Math.random()*20)+10;document.getElementById('online-count').textContent=memories.length>0?count:0;}update();setInterval(update,30000);}
 window.organizeMemories=function(){if(memories.length===0)return alert('暂无记忆');var keywords={工作:['工作','项目','代码','开发'],学习:['学习','读书','课程'],生活:['生活','吃饭','运动'],创意:['创意','想法'],事实:['事实','事件']};var clusters={};Object.keys(keywords).forEach(function(k){clusters[k]=[];});memories.forEach(function(m){var text=m.content+(m.tags||'');for(var cat in keywords){if(keywords[cat].some(function(k){return text.includes(k);})){clusters[cat].push(m);break;}}});var result='🎯 AI 整理建议:\n\n';for(var cat in clusters){if(clusters[cat].length>1)result+='📁 '+cat+' ('+clusters[cat].length+'条): 可合并为 '+Math.ceil(clusters[cat].length/2)+' 条\n';}var uncategorized=memories.filter(function(m){return!Object.values(clusters).flat().includes(m);});if(uncategorized.length>3)result+='📌 未分类 ('+uncategorized.length+'条): 建议添加标签\n';alert(result);};
