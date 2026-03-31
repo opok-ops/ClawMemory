@@ -367,6 +367,47 @@ body { overflow: auto; height: 100%; -webkit-overflow-scrolling: touch; }
   }
 }
 
+
+/* ===== TIME FILTER ===== */
+.time-filter {
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+}
+.time-btn {
+    padding: 0.3rem 0.8rem;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.time-btn:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+.time-btn.active {
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+    border-color: transparent;
+    color: #fff;
+}
+
+/* ===== RELATIVE TIME ===== */
+.card-time { cursor: default; }
+.card-time:hover .abs-time { display: inline; }
+.abs-time { display: none; font-size: 0.7rem; color: var(--text-secondary); margin-left: 0.3rem; }
+
+/* ===== PINNED CARD ===== */
+.memory-card.pinned {
+    border-color: rgba(168, 85, 247, 0.4);
+    box-shadow: 0 0 12px rgba(168, 85, 247, 0.15);
+}
+
+@media (max-width: 768px) {
+    .time-filter { gap: 0.3rem; }
+    .time-btn { padding: 0.25rem 0.6rem; font-size: 0.72rem; }
+}
+
 </style>
 
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -397,7 +438,7 @@ body { overflow: auto; height: 100%; -webkit-overflow-scrolling: touch; }
 </div>
 <div class="app-body">
 <aside class="sidebar">
-<button class="sidebar-btn" onclick="filterByCategory(null)"><span class="btn-icon">📋</span><span>全部</span></button>
+<button class="sidebar-btn" onclick="filterByCategory(null, this)" data-filter="all"><span class="btn-icon">📋</span><span>全部</span></button>
 <button class="sidebar-btn" onclick="filterByCategory('学习')"><span class="btn-icon">📖</span><span>学习</span></button>
 <button class="sidebar-btn" onclick="filterByCategory('工作')"><span class="btn-icon">💼</span><span>工作</span></button>
 <button class="sidebar-btn" onclick="filterByCategory('生活')"><span class="btn-icon">🏠</span><span>生活</span></button>
@@ -413,6 +454,12 @@ body { overflow: auto; height: 100%; -webkit-overflow-scrolling: touch; }
 </div>
 </aside>
 <main class="main">
+<div class="time-filter" id="time-filter">
+<button class="time-btn active" onclick="setTimeFilter('all', this)">全部</button>
+<button class="time-btn" onclick="setTimeFilter('today', this)">今天</button>
+<button class="time-btn" onclick="setTimeFilter('week', this)">本周</button>
+<button class="time-btn" onclick="setTimeFilter('month', this)">本月</button>
+</div>
 <div class="search-bar">
 <input type="text" class="search-input" id="search-input" placeholder="搜索记忆..." oninput="searchMemories()">
 <select class="search-select" id="privacy-filter" onchange="searchMemories()">
@@ -443,6 +490,7 @@ body { overflow: auto; height: 100%; -webkit-overflow-scrolling: touch; }
 <input type="hidden" id="edit-id">
 <div class="form-group"><label class="form-label">内容</label><textarea class="form-textarea" id="input-content" placeholder="记录你的想法、见闻、学习心得..."></textarea></div>
 <div class="form-group"><label class="form-label">标签（用逗号分隔）</label><input type="text" class="form-input" id="input-tags" placeholder="学习, 工作, 创意"></div>
+<div class="form-group"><label class="form-label">日期（可选，默认今天）</label><input type="date" class="form-input" id="input-date"></div>
 <div class="form-group"><label class="form-label">隐私级别</label>
 <div class="radio-group">
 <label class="radio-label"><input type="radio" name="privacy" value="PUBLIC" checked> 公开</label>
@@ -540,6 +588,8 @@ function showAddModal() {
     document.getElementById('input-content').value = '';
     document.getElementById('input-tags').value = '';
     document.querySelector('input[name="privacy"][value="PUBLIC"]').checked = true;
+    var today = new Date().toISOString().split('T')[0];
+    document.getElementById('input-date').value = today;
     document.getElementById('modal-overlay').classList.add('active');
 }
 
@@ -553,6 +603,8 @@ function saveMemory() {
     const tags = document.getElementById('input-tags').value.trim();
     const privacy = document.querySelector('input[name="privacy"]:checked').value;
     const editId = document.getElementById('edit-id').value;
+    const dateInput = document.getElementById('input-date').value;
+    const customDate = dateInput ? new Date(dateInput).getTime() : Date.now();
     
     // Auto-categorize
     const category = autoCategorize(content);
@@ -566,7 +618,7 @@ function saveMemory() {
         memories.unshift({
             id: Date.now().toString(36) + Math.random().toString(36).substr(2,5),
             content, tags, privacy, category,
-            created: Date.now()
+            created: customDate
         });
     }
     saveMemories();
@@ -594,18 +646,15 @@ function deleteMemory(id) {
     updateStats();
 }
 
-function filterByCategory(cat) {
+function filterByCategory(cat, el) {
     currentFilter = cat;
-    document.querySelectorAll('.sidebar-btn').forEach(function(b) { b.classList.remove('active'); });
-    if (event && event.target) {
-        var btn = event.target.closest('.sidebar-btn');
-        if (btn) btn.classList.add('active');
-    }
+    document.querySelectorAll('.sidebar-btn[data-filter]').forEach(function(b) { b.classList.remove('active'); });
+    if (el) el.classList.add('active');
     renderMemories();
 }
 
 function searchMemories() {
-    searchQuery = document.getElementById('search-input').value;
+    searchQuery = document.getElementById('search-input').value.trim();
     renderMemories();
 }
 
@@ -718,6 +767,37 @@ window.organizeMemories = function() {
     if (uncategorized.length > 3) result += `📌 未分类 (${uncategorized.length}条): 建议添加标签\n`;
     alert(result);
 };
+
+
+// ===== TIME FILTER =====
+var currentTimeFilter = 'all';
+
+function setTimeFilter(filter, el) {
+    currentTimeFilter = filter;
+    document.querySelectorAll('.time-btn').forEach(function(b) { b.classList.remove('active'); });
+    if (el) el.classList.add('active');
+    renderMemories();
+}
+
+// ===== RELATIVE TIME =====
+function relativeTime(ts) {
+    var now = Date.now();
+    var diff = now - ts;
+    var sec = Math.floor(diff / 1000);
+    var min = Math.floor(sec / 60);
+    var hr = Math.floor(min / 60);
+    var day = Math.floor(hr / 24);
+    var week = Math.floor(day / 7);
+    var month = Math.floor(day / 30);
+    if (sec < 60) return '刚刚';
+    if (min < 60) return min + '分钟前';
+    if (hr < 24) return hr + '小时前';
+    if (day === 1) return '昨天';
+    if (day < 7) return day + '天前';
+    if (week < 5) return week + '周前';
+    if (month < 12) return month + '个月前';
+    return Math.floor(month/12) + '年前';
+}
 
 document.addEventListener('DOMContentLoaded', function() { init(); initMobileSidebar(); });
 </script>
