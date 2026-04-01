@@ -100,51 +100,6 @@ body { background: var(--bg-void); color: var(--text-primary); font-family: var(
 .toolbar-btn:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
 .toolbar-btn.primary { background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border: none; color: #fff; }
 mark { background: rgba(245, 158, 11, 0.4); color: inherit; padding: 0 2px; border-radius: 2px; }
-/* Stats View */
-.stats-view { padding: 0.5rem; }
-.stats-view h2 { color: var(--text-primary); margin-bottom: 1.5rem; }
-.stats-overview { display: flex; gap: 1rem; margin-bottom: 2rem; }
-.stat-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; text-align: center; flex: 1; }
-.stat-box.total { background: linear-gradient(135deg, rgba(0,212,255,0.15), rgba(168,85,247,0.15)); border-color: var(--accent-cyan); }
-.stat-box .stat-num { font-size: 2.5rem; font-weight: 700; color: var(--accent-cyan); }
-.stat-box .stat-label { font-size: 0.9rem; color: var(--text-secondary); margin-top: 0.5rem; }
-.stats-section { margin-bottom: 2rem; }
-.stats-section h3 { font-size: 1rem; color: var(--text-secondary); margin-bottom: 1rem; }
-.stats-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
-.stats-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
-.stats-grid-3 .stat-card, .stats-grid-4 .stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; text-align: center; }
-.stats-grid-3 .stat-num, .stats-grid-4 .stat-num { font-size: 1.5rem; font-weight: 700; color: var(--accent-cyan); }
-.stats-grid-3 .stat-label, .stats-grid-4 .stat-label { font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem; }
-.stat-recent { display: flex; flex-direction: column; gap: 0.5rem; }
-.stat-recent-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; font-size: 0.85rem; }
-.stat-recent-cat { display: inline-block; background: rgba(168,85,247,0.2); color: #a855f7; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; margin-right: 0.5rem; }
-/* Privacy View */
-.privacy-view { padding: 0.5rem; }
-.privacy-view h2 { color: var(--text-primary); margin-bottom: 1rem; }
-.privacy-levels { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 1.5rem; }
-.privacy-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
-.privacy-card h4 { font-size: 0.95rem; margin-bottom: 0.5rem; }
-.privacy-card p { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5; }
-.privacy-card .count { display: inline-block; margin-top: 0.75rem; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
-.privacy-card.public { border-left: 3px solid #10b981; }
-.privacy-card.public .count { background: rgba(16,185,129,0.2); color: #10b981; }
-.privacy-card.internal { border-left: 3px solid #3b82f6; }
-.privacy-card.internal .count { background: rgba(59,130,246,0.2); color: #3b82f6; }
-.privacy-card.private { border-left: 3px solid #f59e0b; }
-.privacy-card.private .count { background: rgba(245,158,11,0.2); color: #f59e0b; }
-.privacy-card.strict { border-left: 3px solid #ef4444; }
-.privacy-card.strict .count { background: rgba(239,68,68,0.2); color: #ef4444; }
-.scan-empty { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 1rem; color: #10b981; text-align: center; margin-bottom: 1rem; }
-.scan-result { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
-.scan-result h4 { font-size: 0.9rem; color: var(--text-primary); margin-bottom: 1rem; }
-.scan-item { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); border-radius: 8px; padding: 0.75rem; margin-bottom: 0.75rem; }
-.scan-content { font-size: 0.85rem; color: var(--text-primary); margin-bottom: 0.5rem; }
-.scan-tags { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.scan-found, .scan-suggested, .scan-current { font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 4px; }
-.scan-found { background: rgba(239,68,68,0.2); color: #ef4444; }
-.scan-suggested { background: rgba(245,158,11,0.2); color: #f59e0b; }
-.scan-current { background: rgba(59,130,246,0.2); color: #3b82f6; }
-@media (max-width:768px){.stats-grid-3,.stats-grid-4,.privacy-levels{grid-template-columns:1fr}}
 /* Mobile */
 @media (max-width: 768px) {
   .header { flex-direction: column; padding: 0.5rem; }
@@ -161,7 +116,7 @@ mark { background: rgba(245, 158, 11, 0.4); color: inherit; padding: 0 2px; bord
 <body>
 <div class="app-wrapper">
 <div class="header">
-<div class="header-logo"><div class="header-logo-icon">🧠</div><div class="header-title">ClawMemory <span>v1.5.2</span></div></div>
+<div class="header-logo"><div class="header-logo-icon">🧠</div><div class="header-title">ClawMemory <span>v1.5.1</span></div></div>
 <nav class="header-nav"><button class="active" onclick="showView('memories')">记忆</button><button onclick="showView('stats')">统计</button><button onclick="showView('privacy')">隐私</button></nav>
 <div class="header-actions">
 <span class="online-users"><span class="stat-dot"></span><span id="online-count">--</span> 人在线</span>
@@ -178,17 +133,15 @@ mark { background: rgba(245, 158, 11, 0.4); color: inherit; padding: 0 2px; bord
 <button class="sidebar-btn" data-cat="生活" onclick="filterByCategory(this, '生活')"><span class="btn-icon">🏠</span><span>生活</span></button>
 <button class="sidebar-btn" data-cat="创意" onclick="filterByCategory(this, '创意')"><span class="btn-icon">💡</span><span>创意</span></button>
 <button class="sidebar-btn" data-cat="事实" onclick="filterByCategory(this, '事实')"><span class="btn-icon">📌</span><span>事实</span></button>
-<button class="sidebar-btn" data-cat="情感" onclick="filterByCategory(this, '情感')"><span class="btn-icon">❤️</span><span>情感</span></button>
 <hr style="border:none;border-top:1px solid var(--border);margin:0.5rem 0">
 <button class="sidebar-btn" onclick="window.organizeMemories()" style="background:linear-gradient(135deg,rgba(168,85,247,0.2),rgba(0,212,255,0.2))"><span class="btn-icon">🤖</span><span>AI 整理</span></button>
 <div class="stats-grid"><div class="stat-card"><div class="stat-num" id="stat-total">0</div><div class="stat-label">总记忆</div></div><div class="stat-card"><div class="stat-num" id="stat-learn">0</div><div class="stat-label">学习</div></div><div class="stat-card"><div class="stat-num" id="stat-work">0</div><div class="stat-label">工作</div></div><div class="stat-card"><div class="stat-num" id="stat-life">0</div><div class="stat-label">生活</div></div></div>
 </aside>
 <main class="main">
-<div class="time-filter" id="time-filter"><button class="time-btn active" onclick="setTimeFilter(this, 'all')">全部</button><button class="time-btn" onclick="setTimeFilter(this, 'today')">今天</button><button class="time-btn" onclick="setTimeFilter(this, 'week')">本周</button><button class="time-btn" onclick="setTimeFilter(this, 'month')">本月</button></div>
-<div class="search-bar" id="search-bar"><input type="text" class="search-input" id="search-input" placeholder="搜索记忆..." oninput="searchMemories()"><select class="search-select" id="privacy-filter" onchange="searchMemories()"><option value="">全部隐私</option><option value="PUBLIC">公开</option><option value="INTERNAL">内部</option><option value="PRIVATE">私有</option><option value="STRICT">机要</option></select></div>
-<div id="view-memories"><div class="memory-grid" id="memory-grid"></div><div class="empty-state" id="empty-state"><div class="empty-icon">🧠</div><div class="empty-text">还没有记忆</div></div></div>
-<div id="view-stats" style="display:none"></div>
-<div id="view-privacy" style="display:none"></div>
+<div class="time-filter"><button class="time-btn active" onclick="setTimeFilter(this, 'all')">全部</button><button class="time-btn" onclick="setTimeFilter(this, 'today')">今天</button><button class="time-btn" onclick="setTimeFilter(this, 'week')">本周</button><button class="time-btn" onclick="setTimeFilter(this, 'month')">本月</button></div>
+<div class="search-bar"><input type="text" class="search-input" id="search-input" placeholder="搜索记忆..." oninput="searchMemories()"><select class="search-select" id="privacy-filter" onchange="searchMemories()"><option value="">全部隐私</option><option value="PUBLIC">公开</option><option value="INTERNAL">内部</option><option value="PRIVATE">私有</option><option value="STRICT">机要</option></select></div>
+<div class="memory-grid" id="memory-grid"></div>
+<div class="empty-state" id="empty-state"><div class="empty-icon">🧠</div><div class="empty-text">还没有记忆</div></div>
 </main>
 </div>
 </div>
@@ -256,62 +209,8 @@ function filterByCategory(el,cat){currentFilter=cat;document.querySelectorAll('.
 function setTimeFilter(el,f){currentTimeFilter=f;document.querySelectorAll('.time-btn').forEach(function(b){b.classList.remove('active');});if(el)el.classList.add('active');renderMemories();}
 function searchMemories(){searchQuery=document.getElementById('search-input').value.trim();renderMemories();}
 function highlightSearch(text){if(!searchQuery)return text;var q=searchQuery.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');return text.replace(new RegExp('('+q+')','gi'),'<mark>$1</mark>');}
-function showView(v){
-    document.querySelectorAll('.header-nav button').forEach(function(b){b.classList.remove('active');});
-    event.target.classList.add('active');
-    document.getElementById('view-memories').style.display=v==='memories'?'block':'none';
-    document.getElementById('time-filter').style.display=v==='memories'?'flex':'none';
-    document.getElementById('search-bar').style.display=v==='memories'?'flex':'none';
-    document.getElementById('view-stats').style.display=v==='stats'?'block':'none';
-    document.getElementById('view-privacy').style.display=v==='privacy'?'block':'none';
-    if(v==='stats')renderStatsView();
-    if(v==='privacy')renderPrivacyView();
-}
-function renderStatsView(){
-    var total=memories.length;
-    var byCat={学习:0,工作:0,生活:0,创意:0,事实:0,情感:0};
-    var byPriv={PUBLIC:0,INTERNAL:0,PRIVATE:0,STRICT:0};
-    var today=new Date();today.setHours(0,0,0,0);
-    var week=new Date(today);week.setDate(today.getDate()-today.getDay());
-    var month=new Date(today);month.setDate(1);
-    var byTime={today:0,week:0,month:0,older:0};
-    memories.forEach(function(m){
-        if(byCat[m.category]!==undefined)byCat[m.category]++;
-        if(byPriv[m.privacy]!==undefined)byPriv[m.privacy]++;
-        if(m.created>=today.getTime())byTime.today++;
-        else if(m.created>=week.getTime())byTime.week++;
-        else if(m.created>=month.getTime())byTime.month++;
-        else byTime.older++;
-    });
-    var recent=memories.slice(0,5).map(function(m){return'<div class="stat-recent-item"><span class="stat-recent-cat">'+m.category+'</span>'+escapeHtml(m.content.substring(0,60))+'...</div>';}).join('');
-    document.getElementById('view-stats').innerHTML='<div class="stats-view"><h2>📊 记忆统计</h2><div class="stats-overview"><div class="stat-box total"><div class="stat-num">'+total+'</div><div class="stat-label">总记忆</div></div></div><div class="stats-section"><h3>按分类</h3><div class="stats-grid-3">'+Object.keys(byCat).map(function(c){return'<div class="stat-card"><div class="stat-num">'+byCat[c]+'</div><div class="stat-label">'+c+'</div></div>';}).join('')+'</div></div><div class="stats-section"><h3>按隐私级别</h3><div class="stats-grid-3">'+Object.keys(byPriv).map(function(p){return'<div class="stat-card"><div class="stat-num">'+byPriv[p]+'</div><div class="stat-label">'+getPrivacyLabel(p)+'</div></div>';}).join('')+'</div></div><div class="stats-section"><h3>按时间</h3><div class="stats-grid-4"><div class="stat-card"><div class="stat-num">'+byTime.today+'</div><div class="stat-label">今天</div></div><div class="stat-card"><div class="stat-num">'+byTime.week+'</div><div class="stat-label">本周</div></div><div class="stat-card"><div class="stat-num">'+byTime.month+'</div><div class="stat-label">本月</div></div><div class="stat-card"><div class="stat-num">'+byTime.older+'</div><div class="stat-label">更早</div></div></div></div><div class="stats-section"><h3>最近添加</h3><div class="stat-recent">'+recent+'</div></div></div>';
-}
-function renderPrivacyView(){
-    var byPriv={PUBLIC:0,INTERNAL:0,PRIVATE:0,STRICT:0};
-    memories.forEach(function(m){if(byPriv[m.privacy]!==undefined)byPriv[m.privacy]++});
-    document.getElementById('view-privacy').innerHTML='<div class="privacy-view"><h2>🔐 隐私管理</h2><button class="toolbar-btn primary" onclick="runPrivacyScan()" style="margin-bottom:1rem">🔍 隐私扫描</button><div id="scan-result"></div><div class="privacy-levels"><div class="privacy-card public"><h4>🔓 公开 (PUBLIC)</h4><p>任意模块、任意 Agent 可访问。无限制，适用于公开信息、一般知识分享。</p><span class="count">'+byPriv.PUBLIC+' 条</span></div><div class="privacy-card internal"><h4>🏢 内部 (INTERNAL)</h4><p>仅限同一 Agent 会话内访问。工作记录、项目进展，默认分级。</p><span class="count">'+byPriv.INTERNAL+' 条</span></div><div class="privacy-card private"><h4>🔒 私密 (PRIVATE)</h4><p>需显式 ACL 授权才能被其他 Agent 访问。个人偏好、私人信息。</p><span class="count">'+byPriv.PRIVATE+' 条</span></div><div class="privacy-card strict"><h4>⛔ 机要 (STRICT)</h4><p>物理隔离独立目录存储，需单独 ACL 授权。密码、证件号、财务信息。</p><span class="count">'+byPriv.STRICT+' 条</span></div></div></div>';
-}
-function runPrivacyScan(){
-    var keywords={phone:/1[3-9]\d{9}/,email:/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/,password:/(密码|pass)[:：]\s*\S+/i};
-    var results=[];
-    memories.forEach(function(m){
-        var text=m.content+(m.tags||'');
-        var found=[];
-        if(keywords.phone.test(text))found.push('手机号');
-        if(keywords.email.test(text))found.push('邮箱');
-        if(keywords.password.test(text))found.push('密码');
-        if(found.length>0){
-            var suggested='INTERNAL';
-            if(found.includes('密码'))suggested='STRICT';
-            else if(found.includes('手机号')||found.includes('邮箱'))suggested='PRIVATE';
-            if(m.privacy!==suggested)results.push({c:m.content.substring(0,50),f:found,s:suggested,cur:m.privacy});
-        }
-    });
-    var el=document.getElementById('scan-result');
-    if(!el)return;
-    if(results.length===0){el.innerHTML='<div class="scan-empty">✅ 未发现需要调整隐私级别的记忆</div>';}
-    else{el.innerHTML='<div class="scan-result"><h4>⚠️ 发现 '+results.length+' 条可能需要调整：</h4>'+results.map(function(r){return'<div class="scan-item"><div class="scan-content">'+escapeHtml(r.c)+'...</div><div class="scan-tags"><span class="scan-found">发现:'+r.f.join(',')+'</span><span class="scan-suggested">建议:'+r.s+'</span><span class="scan-current">当前:'+r.cur+'</span></div></div>';}).join('')+'</div>';}
-}document.getElementById('edit-id').value='';document.getElementById('input-content').value='';document.getElementById('input-tags').value='';document.getElementById('input-date').value=new Date().toISOString().split('T')[0];document.querySelector('input[name="privacy"][value="PUBLIC"]').checked=true;document.getElementById('modal-overlay').classList.add('active');}
+function showView(v){document.querySelectorAll('.header-nav button').forEach(function(b){b.classList.remove('active');});event.target.classList.add('active');}
+function showAddModal(){document.getElementById('modal-title').textContent='添加记忆';document.getElementById('edit-id').value='';document.getElementById('input-content').value='';document.getElementById('input-tags').value='';document.getElementById('input-date').value=new Date().toISOString().split('T')[0];document.querySelector('input[name="privacy"][value="PUBLIC"]').checked=true;document.getElementById('modal-overlay').classList.add('active');}
 function closeModal(){document.getElementById('modal-overlay').classList.remove('active');}
 function saveMemory(){var content=document.getElementById('input-content').value.trim();if(!content)return alert('请输入内容');var tags=document.getElementById('input-tags').value.trim();var privacy=document.querySelector('input[name="privacy"]:checked').value;var editId=document.getElementById('edit-id').value;var created=Date.now();var category=autoCategorize(content);if(editId){var idx=memories.findIndex(function(m){return m.id===editId;});if(idx!==-1){memories[idx]={...memories[idx],content,tags,privacy,category,modified:Date.now()};}}else{memories.unshift({id:Date.now().toString(36)+Math.random().toString(36).substr(2,5),content,tags,privacy,category,created:created});}saveMemories();renderMemories();updateStats();updateExportBtn();closeModal();}
 function editMemory(id){var m=memories.find(function(x){return x.id===id;});if(!m)return;document.getElementById('modal-title').textContent='编辑记忆';document.getElementById('edit-id').value=m.id;document.getElementById('input-content').value=m.content;document.getElementById('input-tags').value=m.tags||'';if(m.created){var d=new Date(m.created);document.getElementById('input-date').value=d.toISOString().split('T')[0];}document.querySelector('input[name="privacy"][value="'+m.privacy+'"]').checked=true;document.getElementById('modal-overlay').classList.add('active');}
