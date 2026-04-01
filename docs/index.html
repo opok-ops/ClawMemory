@@ -746,7 +746,7 @@
     <div>
       <div class="hero-badge">
         <span class="pulse"></span>
-        AI Agent 记忆基础设施 · v1.5.1
+        AI Agent 记忆基础设施 · v1.5.2
       </div>
       <h1>
         让 AI Agent<br>
@@ -793,6 +793,11 @@
         <div class="feature-icon cyan">🔐</div>
         <h3>本地加密存储</h3>
         <p>AES-256-GCM 认证加密，每条记忆独立 nonce。PBKDF2-SHA256 密钥派生，100000 次迭代，机器特征绑定。</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon cyan">📊</div>
+        <h3>统计分析视图</h3>
+        <p>可视化记忆分布、分类统计、隐私合规扫描。按时间、按分类、按隐私级别多维度分析。</p>
       </div>
       <div class="feature-card reveal">
         <div class="feature-icon purple">🏷️</div>
@@ -893,7 +898,7 @@ result = adapter.<span class="fn">tool_search</span>(
 
 <span class="cm"># 添加新记忆（自动分类 + 隐私检测）</span>
 adapter.<span class="fn">tool_add</span>(
-    content=<span class="str">"今天完成了 ClawMemory v1.5.1 开发"</span>,
+    content=<span class="str">"今天完成了 ClawMemory v1.5.2 开发"</span>,
     category=<span class="str">"work"</span>,
     importance=<span class="str">"HIGH"</span>
 )
@@ -1069,7 +1074,7 @@ python -m ClawMemory.cli.main --help
       </ul>
     </div>
     <div class="footer-copy">
-      ClawMemory v1.5.1 · AI Agent 终身记忆系统 · MIT License<br>
+      ClawMemory v1.5.2 · AI Agent 终身记忆系统 · MIT License<br>
       所有数据存储在本地 · 云端上传已禁用 · 你的记忆永远属于你
     </div>
   </footer>
