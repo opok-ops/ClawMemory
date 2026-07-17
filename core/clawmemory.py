@@ -5,6 +5,9 @@ ClawMemory v5.0 主入口类
 
 from typing import Optional, List, Dict, Any
 from pathlib import Path
+import json
+import csv
+import uuid
 
 from .types import (
     PrivacyLevel,
@@ -202,6 +205,162 @@ class ClawMemory:
         """备份"""
         return self._storage.backup(backup_dir)
 
+    def export_json(self, output_path: str,
+                    category: Optional[str] = None,
+                    layer: Optional[MemoryLayer] = None,
+                    include_private: bool = False) -> int:
+        """导出记忆为 JSON 文件"""
+        entries = self._storage.list_memories(
+            category=category,
+            layer=layer,
+            limit=100000,
+            offset=0,
+        )
+
+        if not include_private:
+            entries = [
+                e for e in entries
+                if e.privacy in (PrivacyLevel.PUBLIC, PrivacyLevel.INTERNAL)
+            ]
+
+        data = {
+            "version": "5.0.1",
+            "export_time": "",
+            "total": len(entries),
+            "memories": [e.to_dict() for e in entries],
+        }
+
+        from datetime import datetime
+        data["export_time"] = datetime.now().isoformat()
+
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        return len(entries)
+
+    def import_json(self, input_path: str,
+                    skip_duplicates: bool = True,
+                    target_layer: Optional[MemoryLayer] = None) -> Dict[str, int]:
+        """从 JSON 文件导入记忆"""
+        path = Path(input_path)
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {input_path}")
+
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        memories = data.get("memories", [])
+        stats = {"imported": 0, "skipped": 0, "failed": 0}
+
+        for mem_data in memories:
+            try:
+                existing = self._storage.get_memory(mem_data.get("id", ""))
+                if existing and skip_duplicates:
+                    stats["skipped"] += 1
+                    continue
+
+                layer = target_layer
+                if not layer and mem_data.get("layer"):
+                    try:
+                        layer = MemoryLayer(mem_data["layer"])
+                    except ValueError:
+                        layer = self.config.default_layer
+
+                privacy = self.config.default_privacy
+                if mem_data.get("privacy"):
+                    try:
+                        privacy = PrivacyLevel(mem_data["privacy"])
+                    except ValueError:
+                        pass
+
+                importance = self.config.default_importance
+                if mem_data.get("importance"):
+                    try:
+                        importance = Importance(mem_data["importance"])
+                    except ValueError:
+                        pass
+
+                memory_type = MemoryType.TEXT
+                if mem_data.get("memory_type"):
+                    try:
+                        memory_type = MemoryType(mem_data["memory_type"])
+                    except ValueError:
+                        pass
+
+                new_id = str(uuid.uuid4()) if (skip_duplicates and existing) else mem_data.get("id", str(uuid.uuid4()))
+
+                entry = self._storage.add_memory(
+                    content=mem_data.get("content", ""),
+                    category=mem_data.get("category", "general"),
+                    tags=mem_data.get("tags", []),
+                    privacy=privacy,
+                    importance=importance,
+                    memory_type=memory_type,
+                    layer=layer or self.config.default_layer,
+                    source_session=mem_data.get("source_session", ""),
+                    source_agent=mem_data.get("source_agent", ""),
+                    metadata=mem_data.get("metadata", {}),
+                )
+
+                self._index.index_memory(
+                    entry.id,
+                    mem_data.get("content", ""),
+                    metadata={"category": mem_data.get("category", "general")},
+                )
+
+                stats["imported"] += 1
+            except Exception:
+                stats["failed"] += 1
+
+        return stats
+
+    def export_csv(self, output_path: str,
+                   category: Optional[str] = None,
+                   include_private: bool = False) -> int:
+        """导出记忆为 CSV 文件"""
+        entries = self._storage.list_memories(
+            category=category,
+            limit=100000,
+            offset=0,
+        )
+
+        if not include_private:
+            entries = [
+                e for e in entries
+                if e.privacy in (PrivacyLevel.PUBLIC, PrivacyLevel.INTERNAL)
+            ]
+
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(path, "w", encoding="utf-8-sig", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "id", "content", "category", "tags", "privacy",
+                "importance", "memory_type", "layer", "access_count",
+                "created_at", "updated_at",
+            ])
+
+            for e in entries:
+                writer.writerow([
+                    e.id,
+                    e.content,
+                    e.category,
+                    ",".join(e.tags),
+                    e.privacy.value,
+                    e.importance.value,
+                    e.memory_type.value,
+                    e.layer.value,
+                    e.access_count,
+                    e.created_at,
+                    e.updated_at,
+                ])
+
+        return len(entries)
+
     @property
     def storage(self) -> StorageEngine:
         return self._storage
@@ -217,3 +376,58 @@ class ClawMemory:
     def close(self):
         if self._storage:
             self._storage.close()
+
+    @classmethod
+    def from_config(cls, config_path: str) -> "ClawMemory":
+        """从配置文件创建 ClawMemory 实例"""
+        path = Path(config_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Config file not found: {config_path}")
+
+        with open(path, "r", encoding="utf-8") as f:
+            config_data = json.load(f)
+
+        config_kwargs = {}
+        for key in [
+            "db_path", "key_file", "encrypted",
+            "default_privacy", "default_importance", "default_layer",
+        ]:
+            if key in config_data:
+                if key == "default_privacy":
+                    config_kwargs[key] = PrivacyLevel(config_data[key])
+                elif key == "default_importance":
+                    config_kwargs[key] = Importance(config_data[key])
+                elif key == "default_layer":
+                    config_kwargs[key] = MemoryLayer(config_data[key])
+                else:
+                    config_kwargs[key] = config_data[key]
+
+        config = MemoryConfig(**config_kwargs)
+        return cls(config=config)
+
+    @classmethod
+    def load_config(cls, config_path: str) -> dict:
+        """加载配置文件为字典"""
+        path = Path(config_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Config file not found: {config_path}")
+
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def save_config(self, config_path: str):
+        """保存当前配置到文件"""
+        config_data = {
+            "db_path": self.config.db_path,
+            "key_file": self.config.key_file,
+            "encrypted": self.config.encrypted,
+            "default_privacy": self.config.default_privacy.value,
+            "default_importance": self.config.default_importance.value,
+            "default_layer": self.config.default_layer.value,
+        }
+
+        path = Path(config_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(config_data, f, ensure_ascii=False, indent=2)

@@ -401,6 +401,55 @@ def cmd_backup(args):
     return 0
 
 
+def cmd_export(args):
+    """导出记忆"""
+    cm = _get_memory(args)
+    layer = MemoryLayer(args.layer) if args.layer else None
+
+    if args.format == "json":
+        count = cm.export_json(
+            output_path=args.output,
+            category=args.category,
+            layer=layer,
+            include_private=args.include_private,
+        )
+    elif args.format == "csv":
+        count = cm.export_csv(
+            output_path=args.output,
+            category=args.category,
+            include_private=args.include_private,
+        )
+    else:
+        print(c(f"❌ 不支持的格式：{args.format}", "red"))
+        return 1
+
+    print(c(f"✅ 导出成功！共 {count} 条记忆", "green"))
+    print(f"   文件：{args.output}")
+    print(f"   格式：{args.format.upper()}")
+    cm.close()
+    return 0
+
+
+def cmd_import(args):
+    """导入记忆"""
+    cm = _get_memory(args)
+    target_layer = MemoryLayer(args.target_layer) if args.target_layer else None
+
+    stats = cm.import_json(
+        input_path=args.input,
+        skip_duplicates=not args.force,
+        target_layer=target_layer,
+    )
+
+    print(c("📥 导入完成", "bold"))
+    print("=" * 40)
+    print(f"  成功导入：{c(str(stats['imported']), 'green')} 条")
+    print(f"  跳过重复：{c(str(stats['skipped']), 'yellow')} 条")
+    print(f"  导入失败：{c(str(stats['failed']), 'red')} 条")
+    cm.close()
+    return 0
+
+
 def cmd_compliance(args):
     """合规报告"""
     cm = _get_memory(args)
@@ -512,6 +561,18 @@ def main():
     p_backup = sub.add_parser("backup", help="备份数据")
     p_backup.add_argument("--output", default="./data/backup", help="备份目录")
 
+    p_export = sub.add_parser("export", help="导出记忆")
+    p_export.add_argument("--output", "-o", default="./data/export.json", help="输出文件")
+    p_export.add_argument("--format", "-f", default="json", choices=["json", "csv"], help="导出格式")
+    p_export.add_argument("--category", "-c", help="按分类筛选")
+    p_export.add_argument("--layer", "-l", help="按层级筛选")
+    p_export.add_argument("--include-private", action="store_true", help="包含私密记忆")
+
+    p_import = sub.add_parser("import", help="导入记忆")
+    p_import.add_argument("input", help="导入文件路径")
+    p_import.add_argument("--target-layer", help="目标记忆层级")
+    p_import.add_argument("--force", action="store_true", help="强制导入（覆盖重复）")
+
     p_compliance = sub.add_parser("compliance", help="合规报告")
 
     p_serve = sub.add_parser("serve", help="启动 Web UI")
@@ -529,6 +590,8 @@ def main():
         "graph": cmd_graph,
         "personality": cmd_personality,
         "backup": cmd_backup,
+        "export": cmd_export,
+        "import": cmd_import,
         "compliance": cmd_compliance,
         "serve": cmd_serve,
     }

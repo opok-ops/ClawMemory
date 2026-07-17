@@ -1,0 +1,26 @@
+{
+  "db_path": "./data/memory.db",
+  "key_file": "./data/.key",
+  "encrypted": false,
+  "default_privacy": "INTERNAL",
+  "default_importance": "MEDIUM",
+  "default_layer": "short_term",
+  "auto_consolidate": false,
+  "consolidation_interval_hours": 24,
+  "retention": {
+    "sensory_max": 50,
+    "short_term_max": 500,
+    "long_term_max": 10000,
+    "permanent_max": null
+  },
+  "search": {
+    "default_limit": 10,
+    "min_relevance": 0.3,
+    "use_kg_enhancement": true
+  },
+  "privacy": {
+    "enable_audit_log": true,
+    "default_access_policy": "read_only",
+    "strict_mode": false
+  }
+}
