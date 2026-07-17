@@ -1,4 +1,4 @@
-# ClawMemory v5.0
+# ClawMemory v5.0.1
 
 **AI Agent 终身记忆系统 — 四层记忆架构 · 知识图谱 · 多模态 · 人格化 · 联邦网络**
 
@@ -6,7 +6,7 @@
 
 ---
 
-## ✨ v5.0 六大突破
+## ✨ v5.0.1 六大突破
 
 | 特性 | 说明 |
 |------|------|
@@ -23,7 +23,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    ClawMemory v5.0                        │
+│                    ClawMemory v5.0.1                        │
 ├─────────────────────────────────────────────────────────┤
 │  🎯 认知层 (Cognitive Layer)                              │
 │     人格引擎 · 知识图谱 · 记忆演化 · 联邦网络              │
@@ -58,7 +58,7 @@ python cli/main.py init
 
 ```bash
 # 添加记忆
-python cli/main.py add "ClawMemory v5.0 真的太强了！" --category tech --importance high
+python cli/main.py add "ClawMemory v5.0.1 真的太强了！" --category tech --importance high
 
 # 搜索记忆
 python cli/main.py search "数据库优化"
@@ -338,7 +338,7 @@ context = adapter.get_context("数据库优化")
 - 记忆导出/导入：支持 JSON 和 CSV 格式，支持按分类/层级筛选
 - 配置文件支持：from_config() / save_config() 方法，config.json 模板
 - 单元测试框架：14 个核心测试用例，覆盖类型、存储、主类、知识图谱、人格化引擎
-- CLI 增强：新增 export / import 子命令（待集成）
+- CLI 增强：新增 export / import 子命令
 
 ### v5.0.0 (2026-07-17)
 
