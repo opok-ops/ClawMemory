@@ -1,0 +1,311 @@
+﻿"""
+ClawMemory v5.0 知识图谱引擎
+自动提取实体与关系，构建动态知识网络
+"""
+
+import re
+import json
+import uuid
+import time
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional, Tuple, Set
+from collections import defaultdict
+
+
+@dataclass
+class KnowledgeEntity:
+    """知识实体"""
+    id: str
+    name: str
+    entity_type: str
+    description: str = ""
+    metadata: Dict = field(default_factory=dict)
+    created_at: float = 0.0
+
+
+@dataclass
+class KnowledgeRelation:
+    """知识关系"""
+    id: str
+    from_entity: str
+    to_entity: str
+    relation_type: str
+    weight: float = 1.0
+    memory_ids: List[str] = field(default_factory=list)
+    metadata: Dict = field(default_factory=dict)
+    created_at: float = 0.0
+
+
+@dataclass
+class GraphPath:
+    """图路径"""
+    entities: List[str]
+    relations: List[str]
+    total_weight: float
+
+
+ENTITY_PATTERNS = {
+    "technology": [
+        r'\b(python|java|javascript|typescript|go|rust|c\+\+|ruby|php)\b',
+        r'\b(react|vue|angular|django|flask|spring|fastapi)\b',
+        r'\b(mysql|postgresql|mongodb|redis|elasticsearch|sqlite)\b',
+        r'\b(docker|kubernetes|k8s|aws|gcp|azure)\b',
+    ],
+    "person": [
+        r'(?:Mr\.|Mrs\.|Ms\.|Dr\.|Prof\.)\s+[A-Z][a-z]+',
+    ],
+    "organization": [
+        r'(?:Inc|Ltd|LLC|Corp|Corporation|Company|University|Institute)\b',
+    ],
+}
+
+RELATION_PATTERNS = [
+    (r'(.+?)\s+(?:使用|利用|采用|运用)\s+(.+)', "uses"),
+    (r'(.+?)\s+(?:是|属于|归类为)\s+(.+)', "is_a"),
+    (r'(.+?)\s+(?:包含|包括|有)\s+(.+)', "contains"),
+    (r'(.+?)\s+(?:相关于|关联|有关)\s+(.+)', "related_to"),
+    (r'(.+?)\s+(?:优化|改进|提升)\s+(.+)', "improves"),
+    (r'(.+?)\s+(?:基于|依赖|需要)\s+(.+)', "depends_on"),
+]
+
+
+class KnowledgeGraph:
+    """知识图谱引擎"""
+
+    def __init__(self, storage=None):
+        self.storage = storage
+        self.entities: Dict[str, KnowledgeEntity] = {}
+        self.relations: Dict[str, KnowledgeRelation] = {}
+        self._adjacency: Dict[str, List[Tuple[str, str, float]]] = defaultdict(list)
+
+    def extract_entities(self, text: str) -> List[Tuple[str, str]]:
+        """从文本中提取实体（简易版）"""
+        entities = []
+
+        for entity_type, patterns in ENTITY_PATTERNS.items():
+            for pattern in patterns:
+                matches = re.findall(pattern, text, re.IGNORECASE)
+                for match in matches:
+                    if isinstance(match, tuple):
+                        match = match[0]
+                    entities.append((match.strip().lower(), entity_type))
+
+        seen = set()
+        unique = []
+        for name, etype in entities:
+            key = (name, etype)
+            if key not in seen:
+                seen.add(key)
+                unique.append((name, etype))
+
+        return unique
+
+    def extract_relations(self, text: str, entities: List[str]) -> List[Tuple[str, str, str]]:
+        """提取实体间关系（简易版）"""
+        relations = []
+        text_lower = text.lower()
+
+        for pattern, rel_type in RELATION_PATTERNS:
+            matches = re.findall(pattern, text_lower)
+            for match in matches:
+                if len(match) >= 2:
+                    subj = match[0].strip()
+                    obj = match[1].strip()
+
+                    subj_entity = self._find_matching_entity(subj, entities)
+                    obj_entity = self._find_matching_entity(obj, entities)
+
+                    if subj_entity and obj_entity and subj_entity != obj_entity:
+                        relations.append((subj_entity, rel_type, obj_entity))
+
+        return relations
+
+    def _find_matching_entity(self, text: str, entities: List[str]) -> Optional[str]:
+        text_lower = text.lower()
+        for entity in entities:
+            if entity.lower() in text_lower:
+                return entity
+        return None
+
+    def add_entity(self, name: str, entity_type: str = "general",
+                   description: str = "", metadata: Optional[Dict] = None) -> KnowledgeEntity:
+        """添加实体"""
+        entity_id = str(uuid.uuid4())
+        now = time.time()
+
+        entity = KnowledgeEntity(
+            id=entity_id,
+            name=name,
+            entity_type=entity_type,
+            description=description,
+            metadata=metadata or {},
+            created_at=now,
+        )
+
+        self.entities[entity_id] = entity
+
+        if self.storage:
+            try:
+                conn = self.storage._get_conn()
+                conn.execute("""
+                    INSERT OR IGNORE INTO knowledge_graph (id, entity, entity_type, description, metadata, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (entity_id, name, entity_type, description,
+                      json.dumps(metadata or {}, ensure_ascii=False), now))
+                conn.commit()
+            except Exception:
+                pass
+
+        return entity
+
+    def add_relation(self, from_name: str, to_name: str, relation_type: str,
+                     weight: float = 1.0, memory_id: str = "") -> KnowledgeRelation:
+        """添加关系"""
+        from_entity = self._get_or_create_entity(from_name)
+        to_entity = self._get_or_create_entity(to_name)
+
+        rel_id = str(uuid.uuid4())
+        now = time.time()
+
+        relation = KnowledgeRelation(
+            id=rel_id,
+            from_entity=from_entity.id,
+            to_entity=to_entity.id,
+            relation_type=relation_type,
+            weight=weight,
+            memory_ids=[memory_id] if memory_id else [],
+            created_at=now,
+        )
+
+        self.relations[rel_id] = relation
+        self._adjacency[from_entity.id].append((to_entity.id, relation_type, weight))
+        self._adjacency[to_entity.id].append((from_entity.id, relation_type, weight))
+
+        if self.storage:
+            try:
+                conn = self.storage._get_conn()
+                conn.execute("""
+                    INSERT INTO graph_relations (id, from_entity, to_entity, relation_type, weight, memory_ids, metadata, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (rel_id, from_entity.id, to_entity.id, relation_type,
+                      weight, json.dumps([memory_id] if memory_id else []),
+                      json.dumps({}), now))
+                conn.commit()
+            except Exception:
+                pass
+
+        return relation
+
+    def _get_or_create_entity(self, name: str) -> KnowledgeEntity:
+        for entity in self.entities.values():
+            if entity.name.lower() == name.lower():
+                return entity
+        return self.add_entity(name)
+
+    def process_memory(self, memory_id: str, content: str) -> Tuple[List[KnowledgeEntity], List[KnowledgeRelation]]:
+        """处理一条记忆，提取实体和关系"""
+        entities_data = self.extract_entities(content)
+        entity_names = [name for name, _ in entities_data]
+
+        added_entities = []
+        for name, etype in entities_data:
+            entity = self._get_or_create_entity(name)
+            if entity.entity_type == "general" and etype != "general":
+                entity.entity_type = etype
+            added_entities.append(entity)
+
+        relations = self.extract_relations(content, entity_names)
+        added_relations = []
+        for subj, rel_type, obj in relations:
+            relation = self.add_relation(subj, obj, rel_type, memory_id=memory_id)
+            added_relations.append(relation)
+
+        return added_entities, added_relations
+
+    def get_related_entities(self, entity_name: str, depth: int = 2,
+                             max_results: int = 20) -> List[Tuple[str, str, float]]:
+        """获取相关实体（广度优先）"""
+        entity = self._find_entity_by_name(entity_name)
+        if not entity:
+            return []
+
+        visited = {entity.id}
+        queue = [(entity.id, 0, 1.0)]
+        results = []
+
+        while queue:
+            current_id, current_depth, current_weight = queue.pop(0)
+            if current_depth > depth:
+                continue
+
+            for neighbor_id, rel_type, weight in self._adjacency.get(current_id, []):
+                if neighbor_id in visited:
+                    continue
+                visited.add(neighbor_id)
+
+                total_weight = current_weight * weight
+                neighbor = self.entities.get(neighbor_id)
+                if neighbor:
+                    results.append((neighbor.name, rel_type, total_weight))
+
+                if current_depth < depth:
+                    queue.append((neighbor_id, current_depth + 1, total_weight))
+
+        results.sort(key=lambda x: x[2], reverse=True)
+        return results[:max_results]
+
+    def find_path(self, from_name: str, to_name: str, max_depth: int = 3) -> Optional[GraphPath]:
+        """查找两个实体间的路径"""
+        from_entity = self._find_entity_by_name(from_name)
+        to_entity = self._find_entity_by_name(to_name)
+        if not from_entity or not to_entity:
+            return None
+
+        from queue import deque
+        queue = deque([(from_entity.id, [from_entity.id], [])])
+        visited = {from_entity.id}
+
+        while queue:
+            current, path, rels = queue.popleft()
+            if len(path) > max_depth + 1:
+                continue
+
+            if current == to_entity.id:
+                entity_names = []
+                for eid in path:
+                    e = self.entities.get(eid)
+                    entity_names.append(e.name if e else eid)
+                total_w = 1.0
+                return GraphPath(entities=entity_names, relations=rels, total_weight=total_w)
+
+            for neighbor_id, rel_type, weight in self._adjacency.get(current, []):
+                if neighbor_id in visited:
+                    continue
+                visited.add(neighbor_id)
+                queue.append((neighbor_id, path + [neighbor_id], rels + [rel_type]))
+
+        return None
+
+    def _find_entity_by_name(self, name: str) -> Optional[KnowledgeEntity]:
+        name_lower = name.lower()
+        for entity in self.entities.values():
+            if entity.name.lower() == name_lower:
+                return entity
+        return None
+
+    def get_entity_stats(self) -> Dict:
+        """获取图谱统计"""
+        type_counts = defaultdict(int)
+        for entity in self.entities.values():
+            type_counts[entity.entity_type] += 1
+
+        rel_counts = defaultdict(int)
+        for relation in self.relations.values():
+            rel_counts[relation.relation_type] += 1
+
+        return {
+            "total_entities": len(self.entities),
+            "total_relations": len(self.relations),
+            "entity_types": dict(type_counts),
+            "relation_types": dict(rel_counts),
+        }

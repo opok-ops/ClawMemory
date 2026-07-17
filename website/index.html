@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="ClawMemory v5.0 - AI Agent 终身记忆系统，多层记忆架构、知识图谱、多模态支持，100% 本地加密">
+<title>ClawMemory v5.0 — AI Agent 终身记忆系统</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<canvas id="particle-canvas"></canvas>
+
+<div class="cursor-glow" id="cursorGlow"></div>
+
+<nav class="nav">
+  <div class="nav-container">
+    <a href="#" class="nav-logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 40 40" fill="none">
+          <circle cx="20" cy="20" r="18" stroke="url(#logoGrad)" stroke-width="2"/>
+          <path d="M12 20C12 15.582 15.582 12 20 12C24.418 12 28 15.582 28 20" stroke="url(#logoGrad)" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="20" cy="20" r="3" fill="url(#logoGrad)"/>
+          <defs>
+            <linearGradient id="logoGrad" x1="0" y1="0" x2="40" y2="40">
+              <stop offset="0%" stop-color="#00d4ff"/>
+              <stop offset="50%" stop-color="#a855f7"/>
+              <stop offset="100%" stop-color="#f472b6"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <span class="logo-text">ClawMemory <em>v5.0</em></span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#features">功能</a></li>
+      <li><a href="#architecture">架构</a></li>
+      <li><a href="#playground">演示</a></li>
+      <li><a href="#privacy">隐私</a></li>
+      <li><a href="#docs">文档</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="https://github.com/opok-ops/ClawMemory" class="btn btn-ghost" target="_blank">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        GitHub
+      </a>
+      <a href="#get-started" class="btn btn-primary">开始使用</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="hero-bg">
+    <div class="hero-grid"></div>
+    <div class="hero-glow hero-glow-1"></div>
+    <div class="hero-glow hero-glow-2"></div>
+  </div>
+  <div class="hero-content">
+    <div class="hero-badge">
+      <span class="badge-dot"></span>
+      v5.0 全新发布 · 多层记忆架构 · 知识图谱引擎
+    </div>
+    <h1 class="hero-title">
+      让 AI Agent 拥有
+      <span class="gradient-text">终身记忆</span>
+      <br>与进化学习能力
+    </h1>
+    <p class="hero-subtitle">
+      四层记忆架构模拟人类认知 · 知识图谱自动关联推理 · 多模态感知记忆 ·
+      100% 本地端侧加密 · 零云端依赖
+    </p>
+    <div class="hero-actions">
+      <a href="#playground" class="btn btn-primary btn-lg">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        在线演示
+      </a>
+      <a href="#features" class="btn btn-secondary btn-lg">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        查看文档
+      </a>
+    </div>
+    <div class="hero-stats">
+      <div class="stat">
+        <div class="stat-value" data-target="4">0</div>
+        <div class="stat-label">记忆层级</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat">
+        <div class="stat-value" data-target="200">0</div>
+        <div class="stat-label">ms 检索延迟</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat">
+        <div class="stat-value" data-target="100">0</div>
+        <div class="stat-label">% 本地加密</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat">
+        <div class="stat-value" data-target="100">0</div>
+        <div class="stat-label">万级容量</div>
+      </div>
+    </div>
+  </div>
+  <div class="hero-scroll">
+    <div class="scroll-hint">
+      <div class="scroll-mouse"><div class="scroll-wheel"></div></div>
+      <span>向下滚动探索</span>
+    </div>
+  </div>
+</header>
+
+<section id="features" class="section features-section">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-tag">核心能力</span>
+      <h2 class="section-title">v5.0 带来<span class="gradient-text"> 六大突破</span></h2>
+      <p class="section-desc">
+        从简单的文本记忆进化到完整的认知记忆系统，模拟人类大脑的记忆形成、巩固与遗忘机制。
+      </p>
+    </div>
+
+    <div class="features-grid">
+      <div class="feature-card reveal">
+        <div class="feature-icon icon-cyan">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+        </div>
+        <h3>四层记忆架构</h3>
+        <p>感官记忆 → 短期记忆 → 长期记忆 → 永久记忆，模拟人类认知的记忆形成与巩固过程，支持艾宾浩斯遗忘曲线。</p>
+        <div class="feature-tags">
+          <span>感官缓冲</span><span>工作记忆</span><span>语义存储</span>
+        </div>
+      </div>
+
+      <div class="feature-card reveal">
+        <div class="feature-icon icon-purple">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="5" r="2"/>
+            <circle cx="5" cy="19" r="2"/>
+            <circle cx="19" cy="19" r="2"/>
+            <line x1="12" y1="7" x2="5" y2="17"/>
+            <line x1="12" y1="7" x2="19" y2="17"/>
+            <line x1="7" y1="18" x2="17" y2="18"/>
+          </svg>
+        </div>
+        <h3>知识图谱引擎</h3>
+        <p>自动提取实体与关系，构建动态知识网络，支持关联推理、路径查找和上下文联想，让记忆不再孤立。</p>
+        <div class="feature-tags">
+          <span>实体抽取</span><span>关系推理</span><span>图谱检索</span>
+        </div>
+      </div>
+
+      <div class="feature-card reveal">
+        <div class="feature-icon icon-pink">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2" y="3" width="20" height="14" rx="2"/>
+            <path d="M8 21h8"/>
+            <path d="M12 17v4"/>
+          </svg>
+        </div>
+        <h3>多模态记忆</h3>
+        <p>支持文本、图像、音频、代码、结构化数据等多种记忆类型，统一向量空间下的跨模态检索与关联。</p>
+        <div class="feature-tags">
+          <span>图像理解</span><span>语音转写</span><span>跨模态</span>
+        </div>
+      </div>
+
+      <div class="feature-card reveal">
+        <div class="feature-icon icon-green">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+        </div>
+        <h3>人格化记忆</h3>
+        <p>学习用户偏好、语言风格、思维模式，动态生成用户画像，让 Agent 越用越懂你，对话如老友般自然。</p>
+        <div class="feature-tags">
+          <span>用户画像</span><span>偏好学习</span><span>风格适配</span>
+        </div>
+      </div>
+
+      <div class="feature-card reveal">
+        <div class="feature-icon icon-orange">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+        </div>
+        <h3>联邦记忆网络</h3>
+        <p>多 Agent 间安全共享记忆，端侧联邦学习，数据不出本地即可实现群体智能，隐私计算保障安全。</p>
+        <div class="feature-tags">
+          <span>多Agent</span><span>联邦学习</span><span>隐私计算</span>
+        </div>
+      </div>
+
+      <div class="feature-card reveal">
+        <div class="feature-icon icon-red">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <h3>零知识隐私</h3>
+        <p>AES-256-GCM 端侧加密 + 零知识证明验证 + 四级隐私隔离，你的记忆永远只属于你，即使是我们也无法访问。</p>
+        <div class="feature-tags">
+          <span>端侧加密</span><span>零知识证明</span><span>物理隔离</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="architecture" class="section architecture-section">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-tag">系统架构</span>
+      <h2 class="section-title">从 <span class="gradient-text">存储引擎</span> 到 <span class="gradient-text">认知层</span></h2>
+      <p class="section-desc">
+        模块化分层设计，每一层都可独立扩展，既可以轻量嵌入，也可以作为独立服务部署。
+      </p>
+    </div>
+
+    <div class="arch-visual reveal">
+      <div class="arch-layer arch-layer-cognitive">
+        <div class="arch-layer-header">
+          <span class="layer-tag">认知层</span>
+          <span class="layer-name">Cognitive Layer</span>
+        </div>
+        <div class="arch-modules">
+          <div class="arch-mod">
+            <div class="mod-icon">🧠</div>
+            <span>人格引擎</span>
+          </div>
+          <div class="arch-mod">
+            <div class="mod-icon">🕸️</div>
+            <span>知识图谱</span>
+          </div>
+          <div class="arch-mod">
+            <div class="mod-icon">🔄</div>
+            <span>记忆演化</span>
+          </div>
+          <div class="arch-mod">
+            <div class="mod-icon">🤝</div>
+            <span>联邦网络</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="arch-arrow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="12 5 12 19 19 12"/><polyline points="12 19 5 12"/>
+        </svg>
+      </div>
+
+      <div class="arch-layer arch-layer-modules">
+        <div class="arch-layer-header">
+          <span class="layer-tag">功能层</span>
+          <span class="layer-name">Function Layer</span>
+        </div>
+        <div class="arch-modules">
+          <div class="arch-mod">
+            <div class="mod-icon">📥</div>
+            <span>召回引擎</span>
+          </div>
+          <div class="arch-mod">
+            <div class="mod-icon">🏷️</div>
+            <span>分类管理</span>
+          </div>
+          <div class="arch-mod">
+            <div class="mod-icon">🔒</div>
+            <span>隐私引擎</span>
+          </div>
+          <div class="arch-mod">
+            <div class="mod-icon">🔗</div>
+            <span>整合器</span>
+          </div>
+          <div class="arch-mod">
+            <div class="mod-icon">🖼️</div>
+            <span>多模态</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="arch-arrow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="12 5 12 19 19 12"/><polyline points="12 19 5 12"/>
+        </svg>
+      </div>
+
+      <div class="arch-layer arch-layer-core">
+        <div class="arch-layer-header">
+          <span class="layer-tag">核心层</span>
+          <span class="layer-name">Core Layer</span>
+        </div>
+        <div class="arch-modules">
+          <div class="arch-mod">
+            <div class="mod-icon">💾</div>
+            <span>存储引擎</span>
+          </div>
+          <div class="arch-mod">
+            <div class="mod-icon">🔍</div>
+            <span>索引引擎</span>
+          </div>
+          <div class="arch-mod">
+            <div class="mod-icon">🔐</div>
+            <span>加密引擎</span>
+          </div>
+          <div class="arch-mod">
+            <div class="mod-icon">📊</div>
+            <span>查询引擎</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="arch-arrow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="12 5 12 19 19 12"/><polyline points="12 19 5 12"/>
+        </svg>
+      </div>
+
+      <div class="arch-layer arch-layer-adapters">
+        <div class="arch-layer-header">
+          <span class="layer-tag">适配层</span>
+          <span class="layer-name">Adapter Layer</span>
+        </div>
+        <div class="arch-modules">
+          <div class="arch-mod">
+            <div class="mod-icon">🦀</div>
+            <span>OpenClaw</span>
+          </div>
+          <div class="arch-mod">
+            <div class="mod-icon">♨️</div>
+            <span>Claude Code</span>
+          </div>
+          <div class="arch-mod">
+            <div class="mod-icon">🤖</div>
+            <span>通用 API</span>
+          </div>
+          <div class="arch-mod">
+            <div class="mod-icon">💻</div>
+            <span>CLI / SDK</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="playground" class="section playground-section">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-tag">在线演示</span>
+      <h2 class="section-title">亲身体验 <span class="gradient-text">记忆检索</span></h2>
+      <p class="section-desc">
+        在下方输入查询，感受 ClawMemory 的语义检索和知识关联能力。（演示数据为模拟数据）
+      </p>
+    </div>
+
+    <div class="playground reveal">
+      <div class="playground-sidebar">
+        <div class="pg-header">
+          <h4>记忆库</h4>
+          <span class="pg-count">128 条</span>
+        </div>
+        <div class="pg-categories">
+          <div class="pg-cat active" data-cat="all">
+            <span class="cat-dot"></span>全部
+          </div>
+          <div class="pg-cat" data-cat="work">
+            <span class="cat-dot cat-blue"></span>工作
+          </div>
+          <div class="pg-cat" data-cat="life">
+            <span class="cat-dot cat-green"></span>生活
+          </div>
+          <div class="pg-cat" data-cat="tech">
+            <span class="cat-dot cat-purple"></span>技术
+          </div>
+          <div class="pg-cat" data-cat="idea">
+            <span class="cat-dot cat-orange"></span>创意
+          </div>
+        </div>
+        <div class="pg-memory-list" id="memoryList">
+        </div>
+      </div>
+      <div class="playground-main">
+        <div class="pg-search">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input type="text" id="searchInput" placeholder="搜索记忆... 例如：关于数据库优化的想法" />
+          <button class="btn btn-primary" id="searchBtn">搜索</button>
+        </div>
+        <div class="pg-results" id="searchResults">
+          <div class="pg-empty">
+            <div class="empty-icon">🔍</div>
+            <p>输入关键词开始搜索</p>
+            <span>支持语义检索、模糊匹配、分类筛选</span>
+          </div>
+        </div>
+        <div class="pg-graph" id="knowledgeGraph">
+          <div class="pg-graph-header">
+            <h4>知识图谱关联</h4>
+            <span class="graph-hint">点击节点探索关联</span>
+          </div>
+          <div class="graph-container" id="graphContainer">
+            <canvas id="graphCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="privacy" class="section privacy-section">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-tag">隐私安全</span>
+      <h2 class="section-title">你的记忆，<span class="gradient-text">只属于你</span></h2>
+      <p class="section-desc">
+        从架构层面杜绝云端上传，四级隐私隔离体系，零知识证明技术确保数据所有权完全在你手中。
+      </p>
+    </div>
+
+    <div class="privacy-tiers reveal">
+      <div class="tier-card tier-public">
+        <div class="tier-icon">🌐</div>
+        <h3>PUBLIC</h3>
+        <p>公开级记忆，可被任何模块和 Agent 访问，用于通用知识和公开信息。</p>
+        <ul>
+          <li>✓ 全模块可读</li>
+          <li>✓ 跨 Agent 共享</li>
+          <li>✓ 可导出同步</li>
+        </ul>
+      </div>
+      <div class="tier-card tier-internal">
+        <div class="tier-icon">🏠</div>
+        <h3>INTERNAL</h3>
+        <p>内部级记忆，仅同一 Agent 会话内可访问，默认隐私级别。</p>
+        <ul>
+          <li>✓ 同 Agent 可读</li>
+          <li>✓ 会话内可用</li>
+          <li>✗ 禁止跨 Agent</li>
+        </ul>
+      </div>
+      <div class="tier-card tier-private">
+        <div class="tier-icon">🔐</div>
+        <h3>PRIVATE</h3>
+        <p>私密级记忆，高度敏感数据，需显式授权才能访问，全程审计追踪。</p>
+        <ul>
+          <li>✓ 显式授权访问</li>
+          <li>✓ 完整审计日志</li>
+          <li>✗ 禁止自动召回</li>
+        </ul>
+      </div>
+      <div class="tier-card tier-strict">
+        <div class="tier-icon">🛡️</div>
+        <h3>STRICT</h3>
+        <p>严格级记忆，物理隔离存储，最高级别保护，仅用户本人可解锁。</p>
+        <ul>
+          <li>✓ 物理隔离存储</li>
+          <li>✓ 二次验证解锁</li>
+          <li>✓ 零知识证明</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="privacy-features reveal">
+      <div class="pf-item">
+        <div class="pf-icon">🔒</div>
+        <h4>AES-256-GCM</h4>
+        <p>军用级加密强度，PBKDF2 密钥派生，每条记忆独立加密</p>
+      </div>
+      <div class="pf-item">
+        <div class="pf-icon">🚫</div>
+        <h4>零云端依赖</h4>
+        <p>架构层面禁用云端上传，完全本地化运行，离线可用</p>
+      </div>
+      <div class="pf-item">
+        <div class="pf-icon">📝</div>
+        <h4>完整审计</h4>
+        <p>所有访问操作均有不可篡改的审计日志，随时可追溯</p>
+      </div>
+      <div class="pf-item">
+        <div class="pf-icon">🧩</div>
+        <h4>零知识证明</h4>
+        <p>验证记忆存在性而不泄露内容，支持隐私计算场景</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="docs" class="section docs-section">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-tag">快速上手</span>
+      <h2 class="section-title">几分钟内 <span class="gradient-text">集成使用</span></h2>
+      <p class="section-desc">
+        简洁的 API 设计，丰富的适配器，无论是 Python 项目还是 Agent 平台，都能轻松接入。
+      </p>
+    </div>
+
+    <div class="code-tabs reveal">
+      <div class="code-tab-bar">
+        <button class="code-tab active" data-tab="install">安装</button>
+        <button class="code-tab" data-tab="basic">基础使用</button>
+        <button class="code-tab" data-tab="search">语义检索</button>
+        <button class="code-tab" data-tab="openclaw">OpenClaw 集成</button>
+      </div>
+      <div class="code-panel">
+        <pre class="code-block active" id="tab-install"><code><span class="c"># 克隆仓库</span>
+git clone https://github.com/opok-ops/ClawMemory.git
+cd ClawMemory
+
+<span class="c"># 初始化（生成加密密钥）</span>
+python cli/main.py init
+
+<span class="c"># 添加第一条记忆</span>
+python cli/main.py add <span class="str">"ClawMemory v5.0 真的太强了！"</span> --category tech --importance high
+
+<span class="c"># 启动 Web UI</span>
+python cli/main.py serve</code></pre>
+
+        <pre class="code-block" id="tab-basic"><code><span class="kw">from</span> clawmemory <span class="kw">import</span> ClawMemory, PrivacyLevel, Importance
+
+<span class="c"># 初始化记忆系统</span>
+memory = ClawMemory(
+    db_path=<span class="str">"./data/memory.db"</span>,
+    encrypted=<span class="kw">True</span>,
+)
+
+<span class="c"># 添加记忆</span>
+entry = memory.add(
+    content=<span class="str">"用户喜欢用 Python 进行开发"</span>,
+    category=<span class="str">"preferences"</span>,
+    tags=[<span class="str">"python"</span>, <span class="str">"开发"</span>],
+    privacy=PrivacyLevel.PRIVATE,
+    importance=Importance.HIGH,
+)
+
+<span class="c"># 获取记忆</span>
+result = memory.get(entry.id)
+<span class="kw">print</span>(result.content)</code></pre>
+
+        <pre class="code-block" id="tab-search"><code><span class="kw">from</span> clawmemory <span class="kw">import</span> RecallConfig
+
+<span class="c"># 语义搜索</span>
+results = memory.search(
+    query=<span class="str">"关于数据库优化的建议"</span>,
+    config=RecallConfig(
+        max_results=<span class="num">10</span>,
+        min_relevance=<span class="num">0.7</span>,
+        include_categories=[<span class="str">"tech"</span>, <span class="str">"work"</span>],
+    )
+)
+
+<span class="c"># 知识图谱关联检索</span>
+related = memory.graph_traverse(
+    entity=<span class="str">"数据库优化"</span>,
+    depth=<span class="num">2</span>,
+)
+
+<span class="kw">print</span>(<span class="str">f"找到 {results.total} 条相关记忆"</span>)
+<span class="kw">for</span> item <span class="kw">in</span> results:
+    <span class="kw">print</span>(<span class="str">f"[{item.relevance:.2f}] {item.content[:50]}"</span>)</code></pre>
+
+        <pre class="code-block" id="tab-openclaw"><code><span class="c"># 在 OpenClaw 配置中启用 ClawMemory</span>
+<span class="c"># config.yaml</span>
+memory:
+  adapter: clawmemory
+  adapter_config:
+    db_path: ~/.clawmemory/data/store/memory.db
+    key_file: ~/.clawmemory/data/.key
+    encrypted: <span class="kw">true</span>
+    default_privacy: INTERNAL
+    auto_consolidate: <span class="kw">true</span>
+
+<span class="c"># 或者使用 CLI 配置</span>
+openclaw config set memory.adapter clawmemory
+openclaw config set memory.encrypted <span class="kw">true</span>
+openclaw config set memory.auto_consolidate <span class="kw">true</span>
+
+<span class="c"># 重启 OpenClaw 生效</span>
+openclaw restart</code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="get-started" class="section cta-section">
+  <div class="container">
+    <div class="cta-box reveal">
+      <div class="cta-content">
+        <h2>准备好让你的 Agent<br>拥有<span class="gradient-text"> 终身记忆</span>了吗？</h2>
+        <p>加入数千名开发者，一起构建更智能、更懂你的 AI Agent。</p>
+        <div class="cta-actions">
+          <a href="https://github.com/opok-ops/ClawMemory" class="btn btn-primary btn-lg" target="_blank">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+            GitHub 仓库
+          </a>
+          <a href="#docs" class="btn btn-secondary btn-lg">
+            查看文档
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </a>
+        </div>
+      </div>
+      <div class="cta-visual">
+        <div class="floating-card card-1">
+          <div class="card-icon">🧠</div>
+          <div class="card-text">记忆巩固中...</div>
+        </div>
+        <div class="floating-card card-2">
+          <div class="card-icon">🔗</div>
+          <div class="card-text">关联发现 +12</div>
+        </div>
+        <div class="floating-card card-3">
+          <div class="card-icon">🔍</div>
+          <div class="card-text">检索 156ms</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="footer-logo">
+          <div class="logo-mark-sm">
+            <svg viewBox="0 0 32 32" fill="none">
+              <circle cx="16" cy="16" r="14" stroke="url(#fLogoGrad)" stroke-width="2"/>
+              <path d="M10 16C10 12.69 12.69 10 16 10C19.31 10 22 12.69 22 16" stroke="url(#fLogoGrad)" stroke-width="2" stroke-linecap="round"/>
+              <circle cx="16" cy="16" r="2.5" fill="url(#fLogoGrad)"/>
+              <defs>
+                <linearGradient id="fLogoGrad" x1="0" y1="0" x2="32" y2="32">
+                  <stop offset="0%" stop-color="#00d4ff"/>
+                  <stop offset="100%" stop-color="#a855f7"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <span>ClawMemory</span>
+        </div>
+        <p>AI Agent 终身记忆系统<br>本地化 · 结构化 · 隐私优先</p>
+        <div class="social-links">
+          <a href="https://github.com/opok-ops/ClawMemory" target="_blank" aria-label="GitHub">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          </a>
+        </div>
+      </div>
+      <div class="footer-col">
+        <h5>产品</h5>
+        <ul>
+          <li><a href="#features">功能特性</a></li>
+          <li><a href="#architecture">系统架构</a></li>
+          <li><a href="#playground">在线演示</a></li>
+          <li><a href="#privacy">隐私安全</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>文档</h5>
+        <ul>
+          <li><a href="#docs">快速开始</a></li>
+          <li><a href="#">API 参考</a></li>
+          <li><a href="#">适配器</a></li>
+          <li><a href="#">常见问题</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>社区</h5>
+        <ul>
+          <li><a href="https://github.com/opok-ops/ClawMemory/discussions" target="_blank">讨论区</a></li>
+          <li><a href="https://github.com/opok-ops/ClawMemory/issues" target="_blank">提交 Issue</a></li>
+          <li><a href="#">贡献指南</a></li>
+          <li><a href="#">更新日志</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>&copy; 2026 ClawMemory Project. MIT License + 自定义隐私附加条款.</p>
+      <p>Made with 🧠 for the future of AI memory.</p>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/main.js"></script>
+</body>
+</html>

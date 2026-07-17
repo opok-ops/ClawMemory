@@ -1,0 +1,203 @@
+﻿"""
+ClawMemory v5.0 召回引擎
+语义检索 + 知识图谱增强 + 上下文优化
+"""
+
+import time
+from dataclasses import dataclass, field
+from typing import List, Optional, Dict, Any
+
+from core.storage import StorageEngine, MemoryEntry
+from core.indexer import IndexEngine
+from core.query import QueryEngine, MemoryChunk, RecallResult
+from core.types import MemoryLayer, PrivacyLevel
+
+
+@dataclass
+class RecallConfig:
+    """召回配置"""
+    max_results: int = 10
+    min_relevance: float = 0.3
+    include_categories: Optional[List[str]] = None
+    exclude_categories: Optional[List[str]] = None
+    include_layers: Optional[List[MemoryLayer]] = None
+    min_importance: Optional[Any] = None
+    max_tokens: int = 4000
+    use_knowledge_graph: bool = True
+    use_reranking: bool = True
+    diversity_weight: float = 0.2
+    temporal_bias: float = 0.1
+
+
+class RecallEngine:
+    """召回引擎"""
+
+    def __init__(self, storage: StorageEngine, index: IndexEngine,
+                 knowledge_graph=None):
+        self.storage = storage
+        self.index = index
+        self.query_engine = QueryEngine(storage, index)
+        self.knowledge_graph = knowledge_graph
+
+    def recall(self,
+               query: str,
+               agent_id: str = "",
+               session_id: str = "",
+               config: Optional[RecallConfig] = None) -> RecallResult:
+        """召回记忆"""
+        start = time.time()
+        config = config or RecallConfig()
+
+        base_results = self.query_engine.search(
+            query=query,
+            max_results=config.max_results * 3,
+            min_relevance=config.min_relevance * 0.5,
+            categories=config.include_categories,
+            layers=config.include_layers,
+            agent_id=agent_id,
+            session_id=session_id,
+        )
+
+        chunks = base_results.chunks
+
+        if config.use_knowledge_graph and self.knowledge_graph:
+            kg_chunks = self._kg_enhanced_search(query, config)
+            chunks = self._merge_results(chunks, kg_chunks)
+
+        if config.use_reranking:
+            chunks = self._rerank(chunks, query, config)
+
+        chunks = chunks[:config.max_results]
+
+        token_estimate = sum(len(c.content) for c in chunks) // 4
+        if config.max_tokens > 0 and token_estimate > config.max_tokens:
+            chunks = self._optimize_context_window(chunks, config.max_tokens)
+
+        elapsed = (time.time() - start) * 1000
+        layers_used = list(set(c.layer.value for c in chunks))
+
+        return RecallResult(
+            chunks=chunks,
+            total_found=len(chunks),
+            query_time_ms=round(elapsed, 2),
+            strategy_used="hybrid_semantic_kg",
+            token_estimate=sum(len(c.content) for c in chunks) // 4,
+            layers_used=layers_used,
+        )
+
+    def _kg_enhanced_search(self, query: str, config: RecallConfig) -> List[MemoryChunk]:
+        """知识图谱增强搜索"""
+        chunks = []
+        entities = self.knowledge_graph.extract_entities(query)
+
+        for entity_name, _ in entities:
+            related = self.knowledge_graph.get_related_entities(
+                entity_name, depth=1, max_results=10
+            )
+
+            for related_name, rel_type, weight in related:
+                expanded_query = f"{query} {related_name}"
+                result = self.query_engine.search(
+                    query=expanded_query,
+                    max_results=3,
+                    min_relevance=config.min_relevance,
+                    categories=config.include_categories,
+                )
+                for chunk in result.chunks:
+                    chunk.relevance_score *= weight * 0.8
+                    chunks.append(chunk)
+
+        return chunks
+
+    def _merge_results(self, base: List[MemoryChunk],
+                       enhanced: List[MemoryChunk]) -> List[MemoryChunk]:
+        """合并搜索结果"""
+        seen = set()
+        merged = []
+
+        for chunk in base:
+            if chunk.memory_id not in seen:
+                seen.add(chunk.memory_id)
+                merged.append(chunk)
+
+        for chunk in enhanced:
+            if chunk.memory_id not in seen:
+                seen.add(chunk.memory_id)
+                merged.append(chunk)
+            else:
+                for existing in merged:
+                    if existing.memory_id == chunk.memory_id:
+                        existing.relevance_score = max(
+                            existing.relevance_score, chunk.relevance_score
+                        )
+                        break
+
+        merged.sort(key=lambda x: x.relevance_score, reverse=True)
+        return merged
+
+    def _rerank(self, chunks: List[MemoryChunk], query: str,
+                config: RecallConfig) -> List[MemoryChunk]:
+        """重排序"""
+        if not chunks:
+            return chunks
+
+        max_score = max(c.relevance_score for c in chunks) if chunks else 1.0
+
+        for chunk in chunks:
+            score = chunk.relevance_score / max_score if max_score > 0 else 0
+
+            entry = self.storage.get_memory(chunk.memory_id)
+            if entry:
+                recency = 1.0
+                if entry.last_accessed_at:
+                    import time as _time
+                    elapsed_hours = (_time.time() - entry.last_accessed_at) / 3600
+                    recency = 1.0 / (1.0 + elapsed_hours * 0.01)
+
+                importance_bonus = entry.importance.to_int() / 3.0 * 0.2
+
+                final_score = (
+                    score * 0.6
+                    + recency * config.temporal_bias
+                    + importance_bonus
+                )
+
+                chunk.relevance_score = final_score
+
+        chunks.sort(key=lambda x: x.relevance_score, reverse=True)
+        return chunks
+
+    def _optimize_context_window(self, chunks: List[MemoryChunk],
+                                  max_tokens: int) -> List[MemoryChunk]:
+        """优化上下文窗口"""
+        selected = []
+        total_tokens = 0
+
+        for chunk in chunks:
+            chunk_tokens = len(chunk.content) // 4
+            if total_tokens + chunk_tokens <= max_tokens:
+                selected.append(chunk)
+                total_tokens += chunk_tokens
+            else:
+                remaining = max_tokens - total_tokens
+                if remaining > 50:
+                    truncated = chunk
+                    truncated.content = chunk.content[:remaining * 4]
+                    selected.append(truncated)
+                break
+
+        return selected
+
+    def get_session_relevant(self, session_id: str,
+                             current_query: str,
+                             limit: int = 10) -> List[MemoryEntry]:
+        """获取会话相关记忆"""
+        session_memories = self.query_engine.get_session_context(session_id, limit * 2)
+
+        result = self.recall(
+            query=current_query,
+            config=RecallConfig(max_results=limit),
+        )
+
+        return [self.storage.get_memory(c.memory_id) for c in result.chunks
+                if self.storage.get_memory(c.memory_id)]
