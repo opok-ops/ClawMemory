@@ -79,7 +79,7 @@ class OpenClawAdapter:
         """输出配置字典格式"""
         return {
             "adapter": "clawmemory",
-            "version": "5.0.0",
+            "version": "5.0.1",
             "features": [
                 "four_layer_memory",
                 "knowledge_graph",

@@ -92,7 +92,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}ClawMemory v5.0 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}ClawMemory v5.0.1 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -502,7 +502,7 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="clawmemory",
-        description="ClawMemory v5.0 - AI Agent 终身记忆系统",
+        description="ClawMemory v5.0.1 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
