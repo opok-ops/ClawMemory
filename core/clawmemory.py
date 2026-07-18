@@ -87,6 +87,7 @@ class ClawMemory:
             layer: MemoryLayer = None,
             source_session: str = "",
             source_agent: str = "",
+            starred: bool = False,
             metadata: Optional[Dict[str, Any]] = None) -> MemoryEntry:
         """添加记忆"""
         privacy = privacy or self.config.default_privacy
@@ -104,6 +105,7 @@ class ClawMemory:
             layer=layer,
             source_session=source_session,
             source_agent=source_agent,
+            starred=starred,
             metadata=metadata,
         )
 
@@ -141,14 +143,38 @@ class ClawMemory:
     def list(self,
              category: Optional[str] = None,
              layer: Optional[MemoryLayer] = None,
+             starred: Optional[bool] = None,
+             created_after: Optional[float] = None,
+             created_before: Optional[float] = None,
              limit: int = 50,
              offset: int = 0) -> List[MemoryEntry]:
         """列出记忆"""
         return self._storage.list_memories(
             category=category,
             layer=layer,
+            starred=starred,
+            created_after=created_after,
+            created_before=created_before,
             limit=limit,
             offset=offset,
+        )
+
+    def star(self, memory_id: str, actor: str = "", session_id: str = "") -> bool:
+        """收藏记忆（加星标）"""
+        return self._storage.update_memory(
+            entry_id=memory_id,
+            starred=True,
+            actor=actor,
+            session_id=session_id,
+        )
+
+    def unstar(self, memory_id: str, actor: str = "", session_id: str = "") -> bool:
+        """取消收藏（取消星标）"""
+        return self._storage.update_memory(
+            entry_id=memory_id,
+            starred=False,
+            actor=actor,
+            session_id=session_id,
         )
 
     def update(self,
@@ -159,6 +185,7 @@ class ClawMemory:
                privacy: Optional[PrivacyLevel] = None,
                importance: Optional[Importance] = None,
                layer: Optional[MemoryLayer] = None,
+               starred: Optional[bool] = None,
                metadata: Optional[Dict[str, Any]] = None,
                actor: str = "",
                session_id: str = "") -> bool:
@@ -171,6 +198,7 @@ class ClawMemory:
             privacy=privacy,
             importance=importance,
             layer=layer,
+            starred=starred,
             metadata=metadata,
             actor=actor,
             session_id=session_id,

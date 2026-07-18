@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawMemory v5.0 CLI - 命令行工具
+ClawMemory v5.0.2 CLI - 命令行工具
 =================================
 
 Usage:
@@ -92,7 +92,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}ClawMemory v5.0.1 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}ClawMemory v5.0.2 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -178,6 +178,7 @@ def cmd_add(args):
         layer=layer,
         source_session=args.session,
         source_agent=args.agent,
+        starred=getattr(args, "star", False),
     )
 
     print(c("\n✅ 记忆已保存", "green"))
@@ -187,6 +188,8 @@ def cmd_add(args):
     print(f"   层级: {c(entry.layer.value, 'purple')}")
     print(f"   隐私: {entry.privacy.value}")
     print(f"   重要性: {args.importance}")
+    if entry.starred:
+        print(f"   ⭐ 已收藏")
     return 0
 
 
@@ -227,15 +230,39 @@ def cmd_search(args):
 def cmd_list(args):
     """列出记忆"""
     cm = _get_memory(args)
+
+    starred = None
+    if getattr(args, "starred", False):
+        starred = True
+    if getattr(args, "unstarred", False):
+        starred = False
+
+    created_after = None
+    created_before = None
+    if args.after:
+        from datetime import datetime
+        created_after = datetime.fromisoformat(args.after).timestamp()
+    if args.before:
+        from datetime import datetime
+        created_before = datetime.fromisoformat(args.before).timestamp()
+
     entries = cm.list(
         category=args.category,
         layer=MemoryLayer.from_string(args.layer) if args.layer else None,
+        starred=starred,
+        created_after=created_after,
+        created_before=created_before,
         limit=args.limit,
         offset=args.offset,
     )
 
     total = cm.stats()["total"]
-    print(f"\n记忆列表（共 {total} 条，显示 {len(entries)} 条）")
+    filter_desc = ""
+    if starred is not None:
+        filter_desc += " [⭐ 收藏]" if starred else " [未收藏]"
+    if args.after or args.before:
+        filter_desc += " [时间筛选]"
+    print(f"\n记忆列表（共 {total} 条，显示 {len(entries)} 条{filter_desc}）")
 
     for entry in entries:
         privacy_color = {
@@ -252,17 +279,21 @@ def cmd_list(args):
             "permanent": "green",
         }.get(entry.layer.value, "reset")
 
+        star_mark = "⭐ " if entry.starred else ""
+
         print(f"\n{'='*50}")
         print(f"ID:       {entry.id[:16]}...")
         print(f"分类:     [{entry.category}]  "
               f"隐私: {c(entry.privacy.value, privacy_color)}  "
               f"层级: {c(entry.layer.value, layer_color)}  "
               f"重要性: {entry.importance.value}")
+        if entry.starred:
+            print(f"状态:     ⭐ 已收藏")
         print(f"标签:     {', '.join(entry.tags) if entry.tags else '无'}")
         print(f"类型:     {entry.memory_type.value}")
         print(f"创建:     {format_time(entry.created_at)}  "
               f"访问: {entry.access_count} 次")
-        print(f"预览: {entry.preview[:80]}...")
+        print(f"预览: {star_mark}{entry.preview[:80]}...")
 
     if total > args.limit + args.offset:
         print(f"\n... 还有 {total - args.limit - args.offset} 条"
@@ -300,6 +331,28 @@ def cmd_stats(args):
         print(f"  {cat}: {count}")
 
     return 0
+
+
+def cmd_star(args):
+    """收藏记忆"""
+    cm = _get_memory(args)
+    success = cm.star(args.id, actor=args.agent, session_id=args.session)
+    if success:
+        print(c("\n⭐ 已收藏", "green"))
+    else:
+        print(c("\n❌ 收藏失败：记忆不存在", "red"))
+    return 0 if success else 1
+
+
+def cmd_unstar(args):
+    """取消收藏"""
+    cm = _get_memory(args)
+    success = cm.unstar(args.id, actor=args.agent, session_id=args.session)
+    if success:
+        print(c("\n🗑️  已取消收藏", "yellow"))
+    else:
+        print(c("\n❌ 取消失败：记忆不存在", "red"))
+    return 0 if success else 1
 
 
 def cmd_consolidate(args):
@@ -502,7 +555,7 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="clawmemory",
-        description="ClawMemory v5.0.1 - AI Agent 终身记忆系统",
+        description="ClawMemory v5.0.2 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -527,6 +580,7 @@ def main():
                        choices=["text", "image", "audio", "code", "structured"], help="记忆类型")
     p_add.add_argument("--session", default="cli", help="会话 ID")
     p_add.add_argument("--agent", default="cli", help="Agent ID")
+    p_add.add_argument("--star", action="store_true", help="添加后直接收藏")
 
     p_search = sub.add_parser("search", help="搜索记忆")
     p_search.add_argument("query", help="搜索查询")
@@ -538,10 +592,26 @@ def main():
     p_list = sub.add_parser("list", help="列出记忆")
     p_list.add_argument("--category", "-c", help="分类筛选")
     p_list.add_argument("--layer", "-l", help="层级筛选")
+    p_list.add_argument("--starred", action="store_true", default=None,
+                        help="只显示已收藏")
+    p_list.add_argument("--unstarred", action="store_true", default=None,
+                        help="只显示未收藏")
+    p_list.add_argument("--after", help="创建时间之后 (YYYY-MM-DD 或 ISO 格式)")
+    p_list.add_argument("--before", help="创建时间之前 (YYYY-MM-DD 或 ISO 格式)")
     p_list.add_argument("--limit", type=int, default=50, help="数量限制")
     p_list.add_argument("--offset", type=int, default=0, help="偏移量")
 
     p_stats = sub.add_parser("stats", help="统计信息")
+
+    p_star = sub.add_parser("star", help="收藏记忆")
+    p_star.add_argument("id", help="记忆 ID")
+    p_star.add_argument("--agent", default="cli", help="Agent ID")
+    p_star.add_argument("--session", default="cli", help="会话 ID")
+
+    p_unstar = sub.add_parser("unstar", help="取消收藏")
+    p_unstar.add_argument("id", help="记忆 ID")
+    p_unstar.add_argument("--agent", default="cli", help="Agent ID")
+    p_unstar.add_argument("--session", default="cli", help="会话 ID")
 
     p_consolidate = sub.add_parser("consolidate", help="记忆巩固")
     p_consolidate.add_argument("--agent", default="cli", help="Agent ID")
@@ -586,6 +656,8 @@ def main():
         "search": cmd_search,
         "list": cmd_list,
         "stats": cmd_stats,
+        "star": cmd_star,
+        "unstar": cmd_unstar,
         "consolidate": cmd_consolidate,
         "graph": cmd_graph,
         "personality": cmd_personality,

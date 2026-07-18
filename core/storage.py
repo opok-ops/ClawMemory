@@ -36,6 +36,7 @@ class MemoryEntry:
     consolidation_count: int = 0
     forgetting_score: float = 0.0
     strength: float = 1.0
+    starred: bool = False
     metadata: Dict[str, Any] = field(default_factory=dict)
     encrypted: bool = False
     ciphertext: Optional[bytes] = None
@@ -67,6 +68,7 @@ class MemoryEntry:
             "consolidation_count": self.consolidation_count,
             "forgetting_score": self.forgetting_score,
             "strength": self.strength,
+            "starred": self.starred,
             "metadata": self.metadata,
         }
 
@@ -129,6 +131,7 @@ class StorageEngine:
                 consolidation_count INTEGER DEFAULT 0,
                 forgetting_score REAL DEFAULT 0.0,
                 strength REAL DEFAULT 1.0,
+                starred INTEGER DEFAULT 0,
                 metadata TEXT DEFAULT '{}',
                 encrypted INTEGER DEFAULT 0
             );
@@ -139,6 +142,7 @@ class StorageEngine:
             CREATE INDEX IF NOT EXISTS idx_importance ON memories(importance);
             CREATE INDEX IF NOT EXISTS idx_created_at ON memories(created_at);
             CREATE INDEX IF NOT EXISTS idx_memory_type ON memories(memory_type);
+            CREATE INDEX IF NOT EXISTS idx_starred ON memories(starred);
 
             CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
                 content, category, tags,
@@ -195,6 +199,7 @@ class StorageEngine:
                    layer: MemoryLayer = MemoryLayer.SHORT_TERM,
                    source_session: str = "",
                    source_agent: str = "",
+                   starred: bool = False,
                    metadata: Optional[Dict[str, Any]] = None) -> MemoryEntry:
         """添加记忆"""
         now = time.time()
@@ -227,6 +232,7 @@ class StorageEngine:
             updated_at=now,
             last_accessed_at=now,
             metadata=metadata or {},
+            starred=starred,
             encrypted=self.encrypted,
             ciphertext=ciphertext,
             nonce=nonce,
@@ -240,8 +246,8 @@ class StorageEngine:
                 privacy, importance, memory_type, layer,
                 source_session, source_agent, created_at, updated_at,
                 last_accessed_at, access_count, consolidation_count,
-                forgetting_score, strength, metadata, encrypted
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                forgetting_score, strength, starred, metadata, encrypted
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             entry.id, entry.content, entry.ciphertext, entry.nonce, entry.salt,
             entry.category, json.dumps(entry.tags, ensure_ascii=False),
@@ -249,7 +255,7 @@ class StorageEngine:
             entry.layer.value, entry.source_session, entry.source_agent,
             entry.created_at, entry.updated_at, entry.last_accessed_at,
             entry.access_count, entry.consolidation_count,
-            entry.forgetting_score, entry.strength,
+            entry.forgetting_score, entry.strength, int(entry.starred),
             json.dumps(entry.metadata, ensure_ascii=False), int(entry.encrypted)
         ))
 
@@ -294,6 +300,9 @@ class StorageEngine:
                       category: Optional[str] = None,
                       layer: Optional[MemoryLayer] = None,
                       privacy: Optional[PrivacyLevel] = None,
+                      starred: Optional[bool] = None,
+                      created_after: Optional[float] = None,
+                      created_before: Optional[float] = None,
                       limit: int = 50,
                       offset: int = 0) -> List[MemoryEntry]:
         """列出记忆"""
@@ -310,6 +319,15 @@ class StorageEngine:
         if privacy:
             query += " AND privacy = ?"
             params.append(privacy.value)
+        if starred is not None:
+            query += " AND starred = ?"
+            params.append(1 if starred else 0)
+        if created_after is not None:
+            query += " AND created_at >= ?"
+            params.append(created_after)
+        if created_before is not None:
+            query += " AND created_at <= ?"
+            params.append(created_before)
 
         query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
@@ -325,6 +343,7 @@ class StorageEngine:
                       privacy: Optional[PrivacyLevel] = None,
                       importance: Optional[Importance] = None,
                       layer: Optional[MemoryLayer] = None,
+                      starred: Optional[bool] = None,
                       metadata: Optional[Dict[str, Any]] = None,
                       actor: str = "",
                       session_id: str = "") -> bool:
@@ -363,6 +382,9 @@ class StorageEngine:
         if layer is not None:
             updates.append("layer = ?")
             params.append(layer.value)
+        if starred is not None:
+            updates.append("starred = ?")
+            params.append(1 if starred else 0)
         if metadata is not None:
             updates.append("metadata = ?")
             params.append(json.dumps(metadata, ensure_ascii=False))
@@ -510,6 +532,7 @@ class StorageEngine:
             consolidation_count=row["consolidation_count"],
             forgetting_score=row["forgetting_score"],
             strength=row["strength"],
+            starred=bool(row["starred"]) if "starred" in row.keys() else False,
             metadata=json.loads(row["metadata"]) if row["metadata"] else {},
             encrypted=bool(row["encrypted"]),
             ciphertext=row["ciphertext"],
