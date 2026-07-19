@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawMemory v5.0.4 CLI - 命令行工具
+ClawMemory v5.0.5 CLI - 命令行工具
 =================================
 
 Usage:
@@ -92,7 +92,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}ClawMemory v5.0.4 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}ClawMemory v5.0.5 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -477,6 +477,81 @@ def cmd_export_md(args):
     return 0
 
 
+def cmd_health(args):
+    """数据库健康检查（v5.0.5 新增）"""
+    cm = _get_memory(args)
+    print_banner()
+    print(c("🩺 ClawMemory 健康检查", "bold"))
+    print("=" * 50)
+
+    result = cm.health_check()
+
+    status = result["status"]
+    status_color = {
+        "healthy": "green",
+        "warning": "yellow",
+        "critical": "red",
+    }.get(status, "reset")
+    status_icon = {"healthy": "✅", "warning": "⚠️", "critical": "🚨"}.get(status, "❓")
+
+    print(f"\n总体状态：{status_icon} {c(status.upper(), status_color)}")
+    print(f"完整性检查：{c(result['integrity_check'], 'green' if result['integrity_check'] == 'ok' else 'red')}")
+    print(f"总记忆数：  {c(str(result['total_memories']), 'cyan')}")
+    print(f"数据库大小：{format_size(result['db_size_bytes'])}")
+
+    idx = result["indexes"]
+    print(f"\n📊 索引状态：")
+    print(f"   预期 {idx['expected']} 个，找到 {c(str(idx['found']), 'green' if idx['found'] == idx['expected'] else 'red')} 个")
+    if idx["missing"]:
+        print(f"   缺失：{', '.join(idx['missing'])}")
+
+    print(f"\n📋 数据一致性：")
+    print(f"   孤立 FTS 记录：    {c(str(result['fts_orphans']), 'yellow' if result['fts_orphans'] else 'green')}")
+    print(f"   孤立审计日志：    {c(str(result['audit_orphans']), 'yellow' if result['audit_orphans'] else 'green')}")
+    print(f"   加密不一致条目：  {c(str(result['encrypted_inconsistent']), 'red' if result['encrypted_inconsistent'] else 'green')}")
+
+    print(f"\n💡 建议：")
+    for rec in result["recommendations"]:
+        print(f"   • {rec}")
+
+    return 0 if status == "healthy" else (1 if status == "warning" else 2)
+
+
+def cmd_summarize(args):
+    """记忆摘要（v5.0.5 新增）"""
+    cm = _get_memory(args)
+    print_banner()
+    print(c("📊 ClawMemory 记忆摘要", "bold"))
+    print("=" * 50)
+
+    result = cm.summarize(
+        category=args.category,
+        group_by=args.group_by,
+    )
+
+    print(f"\n总记忆数：{c(str(result['total']), 'cyan')}")
+
+    print(f"\n📅 近期活动：")
+    print(f"   最近 7 天： {c(str(result['recent_activity']['last_7d']), 'cyan')} 条")
+    print(f"   最近 30 天：{c(str(result['recent_activity']['last_30d']), 'cyan')} 条")
+
+    print(f"\n📂 按 {c(args.group_by, 'purple')} 分组：")
+    for key, info in result["grouped"].items():
+        print(f"\n  ▸ {c(key, 'cyan')} ({info['count']} 条)")
+        print(f"    时间范围: {info['oldest'] or '-'} ~ {info['latest'] or '-'}")
+        if info["samples"]:
+            print(f"    样例：")
+            for s in info["samples"][:2]:
+                print(f"      • {s[:60]}{'...' if len(s) >= 60 else ''}")
+
+    if result["top_tags"]:
+        print(f"\n🏷️  热门标签：")
+        for tag, count in result["top_tags"][:5]:
+            print(f"   #{tag}: {count}")
+
+    return 0
+
+
 def cmd_star(args):
     """收藏记忆"""
     cm = _get_memory(args)
@@ -699,7 +774,7 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="clawmemory",
-        description="ClawMemory v5.0.4 - AI Agent 终身记忆系统",
+        description="ClawMemory v5.0.5 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -797,6 +872,14 @@ def main():
     p_export_md.add_argument("--starred", action="store_true",
                              help="仅导出收藏的记忆")
 
+    p_health = sub.add_parser("health", help="数据库健康检查（v5.0.5 新增）")
+
+    p_summarize = sub.add_parser("summarize", help="记忆摘要（v5.0.5 新增）")
+    p_summarize.add_argument("--category", "-c", help="限定分类")
+    p_summarize.add_argument("--group-by", "-g", default="category",
+                             choices=["category", "layer", "importance", "privacy"],
+                             help="分组维度（默认 category）")
+
     p_consolidate = sub.add_parser("consolidate", help="记忆巩固")
     p_consolidate.add_argument("--agent", default="cli", help="Agent ID")
     p_consolidate.add_argument("--session", default="cli", help="会话 ID")
@@ -846,6 +929,8 @@ def main():
         "tag-search": cmd_tag_search,
         "deduplicate": cmd_deduplicate,
         "export-md": cmd_export_md,
+        "health": cmd_health,
+        "summarize": cmd_summarize,
         "consolidate": cmd_consolidate,
         "graph": cmd_graph,
         "personality": cmd_personality,

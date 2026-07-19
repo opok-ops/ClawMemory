@@ -1,4 +1,4 @@
-# ClawMemory v5.0.4
+# ClawMemory v5.0.5
 
 **AI Agent 终身记忆系统 — 四层记忆架构 · 知识图谱 · 多模态 · 人格化 · 联邦网络**
 
@@ -6,7 +6,7 @@
 
 ---
 
-## ✨ v5.0.4 六大突破
+## ✨ v5.0.5 六大突破
 
 | 特性 | 说明 |
 |------|------|
@@ -23,7 +23,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    ClawMemory v5.0.4                        │
+│                    ClawMemory v5.0.5                        │
 ├─────────────────────────────────────────────────────────┤
 │  🎯 认知层 (Cognitive Layer)                              │
 │     人格引擎 · 知识图谱 · 记忆演化 · 联邦网络              │
@@ -75,7 +75,7 @@ clawmemory init
 
 ```bash
 # 添加记忆
-clawmemory add "ClawMemory v5.0.4 真的太强了！" --category tech --importance high
+clawmemory add "ClawMemory v5.0.5 真的太强了！" --category tech --importance high
 
 # 搜索记忆
 clawmemory search "数据库优化"
@@ -342,6 +342,30 @@ context = adapter.get_context("数据库优化")
 ---
 
 ## 📝 更新日志
+
+### v5.0.5 (2026-07-19)
+
+**✨ 新增功能**
+- **数据库健康检查**：`health_check()` 方法，全面体检数据库状态
+  - SQLite 完整性检查（PRAGMA integrity_check）
+  - 索引完整性验证（12 个预期索引）
+  - FTS 索引同步状态检测（孤立 FTS 记录）
+  - 孤立审计日志检测
+  - 加密一致性校验（标记加密但缺密文的条目）
+  - 自动生成状态评级（healthy/warning/critical）和修复建议
+- **记忆摘要**：`summarize()` 方法，快速了解记忆库概况
+  - 支持按 category/layer/importance/privacy 四种维度分组
+  - 每组含数量、时间范围、前 3 条样例
+  - 近期活动统计（7 天/30 天新增数）
+  - 热门标签 Top 10
+- **CLI 新增命令**：
+  - `health` - 数据库健康检查（返回退出码：0=健康，1=警告，2=严重）
+  - `summarize` - 记忆摘要（支持 `-g layer` 等切换分组维度）
+
+**🔧 修复**
+- **关键修复**：`delete_memory(hard_delete=True)` 硬删除时未同步清理 FTS 索引，导致搜索可能返回已删除的记忆
+- **关键修复**：`batch_delete(hard_delete=True)` 批量硬删除同样存在 FTS 索引未清理的问题
+- 这两个 bug 会导致：删除记忆后搜索仍能命中，FTS 索引逐渐膨胀
 
 ### v5.0.4 (2026-07-19)
 

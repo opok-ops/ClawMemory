@@ -405,11 +405,31 @@ class StorageEngine:
     def delete_memory(self, entry_id: str,
                       actor: str = "", session_id: str = "",
                       hard_delete: bool = False) -> bool:
-        """删除记忆"""
+        """删除记忆
+
+        v5.0.5 修复：硬删除时同步清理 FTS 索引，避免搜索时返回已删除的记忆。
+        注意：contentless FTS5 表（content=''）不支持标准 DELETE，
+        必须用 'delete' 特殊命令。
+        """
         conn = self._get_conn()
 
         if hard_delete:
+            # 先取 rowid 和 FTS 字段用于清理
+            row = conn.execute(
+                "SELECT rowid, content, category, tags FROM memories WHERE id = ?",
+                (entry_id,)
+            ).fetchone()
             conn.execute("DELETE FROM memories WHERE id = ?", (entry_id,))
+            if row:
+                try:
+                    # contentless FTS5 必须用 'delete' 命令
+                    conn.execute(
+                        "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                        "VALUES('delete', ?, ?, ?, ?)",
+                        (row[0], row[1] or "", row[2] or "", row[3] or "[]")
+                    )
+                except Exception:
+                    pass
         else:
             now = time.time()
             conn.execute("UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
@@ -428,9 +448,12 @@ class StorageEngine:
                      hard_delete: bool = False,
                      actor: str = "",
                      session_id: str = "") -> int:
-        """批量删除记忆，返回删除数量"""
+        """批量删除记忆，返回删除数量
+
+        v5.0.5 修复：硬删除时同步清理 FTS 索引（用 'delete' 特殊命令）。
+        """
         conn = self._get_conn()
-        query = "SELECT id FROM memories WHERE 1=1"
+        query = "SELECT id, rowid, content, category, tags FROM memories WHERE 1=1"
         params = []
 
         if category:
@@ -450,15 +473,26 @@ class StorageEngine:
             params.append(created_before)
 
         rows = conn.execute(query, params).fetchall()
-        ids = [row[0] for row in rows]
 
-        if not ids:
+        if not rows:
             return 0
 
+        ids = [row[0] for row in rows]
         now = time.time()
+
         if hard_delete:
             placeholders = ",".join(["?"] * len(ids))
             conn.execute(f"DELETE FROM memories WHERE id IN ({placeholders})", ids)
+            # 同步清理 FTS（contentless FTS5 用 'delete' 命令）
+            for row in rows:
+                try:
+                    conn.execute(
+                        "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                        "VALUES('delete', ?, ?, ?, ?)",
+                        (row[1], row[2] or "", row[3] or "", row[4] or "[]")
+                    )
+                except Exception:
+                    pass
         else:
             placeholders = ",".join(["?"] * len(ids))
             conn.execute(
@@ -749,6 +783,199 @@ class StorageEngine:
 
         out.write_text("\n".join(lines), encoding="utf-8")
         return out
+
+    def health_check(self) -> dict:
+        """数据库健康检查（v5.0.5 新增）
+
+        检查项目：
+        - 数据库完整性（PRAGMA integrity_check）
+        - 索引完整性（确认所有预期索引存在）
+        - FTS 索引同步状态（检测孤立 FTS 记录）
+        - 孤立审计日志（指向已不存在的 memory_id）
+        - 孤立 FTS 记录（FTS 中的 rowid 在 memories 中已不存在）
+        - 加密一致性（是否有标记 encrypted 但缺 ciphertext 的条目）
+
+        Returns:
+            {
+                "status": "healthy" | "warning" | "critical",
+                "integrity_check": str,
+                "indexes": {"expected": int, "found": int, "missing": [...]},
+                "fts_orphans": int,            # FTS 中有但 memories 中没有的
+                "audit_orphans": int,          # 审计日志指向已删除的 memory_id
+                "encrypted_inconsistent": int, # 标记加密但缺密文的
+                "total_memories": int,
+                "db_size_bytes": int,
+                "recommendations": [...],
+            }
+        """
+        conn = self._get_conn()
+
+        # 1. 完整性检查
+        integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+
+        # 2. 索引检查
+        expected_indexes = {
+            "idx_category", "idx_privacy", "idx_layer", "idx_importance",
+            "idx_created_at", "idx_memory_type", "idx_starred",
+            "idx_audit_memory", "idx_audit_timestamp",
+            "idx_kg_entity", "idx_relation_from", "idx_relation_to",
+        }
+        actual = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        found_indexes = {row[0] for row in actual}
+        missing_indexes = expected_indexes - found_indexes
+
+        # 3. FTS 孤立记录
+        fts_orphans = conn.execute(
+            "SELECT COUNT(*) FROM memory_fts WHERE rowid NOT IN (SELECT rowid FROM memories)"
+        ).fetchone()[0]
+
+        # 4. 审计日志孤立记录
+        audit_orphans = conn.execute(
+            "SELECT COUNT(*) FROM audit_log WHERE memory_id != '' "
+            "AND memory_id NOT IN (SELECT id FROM memories)"
+        ).fetchone()[0]
+
+        # 5. 加密一致性
+        encrypted_inconsistent = conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE encrypted = 1 "
+            "AND (ciphertext IS NULL OR nonce IS NULL OR salt IS NULL)"
+        ).fetchone()[0]
+
+        # 6. 总数和大小
+        total = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
+
+        # 生成建议
+        recommendations = []
+        status = "healthy"
+
+        if integrity != "ok":
+            status = "critical"
+            recommendations.append("数据库完整性检查失败，建议立即从备份恢复")
+
+        if missing_indexes:
+            status = "warning" if status == "healthy" else status
+            recommendations.append(f"缺失索引：{', '.join(missing_indexes)}，建议重建数据库")
+
+        if fts_orphans > 0:
+            status = "warning" if status == "healthy" else status
+            recommendations.append(f"发现 {fts_orphans} 条孤立 FTS 记录，建议执行 vacuum")
+
+        if audit_orphans > 0:
+            recommendations.append(f"发现 {audit_orphans} 条孤立审计日志（不影响功能，可忽略）")
+
+        if encrypted_inconsistent > 0:
+            status = "critical"
+            recommendations.append(f"{encrypted_inconsistent} 条加密记忆缺密文，数据可能损坏")
+
+        if not recommendations:
+            recommendations.append("一切正常，无需操作")
+
+        return {
+            "status": status,
+            "integrity_check": integrity,
+            "indexes": {
+                "expected": len(expected_indexes),
+                "found": len(found_indexes & expected_indexes),
+                "missing": sorted(missing_indexes),
+            },
+            "fts_orphans": fts_orphans,
+            "audit_orphans": audit_orphans,
+            "encrypted_inconsistent": encrypted_inconsistent,
+            "total_memories": total,
+            "db_size_bytes": db_size,
+            "recommendations": recommendations,
+        }
+
+    def summarize(self,
+                  category: Optional[str] = None,
+                  group_by: str = "category") -> dict:
+        """生成记忆摘要（v5.0.5 新增）
+
+        Args:
+            category: 限定分类，None 表示全部
+            group_by: 分组维度，支持 'category' | 'layer' | 'importance' | 'privacy'
+
+        Returns:
+            {
+                "total": int,
+                "grouped": {group_key: {"count": int, "latest": str, "oldest": str, "samples": [...]}},
+                "recent_activity": {"last_7d": int, "last_30d": int},
+                "top_tags": [...],
+            }
+        """
+        conn = self._get_conn()
+        now = time.time()
+
+        valid_groups = {"category", "layer", "importance", "privacy"}
+        if group_by not in valid_groups:
+            group_by = "category"
+
+        where = " WHERE 1=1"
+        params = []
+        if category:
+            where += " AND category = ?"
+            params.append(category)
+
+        total = conn.execute(f"SELECT COUNT(*) FROM memories{where}", params).fetchone()[0]
+
+        # 分组统计
+        grouped = {}
+        rows = conn.execute(
+            f"SELECT {group_by}, COUNT(*), MAX(created_at), MIN(created_at) "
+            f"FROM memories{where} GROUP BY {group_by} ORDER BY COUNT(*) DESC",
+            params
+        ).fetchall()
+        for row in rows:
+            key = row[0] or "unknown"
+            count = row[1]
+            latest_ts = row[2]
+            oldest_ts = row[3]
+            # 取该组前 3 条预览
+            samples = conn.execute(
+                f"SELECT content FROM memories{where} AND {group_by} = ? "
+                f"ORDER BY created_at DESC LIMIT 3",
+                params + [row[0]]
+            ).fetchall()
+            grouped[key] = {
+                "count": count,
+                "latest": datetime.fromtimestamp(latest_ts, tz=timezone.utc).strftime("%Y-%m-%d") if latest_ts else "",
+                "oldest": datetime.fromtimestamp(oldest_ts, tz=timezone.utc).strftime("%Y-%m-%d") if oldest_ts else "",
+                "samples": [r[0][:80] for r in samples],
+            }
+
+        # 近期活动
+        last_7d = conn.execute(
+            f"SELECT COUNT(*) FROM memories{where} AND created_at >= ?",
+            params + [now - 7 * 86400]
+        ).fetchone()[0]
+        last_30d = conn.execute(
+            f"SELECT COUNT(*) FROM memories{where} AND created_at >= ?",
+            params + [now - 30 * 86400]
+        ).fetchone()[0]
+
+        # 热门标签
+        tag_counts: Dict[str, int] = {}
+        for row in conn.execute(f"SELECT tags FROM memories{where}", params):
+            if row[0]:
+                try:
+                    for t in json.loads(row[0]):
+                        tag_counts[t] = tag_counts.get(t, 0) + 1
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        top_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+
+        return {
+            "total": total,
+            "grouped": grouped,
+            "recent_activity": {
+                "last_7d": last_7d,
+                "last_30d": last_30d,
+            },
+            "top_tags": top_tags,
+        }
 
     def get_audit_log(self,
                       memory_id: Optional[str] = None,

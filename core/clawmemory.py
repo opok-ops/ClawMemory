@@ -304,6 +304,30 @@ class ClawMemory:
             starred_only=starred_only,
         )
 
+    def health_check(self) -> dict:
+        """数据库健康检查（v5.0.5 新增）
+
+        检查项目：完整性、索引、FTS 同步、孤立审计日志、加密一致性。
+
+        Returns:
+            dict: 含 status (healthy/warning/critical) 和 recommendations 列表
+        """
+        return self._storage.health_check()
+
+    def summarize(self,
+                  category: Optional[str] = None,
+                  group_by: str = "category") -> dict:
+        """生成记忆摘要（v5.0.5 新增）
+
+        Args:
+            category: 限定分类，None=全部
+            group_by: 分组维度 'category'|'layer'|'importance'|'privacy'
+
+        Returns:
+            dict: 含 total, grouped, recent_activity, top_tags
+        """
+        return self._storage.summarize(category=category, group_by=group_by)
+
     def stats(self) -> dict:
         """获取统计信息"""
         return self._storage.get_stats()
