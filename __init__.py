@@ -1,10 +1,10 @@
 """
-ClawMemory v5.0.3 - AI Agent 终身记忆系统
+ClawMemory v5.0.4 - AI Agent 终身记忆系统
 =======================================
 四层记忆架构 · 知识图谱引擎 · 多模态支持 · 人格化记忆 · 联邦网络
 """
 
-__version__ = "5.0.3"
+__version__ = "5.0.4"
 __author__ = "ClawMemory Project"
 __license__ = "MIT + Privacy Addendum"
 

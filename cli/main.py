@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawMemory v5.0.3 CLI - 命令行工具
+ClawMemory v5.0.4 CLI - 命令行工具
 =================================
 
 Usage:
@@ -92,7 +92,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}ClawMemory v5.0.3 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}ClawMemory v5.0.4 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -414,6 +414,69 @@ def cmd_tag_search(args):
     return 0
 
 
+def cmd_deduplicate(args):
+    """记忆去重（v5.0.4 新增）"""
+    cm = _get_memory(args)
+
+    actually_delete = args.execute
+
+    print(c("正在扫描重复记忆...", "cyan"))
+    if not actually_delete:
+        result = cm.deduplicate(
+            category=args.category,
+            similarity_threshold=args.threshold,
+            dry_run=True,
+            actor=args.agent,
+            session_id=args.session,
+        )
+        print(c(f"\n🔍 试运行结果（未实际删除）：", "yellow"))
+    else:
+        result = cm.deduplicate(
+            category=args.category,
+            similarity_threshold=args.threshold,
+            dry_run=False,
+            actor=args.agent,
+            session_id=args.session,
+        )
+        print(c(f"\n🗑️  去重完成：", "green"))
+
+    print(f"   发现重复组：{c(str(result['duplicates_found']), 'cyan')}")
+    if not actually_delete:
+        print(f"   将删除：    {c(str(result['would_remove']), 'yellow')} 条")
+    else:
+        print(f"   实际删除：  {c(str(result['removed']), 'green')} 条")
+
+    if result["details"] and args.verbose:
+        print(c("\n--- 详情 ---", "purple"))
+        for i, d in enumerate(result["details"], 1):
+            print(f"\n[{i}] 分类: {d['category']} | 相似度: {d['similarity']}")
+            print(f"    保留: {d['keeper_preview'][:60]}")
+            print(f"    删除: {d['loser_preview'][:60]}")
+
+    if not actually_delete and result["would_remove"] > 0:
+        print(c("\n确认无误后，加 --execute 执行实际删除", "yellow"))
+
+    return 0
+
+
+def cmd_export_md(args):
+    """导出为 Markdown（v5.0.4 新增）"""
+    cm = _get_memory(args)
+
+    path = cm.export_as_markdown(
+        output_path=args.output,
+        category=args.category,
+        layer=MemoryLayer.from_string(args.layer) if args.layer else None,
+        starred_only=args.starred,
+    )
+
+    size = path.stat().st_size
+    print(c("\n✅ Markdown 导出成功", "green"))
+    print(f"   文件路径: {path}")
+    print(f"   文件大小: {format_size(size)}")
+    return 0
+
+
 def cmd_star(args):
     """收藏记忆"""
     cm = _get_memory(args)
@@ -636,7 +699,7 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="clawmemory",
-        description="ClawMemory v5.0.3 - AI Agent 终身记忆系统",
+        description="ClawMemory v5.0.4 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -715,6 +778,25 @@ def main():
     p_tag_search.add_argument("--limit", type=int, default=50, help="数量限制")
     p_tag_search.add_argument("--offset", type=int, default=0, help="偏移量")
 
+    p_dedup = sub.add_parser("deduplicate", help="记忆去重（v5.0.4 新增）")
+    p_dedup.add_argument("--category", "-c", help="限定分类")
+    p_dedup.add_argument("--threshold", type=float, default=0.95,
+                         help="相似度阈值 (0-1)，默认 0.95")
+    p_dedup.add_argument("--execute", action="store_true",
+                         help="实际执行删除（不加则默认试运行）")
+    p_dedup.add_argument("--verbose", "-v", action="store_true",
+                         help="显示详细信息")
+    p_dedup.add_argument("--agent", default="cli", help="Agent ID")
+    p_dedup.add_argument("--session", default="cli", help="会话 ID")
+
+    p_export_md = sub.add_parser("export-md", help="导出为 Markdown（v5.0.4 新增）")
+    p_export_md.add_argument("--output", "-o", default="./data/memory.md",
+                             help="输出文件路径")
+    p_export_md.add_argument("--category", "-c", help="按分类筛选")
+    p_export_md.add_argument("--layer", "-l", help="按层级筛选")
+    p_export_md.add_argument("--starred", action="store_true",
+                             help="仅导出收藏的记忆")
+
     p_consolidate = sub.add_parser("consolidate", help="记忆巩固")
     p_consolidate.add_argument("--agent", default="cli", help="Agent ID")
     p_consolidate.add_argument("--session", default="cli", help="会话 ID")
@@ -762,6 +844,8 @@ def main():
         "unstar": cmd_unstar,
         "batch-delete": cmd_batch_delete,
         "tag-search": cmd_tag_search,
+        "deduplicate": cmd_deduplicate,
+        "export-md": cmd_export_md,
         "consolidate": cmd_consolidate,
         "graph": cmd_graph,
         "personality": cmd_personality,

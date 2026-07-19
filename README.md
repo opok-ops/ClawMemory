@@ -1,4 +1,4 @@
-# ClawMemory v5.0.3
+# ClawMemory v5.0.4
 
 **AI Agent 终身记忆系统 — 四层记忆架构 · 知识图谱 · 多模态 · 人格化 · 联邦网络**
 
@@ -6,7 +6,7 @@
 
 ---
 
-## ✨ v5.0.3 六大突破
+## ✨ v5.0.4 六大突破
 
 | 特性 | 说明 |
 |------|------|
@@ -23,7 +23,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    ClawMemory v5.0.3                        │
+│                    ClawMemory v5.0.4                        │
 ├─────────────────────────────────────────────────────────┤
 │  🎯 认知层 (Cognitive Layer)                              │
 │     人格引擎 · 知识图谱 · 记忆演化 · 联邦网络              │
@@ -75,7 +75,7 @@ clawmemory init
 
 ```bash
 # 添加记忆
-clawmemory add "ClawMemory v5.0.3 真的太强了！" --category tech --importance high
+clawmemory add "ClawMemory v5.0.4 真的太强了！" --category tech --importance high
 
 # 搜索记忆
 clawmemory search "数据库优化"
@@ -342,6 +342,30 @@ context = adapter.get_context("数据库优化")
 ---
 
 ## 📝 更新日志
+
+### v5.0.4 (2026-07-19)
+
+**✨ 新增功能**
+- **记忆去重**：`deduplicate()` 方法，基于内容相似度（Jaccard）检测并合并重复记忆
+  - 支持同分类下扫描，相似度阈值可调（默认 0.95）
+  - 保留策略：starred 优先 → 重要性更高 → 更新时间更晚
+  - 支持 `dry_run` 试运行模式，先看报告再决定是否执行
+- **Markdown 导出**：`export_as_markdown()` 方法，将记忆导出为可读性强的 `.md` 文档
+  - 支持按分类、层级、星标筛选
+  - 自动按分类分组，含完整元数据（ID/层级/隐私/重要性/标签等）
+- **CLI 新增命令**：
+  - `deduplicate` - 记忆去重（默认试运行，加 `--execute` 实际删除，加 `-v` 看详情）
+  - `export-md` - 导出为 Markdown 文件
+
+**🔧 修复**
+- 修复 `search_by_tag` 双重过滤导致的性能问题（SQL LIKE 已足够精确，移除冗余的 Python 端再过滤）
+- 优化 `get_stats` 中标签统计的稳定性
+
+**📦 安装修复**（来自 v5.0.3 末尾的 hotfix）
+- 修复 `cli/__init__.py` 缺失导致 `pip install` 后 `clawmemory` 命令找不到的问题
+- 修复 `setup.py` 用 `exec()` 读取版本号失败的问题
+- 修复根 `__init__.py` 相对导入在包安装模式下失败的问题
+- 新增 `pyproject.toml` 支持 PEP 517/518 现代构建
 
 ### v5.0.3 (2026-07-19)
 

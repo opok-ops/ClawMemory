@@ -255,6 +255,55 @@ class ClawMemory:
             offset=offset,
         )
 
+    def deduplicate(self,
+                    category: Optional[str] = None,
+                    similarity_threshold: float = 0.95,
+                    dry_run: bool = True,
+                    actor: str = "system",
+                    session_id: str = "") -> dict:
+        """记忆去重 - 检测并合并高度相似的记忆（v5.0.4 新增）
+
+        Args:
+            category: 限定分类，None 表示全部
+            similarity_threshold: 相似度阈值（0-1），默认 0.95
+            dry_run: True=只报告不删除，False=实际删除
+            actor: 操作者（审计日志用）
+            session_id: 会话 ID
+
+        Returns:
+            dict: {duplicates_found, would_remove, removed, details}
+        """
+        return self._storage.deduplicate(
+            category=category,
+            similarity_threshold=similarity_threshold,
+            dry_run=dry_run,
+            actor=actor,
+            session_id=session_id,
+        )
+
+    def export_as_markdown(self,
+                           output_path: str,
+                           category: Optional[str] = None,
+                           layer: Optional[MemoryLayer] = None,
+                           starred_only: bool = False):
+        """导出记忆为 Markdown 格式（v5.0.4 新增）
+
+        Args:
+            output_path: 输出 .md 文件路径
+            category: 限定分类
+            layer: 限定层级
+            starred_only: 仅导出收藏的记忆
+
+        Returns:
+            Path: 导出文件路径
+        """
+        return self._storage.export_as_markdown(
+            output_path=output_path,
+            category=category,
+            layer=layer,
+            starred_only=starred_only,
+        )
+
     def stats(self) -> dict:
         """获取统计信息"""
         return self._storage.get_stats()

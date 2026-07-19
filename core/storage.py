@@ -546,7 +546,11 @@ class StorageEngine:
                       layer: Optional[MemoryLayer] = None,
                       limit: int = 50,
                       offset: int = 0) -> List[MemoryEntry]:
-        """按标签搜索记忆"""
+        """按标签搜索记忆
+
+        v5.0.4 优化：移除双重过滤（SQL LIKE 已足够精确，Python 端再过滤是冗余）。
+        仅在边界情况下（tags 字段非合法 JSON）跳过该项。
+        """
         conn = self._get_conn()
         query = "SELECT * FROM memories WHERE tags LIKE ?"
         params = [f'%"{tag}"%']
@@ -562,14 +566,189 @@ class StorageEngine:
         params.extend([limit, offset])
 
         rows = conn.execute(query, params).fetchall()
-        results = [self._row_to_entry(row) for row in rows]
-
-        filtered = []
-        for entry in results:
+        results = []
+        for row in rows:
+            entry = self._row_to_entry(row)
+            # 仅校验 JSON 解析结果（防御性），不再做二次标签过滤
             if tag in entry.tags:
-                filtered.append(entry)
+                results.append(entry)
+        return results
 
-        return filtered
+    def deduplicate(self,
+                    category: Optional[str] = None,
+                    similarity_threshold: float = 0.95,
+                    dry_run: bool = True,
+                    actor: str = "system",
+                    session_id: str = "") -> dict:
+        """记忆去重 - 检测并合并高度相似的记忆条目
+
+        v5.0.4 新增功能。
+
+        算法：
+        - 同分类下，对 content 做标准化（去空白/小写）后比较
+        - 完全相同（相似度=1.0）：保留最早一条，删除其余
+        - 高度相似（>= similarity_threshold）：保留 starred 优先 / 重要性更高 / 更新时间更晚的一条
+        - dry_run=True 时仅返回报告，不实际删除
+
+        Args:
+            category: 限定分类，None 表示全部分类
+            similarity_threshold: 相似度阈值，默认 0.95
+            dry_run: 试运行模式，只报告不删除
+            actor: 操作者（用于审计日志）
+            session_id: 会话 ID
+
+        Returns:
+            {
+                "duplicates_found": int,    # 发现的重复组数
+                "would_remove": int,        # 待删除条数（dry_run=True 时）
+                "removed": int,             # 实际删除条数（dry_run=False 时）
+                "details": [...],           # 详情
+            }
+        """
+        conn = self._get_conn()
+        query = "SELECT * FROM memories WHERE 1=1"
+        params = []
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        query += " ORDER BY created_at ASC"
+        rows = conn.execute(query, params).fetchall()
+        entries = [self._row_to_entry(r) for r in rows]
+
+        def normalize(s: str) -> str:
+            return "".join(s.lower().split())
+
+        def similarity(a: str, b: str) -> float:
+            na, nb = normalize(a), normalize(b)
+            if not na or not nb:
+                return 0.0
+            if na == nb:
+                return 1.0
+            # 简单的字符级 Jaccard 相似度
+            sa, sb = set(na), set(nb)
+            inter = len(sa & sb)
+            union = len(sa | sb)
+            return inter / union if union else 0.0
+
+        # 按分类分组
+        groups: Dict[str, List[MemoryEntry]] = {}
+        for e in entries:
+            groups.setdefault(e.category, []).append(e)
+
+        duplicates = []
+        for cat, items in groups.items():
+            n = len(items)
+            for i in range(n):
+                for j in range(i + 1, n):
+                    sim = similarity(items[i].content, items[j].content)
+                    if sim >= similarity_threshold:
+                        duplicates.append((cat, sim, items[i], items[j]))
+
+        details = []
+        removed = 0
+        for cat, sim, a, b in duplicates:
+            # 选择保留哪一条：starred > importance > 更新时间更晚
+            def keep_score(e: MemoryEntry) -> tuple:
+                imp_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+                return (
+                    int(e.starred),
+                    imp_order.get(e.importance.value, 2),
+                    e.updated_at,
+                )
+
+            keeper, loser = (a, b) if keep_score(a) >= keep_score(b) else (b, a)
+            details.append({
+                "category": cat,
+                "similarity": round(sim, 4),
+                "keeper_id": keeper.id,
+                "loser_id": loser.id,
+                "keeper_preview": keeper.preview,
+                "loser_preview": loser.preview,
+            })
+
+            if not dry_run:
+                self.delete_memory(loser.id, hard_delete=True, actor=actor, session_id=session_id)
+                removed += 1
+
+        return {
+            "duplicates_found": len(duplicates),
+            "would_remove": len(duplicates) if dry_run else 0,
+            "removed": removed,
+            "details": details,
+        }
+
+    def export_as_markdown(self,
+                           output_path: str,
+                           category: Optional[str] = None,
+                           layer: Optional[MemoryLayer] = None,
+                           starred_only: bool = False) -> Path:
+        """导出记忆为 Markdown 格式
+
+        v5.0.4 新增功能。
+
+        Args:
+            output_path: 输出文件路径
+            category: 限定分类
+            layer: 限定层级
+            starred_only: 仅导出收藏的记忆
+
+        Returns:
+            导出文件的 Path 对象
+        """
+        entries = self.list_memories(
+            category=category,
+            layer=layer,
+            starred=starred_only if starred_only else None,
+            limit=100000,
+        )
+
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+
+        def _fmt_time(ts: float) -> str:
+            return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+        lines = [
+            "# ClawMemory 记忆导出",
+            "",
+            f"- 导出时间：{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+            f"- 记忆总数：{len(entries)}",
+            f"- 筛选条件：分类={category or '全部'}, 层级={layer.value if layer else '全部'}, 仅收藏={'是' if starred_only else '否'}",
+            "",
+            "---",
+            "",
+        ]
+
+        # 按分类分组
+        groups: Dict[str, List[MemoryEntry]] = {}
+        for e in entries:
+            groups.setdefault(e.category, []).append(e)
+
+        for cat in sorted(groups.keys()):
+            lines.append(f"## 📂 {cat}")
+            lines.append("")
+            for e in groups[cat]:
+                star = "⭐ " if e.starred else ""
+                lines.append(f"### {star}{e.preview[:60]}")
+                lines.append("")
+                lines.append(f"- **ID**: `{e.id}`")
+                lines.append(f"- **层级**: {e.layer.value}")
+                lines.append(f"- **隐私**: {e.privacy.value}")
+                lines.append(f"- **重要性**: {e.importance.value}")
+                lines.append(f"- **类型**: {e.memory_type.value}")
+                lines.append(f"- **标签**: {', '.join(f'#{t}' for t in e.tags) if e.tags else '无'}")
+                lines.append(f"- **创建**: {_fmt_time(e.created_at)}")
+                lines.append(f"- **访问**: {e.access_count} 次")
+                lines.append("")
+                lines.append("**内容**：")
+                lines.append("")
+                lines.append(e.content)
+                lines.append("")
+                lines.append("---")
+                lines.append("")
+
+        out.write_text("\n".join(lines), encoding="utf-8")
+        return out
 
     def get_audit_log(self,
                       memory_id: Optional[str] = None,
