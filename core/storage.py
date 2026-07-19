@@ -419,6 +419,59 @@ class StorageEngine:
         self._add_audit("delete", entry_id, actor, session_id, "")
         return True
 
+    def batch_delete(self,
+                     category: Optional[str] = None,
+                     layer: Optional[MemoryLayer] = None,
+                     starred: Optional[bool] = None,
+                     created_after: Optional[float] = None,
+                     created_before: Optional[float] = None,
+                     hard_delete: bool = False,
+                     actor: str = "",
+                     session_id: str = "") -> int:
+        """批量删除记忆，返回删除数量"""
+        conn = self._get_conn()
+        query = "SELECT id FROM memories WHERE 1=1"
+        params = []
+
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        if layer:
+            query += " AND layer = ?"
+            params.append(layer.value)
+        if starred is not None:
+            query += " AND starred = ?"
+            params.append(1 if starred else 0)
+        if created_after is not None:
+            query += " AND created_at >= ?"
+            params.append(created_after)
+        if created_before is not None:
+            query += " AND created_at <= ?"
+            params.append(created_before)
+
+        rows = conn.execute(query, params).fetchall()
+        ids = [row[0] for row in rows]
+
+        if not ids:
+            return 0
+
+        now = time.time()
+        if hard_delete:
+            placeholders = ",".join(["?"] * len(ids))
+            conn.execute(f"DELETE FROM memories WHERE id IN ({placeholders})", ids)
+        else:
+            placeholders = ",".join(["?"] * len(ids))
+            conn.execute(
+                f"UPDATE memories SET category = 'trash', updated_at = ? WHERE id IN ({placeholders})",
+                [now] + ids
+            )
+
+        conn.commit()
+        for mid in ids:
+            self._add_audit("delete", mid, actor, session_id, "")
+
+        return len(ids)
+
     def count_memories(self, category: Optional[str] = None,
                        layer: Optional[MemoryLayer] = None) -> int:
         """统计记忆数量"""
@@ -458,6 +511,22 @@ class StorageEngine:
         ):
             top_categories[row[0]] = row[1]
 
+        starred_count = conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE starred = 1"
+        ).fetchone()[0]
+
+        tag_counts = {}
+        for row in conn.execute("SELECT tags FROM memories"):
+            if row[0]:
+                try:
+                    tags = json.loads(row[0])
+                    for tag in tags:
+                        tag_counts[tag] = tag_counts.get(tag, 0) + 1
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        top_tags = dict(sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:10])
+
         db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
 
         return {
@@ -468,7 +537,39 @@ class StorageEngine:
             "by_layer": by_layer,
             "by_importance": by_importance,
             "top_categories": top_categories,
+            "starred_count": starred_count,
+            "top_tags": top_tags,
         }
+
+    def search_by_tag(self, tag: str,
+                      category: Optional[str] = None,
+                      layer: Optional[MemoryLayer] = None,
+                      limit: int = 50,
+                      offset: int = 0) -> List[MemoryEntry]:
+        """按标签搜索记忆"""
+        conn = self._get_conn()
+        query = "SELECT * FROM memories WHERE tags LIKE ?"
+        params = [f'%"{tag}"%']
+
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        if layer:
+            query += " AND layer = ?"
+            params.append(layer.value)
+
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        rows = conn.execute(query, params).fetchall()
+        results = [self._row_to_entry(row) for row in rows]
+
+        filtered = []
+        for entry in results:
+            if tag in entry.tags:
+                filtered.append(entry)
+
+        return filtered
 
     def get_audit_log(self,
                       memory_id: Optional[str] = None,

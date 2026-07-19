@@ -219,6 +219,42 @@ class ClawMemory:
             self._index.remove_memory(memory_id)
         return success
 
+    def batch_delete(self,
+                     category: Optional[str] = None,
+                     layer: Optional[MemoryLayer] = None,
+                     starred: Optional[bool] = None,
+                     created_after: Optional[float] = None,
+                     created_before: Optional[float] = None,
+                     hard_delete: bool = False,
+                     actor: str = "",
+                     session_id: str = "") -> int:
+        """批量删除记忆，返回删除数量"""
+        count = self._storage.batch_delete(
+            category=category,
+            layer=layer,
+            starred=starred,
+            created_after=created_after,
+            created_before=created_before,
+            hard_delete=hard_delete,
+            actor=actor,
+            session_id=session_id,
+        )
+        return count
+
+    def search_by_tag(self, tag: str,
+                      category: Optional[str] = None,
+                      layer: Optional[MemoryLayer] = None,
+                      limit: int = 50,
+                      offset: int = 0):
+        """按标签搜索记忆"""
+        return self._storage.search_by_tag(
+            tag=tag,
+            category=category,
+            layer=layer,
+            limit=limit,
+            offset=offset,
+        )
+
     def stats(self) -> dict:
         """获取统计信息"""
         return self._storage.get_stats()

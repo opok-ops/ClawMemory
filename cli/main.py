@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawMemory v5.0.2 CLI - 命令行工具
+ClawMemory v5.0.3 CLI - 命令行工具
 =================================
 
 Usage:
@@ -92,7 +92,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}ClawMemory v5.0.2 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}ClawMemory v5.0.3 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -311,6 +311,7 @@ def cmd_stats(args):
     print(c("ClawMemory 统计报告", "bold"))
     print("=" * 50)
     print(f"总记忆数：  {c(str(stats['total']), 'cyan')}")
+    print(f"⭐ 收藏数： {c(str(stats.get('starred_count', 0)), 'yellow')}")
     print(f"数据库大小：{format_size(stats['db_size_bytes'])}")
     print(f"数据库路径：{stats['db_path']}")
 
@@ -329,6 +330,86 @@ def cmd_stats(args):
     print(f"\n分类统计（前10）：")
     for cat, count in list(stats.get("top_categories", {}).items())[:10]:
         print(f"  {cat}: {count}")
+
+    top_tags = stats.get("top_tags", {})
+    if top_tags:
+        print(f"\n标签统计（前10）：")
+        for tag, count in list(top_tags.items())[:10]:
+            print(f"  #{tag}: {count}")
+
+    return 0
+
+
+def cmd_batch_delete(args):
+    """批量删除记忆"""
+    cm = _get_memory(args)
+
+    created_after = None
+    created_before = None
+    if args.after:
+        from datetime import datetime
+        created_after = datetime.fromisoformat(args.after).timestamp()
+    if args.before:
+        from datetime import datetime
+        created_before = datetime.fromisoformat(args.before).timestamp()
+
+    starred = None
+    if getattr(args, "starred", False):
+        starred = True
+    if getattr(args, "unstarred", False):
+        starred = False
+
+    if not args.force:
+        preview = cm.list(
+            category=args.category,
+            layer=MemoryLayer.from_string(args.layer) if args.layer else None,
+            starred=starred,
+            created_after=created_after,
+            created_before=created_before,
+            limit=10,
+        )
+        print(c(f"\n⚠️  将删除 {len(preview)} 条记忆（预览前10条）：", "yellow"))
+        for entry in preview:
+            print(f"   - [{entry.category}] {entry.preview[:60]}...")
+        print(c("\n确认删除？加 --force 执行", "yellow"))
+        return 1
+
+    count = cm.batch_delete(
+        category=args.category,
+        layer=MemoryLayer.from_string(args.layer) if args.layer else None,
+        starred=starred,
+        created_after=created_after,
+        created_before=created_before,
+        hard_delete=args.hard,
+        actor=args.agent,
+        session_id=args.session,
+    )
+
+    action = "彻底删除" if args.hard else "移到回收站"
+    print(c(f"\n🗑️  已{action} {count} 条记忆", "green"))
+    return 0
+
+
+def cmd_tag_search(args):
+    """按标签搜索记忆"""
+    cm = _get_memory(args)
+    entries = cm.search_by_tag(
+        tag=args.tag,
+        category=args.category,
+        layer=MemoryLayer.from_string(args.layer) if args.layer else None,
+        limit=args.limit,
+        offset=args.offset,
+    )
+
+    print(f"\n找到 {c(str(len(entries)), 'cyan')} 条带标签 #{args.tag} 的记忆")
+
+    for entry in entries:
+        star_mark = "⭐ " if entry.starred else ""
+        print(f"\n--- [{entry.category}] "
+              f"{star_mark}{entry.preview[:60]} ---")
+        print(f"  标签: {', '.join(entry.tags)}")
+        print(f"  层级: {entry.layer.value} | 重要性: {entry.importance.value}")
+        print(f"  创建: {format_time(entry.created_at)}")
 
     return 0
 
@@ -555,7 +636,7 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="clawmemory",
-        description="ClawMemory v5.0.2 - AI Agent 终身记忆系统",
+        description="ClawMemory v5.0.3 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -613,6 +694,27 @@ def main():
     p_unstar.add_argument("--agent", default="cli", help="Agent ID")
     p_unstar.add_argument("--session", default="cli", help="会话 ID")
 
+    p_batch_delete = sub.add_parser("batch-delete", help="批量删除记忆")
+    p_batch_delete.add_argument("--category", "-c", help="按分类删除")
+    p_batch_delete.add_argument("--layer", "-l", help="按层级删除")
+    p_batch_delete.add_argument("--starred", action="store_true", default=None,
+                                help="只删除已收藏的")
+    p_batch_delete.add_argument("--unstarred", action="store_true", default=None,
+                                help="只删除未收藏的")
+    p_batch_delete.add_argument("--after", help="删除此时间之后的")
+    p_batch_delete.add_argument("--before", help="删除此时间之前的")
+    p_batch_delete.add_argument("--hard", action="store_true", help="彻底删除（不可恢复）")
+    p_batch_delete.add_argument("--force", action="store_true", help="确认删除（不加则只预览）")
+    p_batch_delete.add_argument("--agent", default="cli", help="Agent ID")
+    p_batch_delete.add_argument("--session", default="cli", help="会话 ID")
+
+    p_tag_search = sub.add_parser("tag-search", help="按标签搜索记忆")
+    p_tag_search.add_argument("tag", help="标签名称")
+    p_tag_search.add_argument("--category", "-c", help="分类筛选")
+    p_tag_search.add_argument("--layer", "-l", help="层级筛选")
+    p_tag_search.add_argument("--limit", type=int, default=50, help="数量限制")
+    p_tag_search.add_argument("--offset", type=int, default=0, help="偏移量")
+
     p_consolidate = sub.add_parser("consolidate", help="记忆巩固")
     p_consolidate.add_argument("--agent", default="cli", help="Agent ID")
     p_consolidate.add_argument("--session", default="cli", help="会话 ID")
@@ -658,6 +760,8 @@ def main():
         "stats": cmd_stats,
         "star": cmd_star,
         "unstar": cmd_unstar,
+        "batch-delete": cmd_batch_delete,
+        "tag-search": cmd_tag_search,
         "consolidate": cmd_consolidate,
         "graph": cmd_graph,
         "personality": cmd_personality,
