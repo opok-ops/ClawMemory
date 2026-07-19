@@ -45,38 +45,55 @@
 
 ### 安装
 
+**方式一：pip 安装（推荐）**
+
+```bash
+pip install clawmemory
+```
+
+**方式二：从源码安装**
+
 ```bash
 # 克隆仓库
 git clone https://github.com/opok-ops/ClawMemory.git
 cd ClawMemory
 
+# 本地安装
+pip install -e .
+
 # 初始化（生成加密密钥）
-python cli/main.py init
+clawmemory init
 ```
+
+> **注意**：如果 `pip install clawmemory` 提示找不到包，请升级 pip 后重试：
+> ```bash
+> python -m pip install --upgrade pip
+> pip install clawmemory
+> ```
 
 ### CLI 使用
 
 ```bash
 # 添加记忆
-python cli/main.py add "ClawMemory v5.0.1 真的太强了！" --category tech --importance high
+clawmemory add "ClawMemory v5.0.3 真的太强了！" --category tech --importance high
 
 # 搜索记忆
-python cli/main.py search "数据库优化"
+clawmemory search "数据库优化"
 
 # 查看统计
-python cli/main.py stats
+clawmemory stats
 
 # 记忆巩固（短期→长期）
-python cli/main.py consolidate
+clawmemory consolidate
 
 # 知识图谱统计
-python cli/main.py graph stats
+clawmemory graph stats
 
 # 用户画像
-python cli/main.py personality profile
+clawmemory personality profile
 
 # 启动 Web UI
-python cli/main.py serve --port 8080
+clawmemory serve --port 8080
 ```
 
 ### Python SDK

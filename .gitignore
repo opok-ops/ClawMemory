@@ -7,3 +7,9 @@ data/
 .env
 .venv/
 venv/
+
+# Build artifacts
+*.egg-info/
+build/
+dist/
+*.egg

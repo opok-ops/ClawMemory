@@ -8,31 +8,56 @@ __version__ = "5.0.3"
 __author__ = "ClawMemory Project"
 __license__ = "MIT + Privacy Addendum"
 
-from .core import (
-    ClawMemory,
-    MemoryEntry,
-    MemoryLayer,
-    PrivacyLevel,
-    Importance,
-    MemoryType,
-    StorageEngine,
-    EncryptionEngine,
-    IndexEngine,
-    QueryEngine,
-)
-
-from .modules import (
-    RecallEngine,
-    RecallConfig,
-    KnowledgeGraph,
-    MemoryEvolution,
-    PersonalityEngine,
-    MultimodalMemory,
-    FederatedMemory,
-    TaxonomyManager,
-    PrivacyEngine,
-    MemoryIntegrator,
-)
+try:
+    from .core import (
+        ClawMemory,
+        MemoryEntry,
+        MemoryLayer,
+        PrivacyLevel,
+        Importance,
+        MemoryType,
+        StorageEngine,
+        EncryptionEngine,
+        IndexEngine,
+        QueryEngine,
+    )
+    from .modules import (
+        RecallEngine,
+        RecallConfig,
+        KnowledgeGraph,
+        MemoryEvolution,
+        PersonalityEngine,
+        MultimodalMemory,
+        FederatedMemory,
+        TaxonomyManager,
+        PrivacyEngine,
+        MemoryIntegrator,
+    )
+except ImportError:
+    from core import (
+        ClawMemory,
+        MemoryEntry,
+        MemoryLayer,
+        PrivacyLevel,
+        Importance,
+        MemoryType,
+        StorageEngine,
+        EncryptionEngine,
+        IndexEngine,
+        QueryEngine,
+    )
+    from modules import (
+        RecallEngine,
+        RecallConfig,
+        KnowledgeGraph,
+        MemoryEvolution,
+        PersonalityEngine,
+        MultimodalMemory,
+        FederatedMemory,
+        TaxonomyManager,
+        PrivacyEngine,
+        MemoryIntegrator,
+    )
 
 __all__ = [
     "ClawMemory",

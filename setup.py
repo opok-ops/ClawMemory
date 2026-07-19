@@ -1,15 +1,18 @@
 from setuptools import setup, find_packages
 from pathlib import Path
+import re
 
 here = Path(__file__).parent
 long_description = (here / "README.md").read_text(encoding="utf-8")
 
-about = {}
-exec((here / "__init__.py").read_text(encoding="utf-8"), about)
+# 直接从 __init__.py 读取版本号，避免 exec 导入问题
+init_content = (here / "__init__.py").read_text(encoding="utf-8")
+version_match = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', init_content, re.M)
+version = version_match.group(1) if version_match else "0.0.0"
 
 setup(
     name="clawmemory",
-    version=about["__version__"],
+    version=version,
     description="AI Agent 终身记忆系统 - 四层记忆架构 · 知识图谱 · 多模态支持",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -28,7 +31,9 @@ setup(
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
     keywords="ai agent memory knowledge-graph llm",
-    packages=find_packages(exclude=["tests", "tests.*", "website", "examples"]),
+    packages=find_packages(
+        exclude=["tests", "tests.*", "website", "examples", "data"]
+    ),
     python_requires=">=3.9",
     install_requires=[],
     extras_require={
