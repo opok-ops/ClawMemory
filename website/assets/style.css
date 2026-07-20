@@ -36,6 +36,7 @@
 
 html { scroll-behavior: smooth; font-size: 16px; }
 
+/* v5.0.7: 科技感自定义鼠标样式 */
 body {
   font-family: var(--font-body);
   background: var(--bg-primary);
@@ -43,6 +44,29 @@ body {
   line-height: 1.6;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  cursor: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="%2300d4ff"/><circle cx="12" cy="12" r="8" stroke="%2300d4ff" stroke-width="1.5" fill="none" opacity="0.5"/></svg>') 12 12, auto;
+}
+
+/* 链接和按钮悬浮时切换为手型光标 + 发光 */
+a, button, .btn, .pg-cat, .pg-memory-item, .arch-mod,
+.nav-logo, .feature-card, .tier-card, .pf-item,
+.footer-col a, .social-links a, .logo-mark {
+  cursor: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="%23a855f7"/><circle cx="12" cy="12" r="9" stroke="%23a855f7" stroke-width="1.5" fill="none" opacity="0.6"/></svg>') 12 12, pointer;
+}
+
+/* v5.0.7: 点击涟漪效果 */
+.ripple {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(0, 212, 255, 0.4) 0%, rgba(168, 85, 247, 0.2) 50%, transparent 70%);
+  animation: rippleExpand 0.6s ease-out forwards;
+  z-index: 9999;
+}
+
+@keyframes rippleExpand {
+  0% { width: 0; height: 0; opacity: 1; }
+  100% { width: 120px; height: 120px; opacity: 0; }
 }
 
 #particle-canvas {

@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
   initCursorGlow();
+  initRipple();
   initParticles();
   initScrollReveal();
   initCounters();
@@ -8,6 +9,21 @@ document.addEventListener('DOMContentLoaded', () => {
   initKnowledgeGraph();
   initNavScroll();
 });
+
+/* v5.0.7: 点击涟漪效果 */
+function initRipple() {
+  document.addEventListener('click', (e) => {
+    const ripple = document.createElement('div');
+    ripple.className = 'ripple';
+    ripple.style.left = (e.clientX - 60) + 'px';
+    ripple.style.top = (e.clientY - 60) + 'px';
+    document.body.appendChild(ripple);
+
+    ripple.addEventListener('animationend', () => {
+      ripple.remove();
+    });
+  });
+}
 
 function initCursorGlow() {
   const glow = document.getElementById('cursorGlow');
