@@ -1,4 +1,4 @@
-# ClawMemory v5.0.5
+# ClawMemory v5.0.6
 
 **AI Agent 终身记忆系统 — 四层记忆架构 · 知识图谱 · 多模态 · 人格化 · 联邦网络**
 
@@ -6,7 +6,7 @@
 
 ---
 
-## ✨ v5.0.5 六大突破
+## ✨ v5.0.6 六大突破
 
 | 特性 | 说明 |
 |------|------|
@@ -23,7 +23,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    ClawMemory v5.0.5                        │
+│                    ClawMemory v5.0.6                        │
 ├─────────────────────────────────────────────────────────┤
 │  🎯 认知层 (Cognitive Layer)                              │
 │     人格引擎 · 知识图谱 · 记忆演化 · 联邦网络              │
@@ -75,7 +75,7 @@ clawmemory init
 
 ```bash
 # 添加记忆
-clawmemory add "ClawMemory v5.0.5 真的太强了！" --category tech --importance high
+clawmemory add "ClawMemory v5.0.6 真的太强了！" --category tech --importance high
 
 # 搜索记忆
 clawmemory search "数据库优化"
@@ -342,6 +342,24 @@ context = adapter.get_context("数据库优化")
 ---
 
 ## 📝 更新日志
+
+### v5.0.6 (2026-07-20)
+
+**🔧 修复**
+- **关键修复**：`update_memory` 更新 content/category/tags 时未同步刷新 FTS 索引，导致全文搜索返回旧内容（与 v5.0.5 修复的 delete 同类问题）
+  - contentless FTS5 表通过 `delete` + `insert` 两步完成索引刷新
+- 修复 `export_json` 导出文件的 `version` 字段硬编码为 "5.0.1" 的问题，改为动态读取 `__version__`
+
+**✨ 新增功能**
+- **FTS 索引重建**：`rebuild_fts()` 方法，清空并重建全文索引，消除孤立记录
+  - 配合 `health_check` 发现的 `fts_orphans` 问题使用
+  - 返回重建条目数和耗时
+- **清空回收站**：`purge_trash()` 方法，永久删除所有软删除（category='trash'）的记忆
+  - 同步清理对应的 FTS 索引，记录审计日志
+  - 软删除后终于有了清理机制
+- **CLI 新增命令**：
+  - `vacuum` - 重建 FTS 索引 + 执行 VACUUM 回收空间（含重建前后健康对比）
+  - `purge-trash` - 清空回收站（默认预览，加 `--force` 执行）
 
 ### v5.0.5 (2026-07-19)
 

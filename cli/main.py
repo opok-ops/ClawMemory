@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawMemory v5.0.5 CLI - 命令行工具
+ClawMemory v5.0.6 CLI - 命令行工具
 =================================
 
 Usage:
@@ -92,7 +92,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}ClawMemory v5.0.5 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}ClawMemory v5.0.6 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -552,6 +552,66 @@ def cmd_summarize(args):
     return 0
 
 
+def cmd_vacuum(args):
+    """重建 FTS 索引 + 数据库优化（v5.0.6 新增）"""
+    cm = _get_memory(args)
+    print_banner()
+    print(c("🧹 ClawMemory FTS 索引重建", "bold"))
+    print("=" * 50)
+
+    # 重建前健康状态
+    before = cm.health_check()
+    print(f"\n重建前：孤立 FTS 记录 = {c(str(before['fts_orphans']), 'yellow' if before['fts_orphans'] else 'green')}")
+
+    print(c("\n正在重建 FTS 索引...", "cyan"))
+    result = cm.rebuild_fts()
+
+    # 执行 VACUUM 回收空间
+    try:
+        cm.storage._get_conn().execute("VACUUM")
+        vacuum_ok = True
+    except Exception:
+        vacuum_ok = False
+
+    # 重建后健康状态
+    after = cm.health_check()
+    print(c("\n✅ 重建完成", "green"))
+    print(f"   已索引条目：{c(str(result['indexed']), 'cyan')}")
+    print(f"   耗时：{result['duration_ms']} ms")
+    print(f"   VACUUM：{'✅ 已执行' if vacuum_ok else '⚠️ 跳过'}")
+    print(f"\n重建后：孤立 FTS 记录 = {c(str(after['fts_orphans']), 'green' if after['fts_orphans'] == 0 else 'yellow')}")
+    print(f"总体状态：{after['status']}")
+    cm.close()
+    return 0
+
+
+def cmd_purge_trash(args):
+    """清空回收站（v5.0.6 新增）"""
+    cm = _get_memory(args)
+
+    # 先统计回收站数量
+    trash_items = cm.list(category="trash", limit=100000)
+
+    if not trash_items:
+        print(c("回收站为空，无需清理", "yellow"))
+        cm.close()
+        return 0
+
+    if not args.force:
+        print(c(f"\n⚠️  回收站中有 {len(trash_items)} 条记忆将被永久删除", "yellow"))
+        print(c("预览（前 10 条）：", "cyan"))
+        for entry in trash_items[:10]:
+            print(f"   - [{entry.category}] {entry.preview[:60]}")
+        print(c("\n确认永久删除？加 --force 执行（此操作不可恢复）", "yellow"))
+        cm.close()
+        return 1
+
+    count = cm.purge_trash(actor=args.agent, session_id=args.session)
+    print(c(f"\n🗑️  已永久删除 {count} 条回收站记忆", "green"))
+    cm.close()
+    return 0
+
+
 def cmd_star(args):
     """收藏记忆"""
     cm = _get_memory(args)
@@ -774,7 +834,7 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="clawmemory",
-        description="ClawMemory v5.0.5 - AI Agent 终身记忆系统",
+        description="ClawMemory v5.0.6 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -880,6 +940,14 @@ def main():
                              choices=["category", "layer", "importance", "privacy"],
                              help="分组维度（默认 category）")
 
+    p_vacuum = sub.add_parser("vacuum", help="重建 FTS 索引 + 数据库优化（v5.0.6 新增）")
+
+    p_purge_trash = sub.add_parser("purge-trash", help="清空回收站（v5.0.6 新增）")
+    p_purge_trash.add_argument("--force", action="store_true",
+                               help="确认永久删除（不加则只预览）")
+    p_purge_trash.add_argument("--agent", default="cli", help="Agent ID")
+    p_purge_trash.add_argument("--session", default="cli", help="会话 ID")
+
     p_consolidate = sub.add_parser("consolidate", help="记忆巩固")
     p_consolidate.add_argument("--agent", default="cli", help="Agent ID")
     p_consolidate.add_argument("--session", default="cli", help="会话 ID")
@@ -931,6 +999,8 @@ def main():
         "export-md": cmd_export_md,
         "health": cmd_health,
         "summarize": cmd_summarize,
+        "vacuum": cmd_vacuum,
+        "purge-trash": cmd_purge_trash,
         "consolidate": cmd_consolidate,
         "graph": cmd_graph,
         "personality": cmd_personality,

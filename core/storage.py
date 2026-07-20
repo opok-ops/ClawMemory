@@ -347,12 +347,21 @@ class StorageEngine:
                       metadata: Optional[Dict[str, Any]] = None,
                       actor: str = "",
                       session_id: str = "") -> bool:
-        """更新记忆"""
+        """更新记忆
+
+        v5.0.6 修复：更新 content/category/tags 时同步刷新 FTS 索引，
+        避免搜索返回旧内容（与 v5.0.5 的 delete FTS 修复对应）。
+
+        contentless FTS5 表的 'delete' 命令需要索引中**当前的值**（旧值）才能
+        正确从倒排索引中移除 token。因此必须：先读旧值 → 用旧值 delete FTS
+        → 更新 memories 表 → 用新值 insert FTS。
+        """
         conn = self._get_conn()
         now = time.time()
 
         updates = []
         params = []
+        fts_dirty = False  # 是否需要刷新 FTS
 
         if content is not None:
             if self.encrypted and self.encryption:
@@ -366,13 +375,16 @@ class StorageEngine:
             else:
                 updates.append("content = ?")
                 params.append(content)
+                fts_dirty = True
 
         if category is not None:
             updates.append("category = ?")
             params.append(category)
+            fts_dirty = True
         if tags is not None:
             updates.append("tags = ?")
             params.append(json.dumps(tags, ensure_ascii=False))
+            fts_dirty = True
         if privacy is not None:
             updates.append("privacy = ?")
             params.append(privacy.value)
@@ -392,15 +404,175 @@ class StorageEngine:
         if not updates:
             return False
 
+        # FTS 刷新步骤 1：更新前先读取旧值，用旧值删除 FTS 索引条目
+        old_fts_row = None
+        if fts_dirty and not self.encrypted:
+            old_fts_row = conn.execute(
+                "SELECT rowid, content, category, tags FROM memories WHERE id = ?",
+                (entry_id,)
+            ).fetchone()
+            if old_fts_row:
+                try:
+                    conn.execute(
+                        "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                        "VALUES('delete', ?, ?, ?, ?)",
+                        (old_fts_row[0], old_fts_row[1] or "", old_fts_row[2] or "", old_fts_row[3] or "[]")
+                    )
+                except Exception:
+                    pass
+
+        # 更新 memories 表
         updates.append("updated_at = ?")
         params.append(now)
         params.append(entry_id)
-
         conn.execute(f"UPDATE memories SET {', '.join(updates)} WHERE id = ?", params)
+
+        # FTS 刷新步骤 2：用新值重新插入 FTS 索引条目
+        if old_fts_row is not None:
+            new_row = conn.execute(
+                "SELECT rowid, content, category, tags FROM memories WHERE id = ?",
+                (entry_id,)
+            ).fetchone()
+            if new_row:
+                try:
+                    conn.execute(
+                        "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
+                        (new_row[0], new_row[1] or "", new_row[2] or "", new_row[3] or "[]")
+                    )
+                except Exception:
+                    pass
+
         conn.commit()
 
         self._add_audit("update", entry_id, actor, session_id, privacy.value if privacy else "")
         return True
+
+    def _refresh_fts(self, conn: sqlite3.Connection, entry_id: str):
+        """刷新单条记忆的 FTS 索引（contentless FTS5：先 delete 旧条目再 insert 新条目）
+
+        v5.0.6 新增：辅助方法，读取当前 memories 表中的值来刷新 FTS。
+        注意：此方法用 memories 表的**当前值**做 delete 和 insert，仅适用于
+        memories 表尚未被更新的场景（如索引修复）。update_memory 中的 FTS
+        同步已内联实现（需在更新前读旧值），不调用此方法。
+        """
+        row = conn.execute(
+            "SELECT rowid, content, category, tags FROM memories WHERE id = ?",
+            (entry_id,)
+        ).fetchone()
+        if not row:
+            return
+        try:
+            conn.execute(
+                "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                "VALUES('delete', ?, ?, ?, ?)",
+                (row[0], row[1] or "", row[2] or "", row[3] or "[]")
+            )
+        except Exception:
+            pass
+        try:
+            conn.execute(
+                "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
+                (row[0], row[1] or "", row[2] or "", row[3] or "[]")
+            )
+        except Exception:
+            pass
+
+    def rebuild_fts(self) -> dict:
+        """重建 FTS 全文索引（v5.0.6 新增）
+
+        清空并重新构建 memory_fts 表，消除孤立记录，确保索引与 memories 表一致。
+        配合 health_check 发现的 fts_orphans 问题使用。
+
+        注意：contentless FTS5 表（content=''）不支持 DELETE FROM，
+        必须用 DROP + CREATE 重建表结构来清空。
+
+        Returns:
+            {
+                "rebuilt": True,
+                "indexed": int,      # 重建索引的条目数
+                "duration_ms": float,
+            }
+        """
+        import time as _time
+        start = _time.time()
+        conn = self._get_conn()
+
+        # contentless FTS5 表不能用 DELETE FROM，用 DROP + CREATE 重建
+        conn.execute("DROP TABLE IF EXISTS memory_fts")
+        conn.execute("""
+            CREATE VIRTUAL TABLE memory_fts USING fts5(
+                content, category, tags,
+                content=''
+            )
+        """)
+
+        # 重新索引所有非加密记忆
+        rows = conn.execute(
+            "SELECT rowid, content, category, tags FROM memories WHERE encrypted = 0"
+        ).fetchall()
+        indexed = 0
+        for row in rows:
+            try:
+                conn.execute(
+                    "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
+                    (row[0], row[1] or "", row[2] or "", row[3] or "[]")
+                )
+                indexed += 1
+            except Exception:
+                pass
+
+        conn.commit()
+        elapsed = (_time.time() - start) * 1000
+        return {
+            "rebuilt": True,
+            "indexed": indexed,
+            "duration_ms": round(elapsed, 2),
+        }
+
+    def purge_trash(self,
+                    actor: str = "system",
+                    session_id: str = "") -> int:
+        """清空回收站，永久删除所有 category='trash' 的记忆（v5.0.6 新增）
+
+        软删除（delete_memory(hard_delete=False)）会把 category 改为 'trash'，
+        本方法将这些记录彻底删除，并同步清理 FTS 索引。
+
+        Args:
+            actor: 操作者（审计日志用）
+            session_id: 会话 ID
+
+        Returns:
+            永久删除的记忆数量
+        """
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT id, rowid, content, category, tags FROM memories WHERE category = 'trash'"
+        ).fetchall()
+
+        if not rows:
+            return 0
+
+        ids = [row[0] for row in rows]
+        placeholders = ",".join(["?"] * len(ids))
+
+        conn.execute(f"DELETE FROM memories WHERE id IN ({placeholders})", ids)
+
+        # 同步清理 FTS（contentless FTS5 用 'delete' 命令）
+        for row in rows:
+            try:
+                conn.execute(
+                    "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                    "VALUES('delete', ?, ?, ?, ?)",
+                    (row[1], row[2] or "", row[3] or "", row[4] or "[]")
+                )
+            except Exception:
+                pass
+
+        conn.commit()
+        for mid in ids:
+            self._add_audit("purge", mid, actor, session_id, "")
+
+        return len(ids)
 
     def delete_memory(self, entry_id: str,
                       actor: str = "", session_id: str = "",

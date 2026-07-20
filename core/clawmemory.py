@@ -21,6 +21,12 @@ from .encryption import EncryptionEngine, init_engine as _init_engine
 from .indexer import IndexEngine
 from .query import QueryEngine
 
+# 安全获取版本号：包安装模式从根包导入，脚本模式用 fallback
+try:
+    from .. import __version__
+except (ImportError, ValueError):
+    __version__ = "5.0.6"
+
 
 class ClawMemory:
     """ClawMemory 主类 - AI Agent 终身记忆系统 v5.0"""
@@ -314,6 +320,31 @@ class ClawMemory:
         """
         return self._storage.health_check()
 
+    def rebuild_fts(self) -> dict:
+        """重建 FTS 全文索引（v5.0.6 新增）
+
+        清空并重建 memory_fts 表，消除孤立记录。
+        配合 health_check 发现的 fts_orphans 问题使用。
+
+        Returns:
+            dict: {rebuilt: bool, indexed: int, duration_ms: float}
+        """
+        return self._storage.rebuild_fts()
+
+    def purge_trash(self, actor: str = "system", session_id: str = "") -> int:
+        """清空回收站，永久删除所有软删除的记忆（v5.0.6 新增）
+
+        软删除的记忆 category 会被改为 'trash'，本方法将其彻底删除。
+
+        Args:
+            actor: 操作者（审计日志用）
+            session_id: 会话 ID
+
+        Returns:
+            永久删除的记忆数量
+        """
+        return self._storage.purge_trash(actor=actor, session_id=session_id)
+
     def summarize(self,
                   category: Optional[str] = None,
                   group_by: str = "category") -> dict:
@@ -361,7 +392,7 @@ class ClawMemory:
             ]
 
         data = {
-            "version": "5.0.1",
+            "version": __version__,
             "export_time": "",
             "total": len(entries),
             "memories": [e.to_dict() for e in entries],

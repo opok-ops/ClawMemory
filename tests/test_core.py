@@ -318,5 +318,176 @@ class TestPersonalityEngine(unittest.TestCase):
         cm.close()
 
 
+class TestFTSUpdateSync(unittest.TestCase):
+    """v5.0.6: update_memory 的 FTS 索引同步测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_update_content_syncs_fts(self):
+        """更新 content 后，FTS 索引应反映新内容而非旧内容"""
+        from core.storage import StorageEngine
+        from core.types import MemoryLayer
+
+        storage = StorageEngine(db_path=self.db_path)
+        entry = storage.add_memory(
+            content="original content about python programming",
+            category="tech",
+            layer=MemoryLayer.SHORT_TERM,
+        )
+
+        # 更新为完全不同的内容
+        storage.update_memory(entry_id=entry.id, content="updated content about database optimization")
+
+        conn = storage._get_conn()
+        # FTS 中应能搜到新内容
+        rows = conn.execute(
+            "SELECT rowid FROM memory_fts WHERE memory_fts MATCH 'database'"
+        ).fetchall()
+        self.assertGreater(len(rows), 0, "FTS 应包含更新后的新内容")
+
+        # FTS 中不应再命中旧内容的关键词
+        rows_old = conn.execute(
+            "SELECT rowid FROM memory_fts WHERE memory_fts MATCH 'python'"
+        ).fetchall()
+        self.assertEqual(len(rows_old), 0, "FTS 不应再包含更新前的旧内容")
+        storage.close()
+
+    def test_update_category_syncs_fts(self):
+        """更新 category 后，FTS 索引的 category 字段应同步"""
+        from core.storage import StorageEngine
+        from core.types import MemoryLayer
+
+        storage = StorageEngine(db_path=self.db_path)
+        entry = storage.add_memory(
+            content="测试分类同步的内容",
+            category="old_cat",
+            layer=MemoryLayer.SHORT_TERM,
+        )
+
+        storage.update_memory(entry_id=entry.id, category="new_cat")
+
+        conn = storage._get_conn()
+        rows = conn.execute(
+            "SELECT category FROM memory_fts WHERE memory_fts MATCH 'new_cat'"
+        ).fetchall()
+        self.assertGreater(len(rows), 0, "FTS 应能按新分类检索")
+        storage.close()
+
+
+class TestRebuildFTS(unittest.TestCase):
+    """v5.0.6: rebuild_fts 测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_rebuild_fts_clears_orphans(self):
+        """rebuild_fts 应消除孤立 FTS 记录"""
+        from core.storage import StorageEngine
+        from core.types import MemoryLayer
+
+        storage = StorageEngine(db_path=self.db_path)
+        for i in range(3):
+            storage.add_memory(
+                content=f"记忆内容 {i}",
+                category="test",
+                layer=MemoryLayer.SHORT_TERM,
+            )
+
+        # 重建前健康检查
+        before = storage.health_check()
+        self.assertEqual(before["fts_orphans"], 0)
+
+        # 手动制造孤立 FTS 记录
+        conn = storage._get_conn()
+        conn.execute(
+            "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (999999, 'orphan', 'x', '[]')"
+        )
+        conn.commit()
+        orphans = conn.execute(
+            "SELECT COUNT(*) FROM memory_fts WHERE rowid NOT IN (SELECT rowid FROM memories)"
+        ).fetchone()[0]
+        self.assertGreater(orphans, 0, "应已制造孤立记录")
+
+        # 重建
+        result = storage.rebuild_fts()
+        self.assertTrue(result["rebuilt"])
+        self.assertEqual(result["indexed"], 3)
+
+        # 重建后健康检查
+        after = storage.health_check()
+        self.assertEqual(after["fts_orphans"], 0, "孤立记录应被清除")
+        storage.close()
+
+
+class TestPurgeTrash(unittest.TestCase):
+    """v5.0.6: purge_trash 测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_purge_trash_removes_soft_deleted(self):
+        """purge_trash 应永久删除所有软删除的记忆"""
+        from core.storage import StorageEngine
+        from core.types import MemoryLayer
+
+        storage = StorageEngine(db_path=self.db_path)
+
+        # 添加 3 条记忆
+        ids = []
+        for i in range(3):
+            entry = storage.add_memory(
+                content=f"待删除记忆 {i}",
+                category="test",
+                layer=MemoryLayer.SHORT_TERM,
+            )
+            ids.append(entry.id)
+
+        # 软删除 2 条
+        storage.delete_memory(ids[0], hard_delete=False)
+        storage.delete_memory(ids[1], hard_delete=False)
+
+        # 回收站应有 2 条
+        trash = storage.list_memories(category="trash", limit=100)
+        self.assertEqual(len(trash), 2)
+
+        # 清空回收站
+        count = storage.purge_trash()
+        self.assertEqual(count, 2)
+
+        # 回收站应清空
+        trash_after = storage.list_memories(category="trash", limit=100)
+        self.assertEqual(len(trash_after), 0)
+
+        # 未删除的那条应仍在
+        remaining = storage.list_memories(category="test", limit=100)
+        self.assertEqual(len(remaining), 1)
+        storage.close()
+
+    def test_purge_trash_empty(self):
+        """回收站为空时 purge_trash 应返回 0"""
+        from core.storage import StorageEngine
+
+        storage = StorageEngine(db_path=self.db_path)
+        count = storage.purge_trash()
+        self.assertEqual(count, 0)
+        storage.close()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
