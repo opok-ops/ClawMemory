@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClawMemory Demo Animation</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a0f;
+  color: #fff;
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  overflow: hidden;
+}
+
+#canvas {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 1;
+}
+
+.overlay {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.title-screen {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  opacity: 0;
+  animation: fadeIn 2s ease-out forwards;
+}
+
+.title-screen h1 {
+  font-size: 4rem;
+  font-weight: 900;
+  background: linear-gradient(135deg, #00d4ff 0%, #a855f7 50%, #f472b6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 1rem;
+  letter-spacing: -2px;
+}
+
+.title-screen p {
+  font-size: 1.2rem;
+  color: #a0a0b0;
+  max-width: 500px;
+}
+
+.phase {
+  position: absolute;
+  top: 10%; left: 10%;
+  opacity: 0;
+  font-size: 0.9rem;
+  color: #00d4ff;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.demo-card {
+  position: absolute;
+  background: rgba(26, 26, 37, 0.9);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 16px;
+  padding: 1.5rem;
+  opacity: 0;
+  backdrop-filter: blur(20px);
+}
+
+.demo-card h3 {
+  font-size: 1rem;
+  color: #00d4ff;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.demo-card .content {
+  font-size: 0.9rem;
+  color: #e0e0e8;
+  line-height: 1.6;
+}
+
+.demo-card .tags {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.demo-card .tag {
+  padding: 0.2rem 0.6rem;
+  background: rgba(168, 85, 247, 0.15);
+  border-radius: 6px;
+  font-size: 0.7rem;
+  color: #a855f7;
+}
+
+.demo-card .score {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  color: #10b981;
+  margin-top: 0.5rem;
+}
+
+.search-box {
+  position: absolute;
+  bottom: 20%; left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.5rem;
+  opacity: 0;
+}
+
+.search-box input {
+  width: 400px;
+  padding: 0.75rem 1rem;
+  background: rgba(26, 26, 37, 0.9);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  border-radius: 12px;
+  color: #fff;
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.search-box button {
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #00d4ff, #a855f7);
+  border: none;
+  border-radius: 12px;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.graph-node {
+  position: absolute;
+  width: 60px; height: 60px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  opacity: 0;
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+}
+
+.graph-line {
+  position: absolute;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(0, 212, 255, 0.5), rgba(168, 85, 247, 0.5));
+  transform-origin: left center;
+  opacity: 0;
+}
+
+.layer-stack {
+  position: absolute;
+  right: 10%; top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+}
+
+.layer {
+  padding: 0.75rem 1.5rem;
+  background: rgba(26, 26, 37, 0.8);
+  border-left: 3px solid;
+  margin-bottom: 0.5rem;
+  border-radius: 0 8px 8px 0;
+}
+
+.layer.short-term { border-color: #00d4ff; }
+.layer.working { border-color: #a855f7; }
+.layer.long-term { border-color: #f472b6; }
+.layer.permanent { border-color: #10b981; }
+
+.layer span {
+  font-size: 0.85rem;
+  color: #a0a0b0;
+}
+
+.layer .label {
+  font-size: 0.7rem;
+  color: #6b6b80;
+  display: block;
+  margin-top: 0.2rem;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translate(-50%, -50%) translateY(20px); }
+  to { opacity: 1; transform: translate(-50%, -50%) translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.05); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(0, 212, 255, 0.3); }
+  50% { box-shadow: 0 0 40px rgba(0, 212, 255, 0.6); }
+}
+
+.typewriter {
+  overflow: hidden;
+  border-right: 2px solid #00d4ff;
+  animation: typing 3s steps(40) forwards, blink 0.75s step-end infinite;
+}
+
+@keyframes typing {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+@keyframes blink {
+  50% { border-color: transparent; }
+}
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div class="overlay">
+  <div class="title-screen" id="titleScreen">
+    <h1>ClawMemory</h1>
+    <p>AI Agent 终身记忆系统</p>
+  </div>
+
+  <div class="phase" id="phase1">Phase 1: 添加记忆</div>
+  <div class="phase" id="phase2">Phase 2: 语义检索</div>
+  <div class="phase" id="phase3">Phase 3: 知识关联</div>
+  <div class="phase" id="phase4">Phase 4: 多层架构</div>
+
+  <div class="demo-card" id="card1" style="top: 25%; left: 15%; width: 320px;">
+    <h3>🧠 新记忆</h3>
+    <div class="content">用户喜欢用 Python 进行数据分析，偏好 pandas 和 numpy 库。</div>
+    <div class="tags"><span class="tag">preferences</span><span class="tag">python</span><span class="tag">data</span></div>
+  </div>
+
+  <div class="demo-card" id="card2" style="top: 55%; left: 15%; width: 320px;">
+    <h3>🔍 检索结果</h3>
+    <div class="content">用户上周提到需要优化数据库查询性能，建议使用索引。</div>
+    <div class="tags"><span class="tag">work</span><span class="tag">database</span><span class="tag">optimization</span></div>
+    <div class="score">相似度: 0.89</div>
+  </div>
+
+  <div class="search-box" id="searchBox">
+    <input type="text" id="searchInput" placeholder="搜索记忆...">
+    <button id="searchBtn">搜索</button>
+  </div>
+
+  <div class="graph-node" id="node1" style="top: 40%; left: 45%;">🧠</div>
+  <div class="graph-node" id="node2" style="top: 30%; left: 60%;">📊</div>
+  <div class="graph-node" id="node3" style="top: 55%; left: 65%;">💡</div>
+  <div class="graph-line" id="line1"></div>
+  <div class="graph-line" id="line2"></div>
+
+  <div class="layer-stack" id="layerStack">
+    <div class="layer permanent"><span>永久记忆</span><span class="label">Permanent</span></div>
+    <div class="layer long-term"><span>长期记忆</span><span class="label">Long-term</span></div>
+    <div class="layer working"><span>工作记忆</span><span class="label">Working</span></div>
+    <div class="layer short-term"><span>感官记忆</span><span class="label">Sensory</span></div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let width, height;
+let particles = [];
+
+function resize() {
+  width = canvas.width = window.innerWidth;
+  height = canvas.height = window.innerHeight;
+}
+
+class Particle {
+  constructor() {
+    this.reset();
+  }
+  reset() {
+    this.x = Math.random() * width;
+    this.y = Math.random() * height;
+    this.vx = (Math.random() - 0.5) * 0.5;
+    this.vy = (Math.random() - 0.5) * 0.5;
+    this.size = Math.random() * 2 + 0.5;
+    this.color = Math.random() > 0.5 ? '#00d4ff' : '#a855f7';
+    this.alpha = Math.random() * 0.5 + 0.2;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    if (this.x < 0 || this.x > width) this.vx *= -1;
+    if (this.y < 0 || this.y > height) this.vy *= -1;
+  }
+  draw() {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = this.color;
+    ctx.globalAlpha = this.alpha;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < 100; i++) {
+    particles.push(new Particle());
+  }
+}
+
+function animateParticles() {
+  ctx.clearRect(0, 0, width, height);
+  particles.forEach(p => {
+    p.update();
+    p.draw();
+  });
+
+  particles.forEach((p1, i) => {
+    particles.slice(i + 1).forEach(p2 => {
+      const dx = p1.x - p2.x;
+      const dy = p1.y - p2.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 120) {
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.strokeStyle = `rgba(0, 212, 255, ${0.1 * (1 - dist / 120)})`;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+    });
+  });
+
+  requestAnimationFrame(animateParticles);
+}
+
+function showElement(id, delay = 0, duration = 1000) {
+  return new Promise(resolve => {
+    setTimeout(() => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.style.transition = `opacity ${duration}ms ease-out, transform ${duration}ms ease-out`;
+        el.style.opacity = '1';
+        el.style.transform = 'translateY(0)';
+      }
+      setTimeout(resolve, duration);
+    }, delay);
+  });
+}
+
+function hideElement(id, duration = 500) {
+  return new Promise(resolve => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.style.transition = `opacity ${duration}ms ease-out`;
+      el.style.opacity = '0';
+    }
+    setTimeout(resolve, duration);
+  });
+}
+
+async function runDemo() {
+  await showElement('titleScreen');
+  await new Promise(r => setTimeout(r, 3000));
+  await hideElement('titleScreen');
+
+  await showElement('phase1');
+  await showElement('card1', 500);
+  await new Promise(r => setTimeout(r, 2500));
+
+  await showElement('phase2', 300);
+  await showElement('searchBox', 600);
+  await new Promise(r => setTimeout(r, 1000));
+  
+  const input = document.getElementById('searchInput');
+  input.value = '';
+  const text = '关于数据库优化的建议';
+  let i = 0;
+  const typeInterval = setInterval(() => {
+    if (i < text.length) {
+      input.value += text[i];
+      i++;
+    } else {
+      clearInterval(typeInterval);
+    }
+  }, 100);
+  await new Promise(r => setTimeout(r, text.length * 100 + 500));
+
+  await showElement('card2', 300);
+  await new Promise(r => setTimeout(r, 2500));
+
+  await showElement('phase3', 300);
+  await showElement('node1', 500);
+  await showElement('node2', 800);
+  await showElement('node3', 1100);
+  
+  const node1 = document.getElementById('node1');
+  const node2 = document.getElementById('node2');
+  const node3 = document.getElementById('node3');
+  const line1 = document.getElementById('line1');
+  const line2 = document.getElementById('line2');
+
+  setTimeout(() => {
+    const rect1 = node1.getBoundingClientRect();
+    const rect2 = node2.getBoundingClientRect();
+    const rect3 = node3.getBoundingClientRect();
+    
+    const x1 = rect1.left + rect1.width / 2;
+    const y1 = rect1.top + rect1.height / 2;
+    const x2 = rect2.left + rect2.width / 2;
+    const y2 = rect2.top + rect2.height / 2;
+    const x3 = rect3.left + rect3.width / 2;
+    const y3 = rect3.top + rect3.height / 2;
+    
+    const dx1 = x2 - x1;
+    const dy1 = y2 - y1;
+    const dx2 = x3 - x2;
+    const dy2 = y3 - y2;
+    
+    line1.style.left = x1 + 'px';
+    line1.style.top = y1 + 'px';
+    line1.style.width = Math.sqrt(dx1*dx1 + dy1*dy1) + 'px';
+    line1.style.transform = `rotate(${Math.atan2(dy1, dx1)}rad)`;
+    line1.style.opacity = '1';
+    
+    line2.style.left = x2 + 'px';
+    line2.style.top = y2 + 'px';
+    line2.style.width = Math.sqrt(dx2*dx2 + dy2*dy2) + 'px';
+    line2.style.transform = `rotate(${Math.atan2(dy2, dx2)}rad)`;
+    line2.style.opacity = '1';
+  }, 1300);
+
+  await new Promise(r => setTimeout(r, 3000));
+
+  await showElement('phase4', 300);
+  await showElement('layerStack', 600);
+  await new Promise(r => setTimeout(r, 4000));
+
+  await hideElement('phase1');
+  await hideElement('phase2');
+  await hideElement('phase3');
+  await hideElement('phase4');
+  await hideElement('card1');
+  await hideElement('card2');
+  await hideElement('searchBox');
+  await hideElement('node1');
+  await hideElement('node2');
+  await hideElement('node3');
+  await hideElement('line1');
+  await hideElement('line2');
+  await hideElement('layerStack');
+
+  setTimeout(() => {
+    runDemo();
+  }, 1000);
+}
+
+resize();
+initParticles();
+animateParticles();
+window.addEventListener('resize', () => {
+  resize();
+  initParticles();
+});
+
+setTimeout(runDemo, 1000);
+</script>
+</body>
+</html>
