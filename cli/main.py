@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawMemory v5.0.6 CLI - 命令行工具
+ClawMemory v5.0.8 CLI - 命令行工具
 =================================
 
 Usage:
@@ -92,7 +92,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}ClawMemory v5.0.6 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}ClawMemory v5.0.8 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -612,6 +612,164 @@ def cmd_purge_trash(args):
     return 0
 
 
+def cmd_analyze(args):
+    """记忆深度分析（v5.0.8 新增）"""
+    cm = _get_memory(args)
+    print_banner()
+    print(c("📊 ClawMemory 深度分析报告", "bold"))
+    print("=" * 50)
+
+    stats = cm.stats()
+
+    print(f"\n📈 总体概览：")
+    print(f"   总记忆数：        {c(str(stats['total']), 'cyan')}")
+    print(f"   ⭐ 收藏数：       {c(str(stats.get('starred_count', 0)), 'yellow')}")
+    print(f"   数据库大小：      {format_size(stats['db_size_bytes'])}")
+
+    print(f"\n📅 创建时间分布（最近 7 天）：")
+    recent_counts = {}
+    now = datetime.now().timestamp()
+    day = 24 * 3600
+    for i in range(7):
+        start = now - (i + 1) * day
+        end = now - i * day
+        cnt = len(cm.list(created_after=start, created_before=end, limit=99999))
+        date_str = datetime.fromtimestamp(end).strftime("%m-%d")
+        recent_counts[date_str] = cnt
+
+    max_count = max(recent_counts.values()) if recent_counts else 1
+    for date_str in reversed(list(recent_counts.keys())):
+        cnt = recent_counts[date_str]
+        bar = "█" * int(cnt / max_count * 20) if max_count > 0 else ""
+        print(f"   {date_str}: {bar} {c(str(cnt), 'cyan')} 条")
+
+    print(f"\n🔥 活跃度分析：")
+    total_access = sum(e.access_count for e in cm.list(limit=99999))
+    avg_access = total_access / stats['total'] if stats['total'] > 0 else 0
+    print(f"   总访问次数：      {c(str(total_access), 'purple')}")
+    print(f"   平均访问次数：    {avg_access:.2f}")
+
+    hot_entries = sorted(cm.list(limit=100), key=lambda e: e.access_count, reverse=True)[:5]
+    if hot_entries:
+        print(f"\n   🔥 热门记忆 TOP5：")
+        for i, e in enumerate(hot_entries, 1):
+            print(f"      {i}. [{e.category}] {e.preview[:40]}... ({e.access_count} 次访问)")
+
+    print(f"\n🏷️ 标签分析：")
+    top_tags = stats.get("top_tags", {})
+    if top_tags:
+        tag_list = sorted(top_tags.items(), key=lambda x: x[1], reverse=True)[:10]
+        for tag, count in tag_list:
+            print(f"   #{tag}: {c(str(count), 'pink')}")
+
+    return 0
+
+
+def cmd_import_md(args):
+    """从 Markdown 导入记忆（v5.0.8 新增）"""
+    cm = _get_memory(args)
+
+    input_path = Path(args.input)
+    if not input_path.exists():
+        print(c(f"❌ 文件不存在：{input_path}", "red"))
+        return 1
+
+    try:
+        content = input_path.read_text(encoding='utf-8')
+    except Exception as e:
+        print(c(f"❌ 读取文件失败：{e}", "red"))
+        return 1
+
+    import re
+    entries = []
+    current_category = "default"
+    current_tags = []
+
+    sections = re.split(r'(#{1,2}\s+.+)', content)
+    for i in range(0, len(sections), 2):
+        text = sections[i].strip()
+        if i + 1 < len(sections):
+            header = sections[i + 1].strip()
+            level = len(header) - len(header.lstrip('#'))
+            title = header.lstrip('#').strip()
+            current_category = title
+            current_tags = re.findall(r'#(\w+)', title)
+        if text:
+            entries.append({
+                'content': text,
+                'category': current_category,
+                'tags': current_tags,
+            })
+
+    if not entries:
+        print(c("⚠️  未找到可导入的内容", "yellow"))
+        return 0
+
+    if not args.force:
+        print(c(f"\n🔍 将导入 {len(entries)} 条记忆：", "cyan"))
+        for e in entries[:5]:
+            print(f"   - [{e['category']}] {e['content'][:60]}...")
+        if len(entries) > 5:
+            print(f"   ... 还有 {len(entries) - 5} 条")
+        print(c("\n确认导入？加 --force 执行", "yellow"))
+        return 1
+
+    imported = 0
+    skipped = 0
+    for entry in entries:
+        try:
+            cm.add(
+                content=entry['content'],
+                category=entry['category'],
+                tags=entry['tags'],
+                layer=MemoryLayer.from_string(args.layer) if args.layer else MemoryLayer.short_term,
+            )
+            imported += 1
+        except Exception:
+            skipped += 1
+
+    print(c(f"\n✅ Markdown 导入完成", "green"))
+    print(f"   成功导入：{c(str(imported), 'green')} 条")
+    print(f"   导入失败：{c(str(skipped), 'yellow')} 条")
+    cm.close()
+    return 0
+
+
+def cmd_migrate(args):
+    """数据库迁移（v5.0.8 新增）"""
+    cm = _get_memory(args)
+    print_banner()
+    print(c("🔄 ClawMemory 数据库迁移", "bold"))
+    print("=" * 50)
+
+    current_version = cm.storage.get_db_version()
+    latest_version = cm.storage.get_latest_db_version()
+
+    print(f"\n当前版本：{c(str(current_version), 'cyan')}")
+    print(f"最新版本：{c(str(latest_version), 'green')}")
+
+    if current_version >= latest_version:
+        print(c("\n✅ 数据库已是最新版本，无需迁移", "green"))
+        return 0
+
+    if not args.force:
+        print(c(f"\n⚠️  将执行从 v{current_version} 到 v{latest_version} 的迁移", "yellow"))
+        print(c("确认迁移？加 --force 执行", "yellow"))
+        return 1
+
+    try:
+        result = cm.storage.migrate_to_latest()
+        print(c(f"\n✅ 迁移完成！", "green"))
+        print(f"   迁移脚本：{result['scripts_applied']} 个")
+        print(f"   耗时：{result['duration_ms']} ms")
+        print(f"   当前版本：{result['final_version']}")
+    except Exception as e:
+        print(c(f"\n❌ 迁移失败：{e}", "red"))
+        return 1
+
+    return 0
+
+
 def cmd_star(args):
     """收藏记忆"""
     cm = _get_memory(args)
@@ -834,7 +992,7 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="clawmemory",
-        description="ClawMemory v5.0.6 - AI Agent 终身记忆系统",
+        description="ClawMemory v5.0.8 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -948,6 +1106,20 @@ def main():
     p_purge_trash.add_argument("--agent", default="cli", help="Agent ID")
     p_purge_trash.add_argument("--session", default="cli", help="会话 ID")
 
+    p_analyze = sub.add_parser("analyze", help="记忆深度分析（v5.0.8 新增）")
+
+    p_import_md = sub.add_parser("import-md", help="从 Markdown 导入记忆（v5.0.8 新增）")
+    p_import_md.add_argument("input", help="Markdown 文件路径")
+    p_import_md.add_argument("--layer", "-l", default="short_term",
+                             choices=["sensory", "short_term", "long_term", "permanent"],
+                             help="目标记忆层级")
+    p_import_md.add_argument("--force", action="store_true",
+                             help="确认导入（不加则只预览）")
+
+    p_migrate = sub.add_parser("migrate", help="数据库迁移（v5.0.8 新增）")
+    p_migrate.add_argument("--force", action="store_true",
+                           help="确认迁移（不加则只预览）")
+
     p_consolidate = sub.add_parser("consolidate", help="记忆巩固")
     p_consolidate.add_argument("--agent", default="cli", help="Agent ID")
     p_consolidate.add_argument("--session", default="cli", help="会话 ID")
@@ -1001,6 +1173,9 @@ def main():
         "summarize": cmd_summarize,
         "vacuum": cmd_vacuum,
         "purge-trash": cmd_purge_trash,
+        "analyze": cmd_analyze,
+        "import-md": cmd_import_md,
+        "migrate": cmd_migrate,
         "consolidate": cmd_consolidate,
         "graph": cmd_graph,
         "personality": cmd_personality,
