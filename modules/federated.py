@@ -1,5 +1,5 @@
 ﻿"""
-ClawMemory v5.0 联邦记忆网络
+MindForge v5.0 联邦记忆网络
 多 Agent 间安全共享记忆，端侧联邦学习
 """
 

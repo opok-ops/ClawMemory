@@ -1,5 +1,5 @@
-"""
-ClawMemory v5.0 类型定义
+﻿"""
+MindForge v5.0 类型定义
 """
 
 from enum import Enum

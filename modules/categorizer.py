@@ -1,5 +1,5 @@
 ﻿"""
-ClawMemory v5.0 分类管理模块
+MindForge v5.0 分类管理模块
 """
 
 import re

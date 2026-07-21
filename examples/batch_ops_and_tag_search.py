@@ -1,5 +1,5 @@
-"""
-ClawMemory v5.0.3 - 批量删除与标签搜索示例
+﻿"""
+MindForge v5.0.3 - 批量删除与标签搜索示例
 演示批量删除、按标签搜索和增强统计功能
 """
 import sys
@@ -8,13 +8,13 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.clawmemory import ClawMemory
+from core.MindForge import MindForge
 from core.types import Importance
 
 
 def main():
     print("=" * 60)
-    print("ClawMemory v5.0.3 - 批量删除与标签搜索示例")
+    print("MindForge v5.0.3 - 批量删除与标签搜索示例")
     print("=" * 60)
 
     db_path = "./data/batch_ops_example.db"
@@ -24,7 +24,7 @@ def main():
         if os.path.exists(p):
             os.remove(p)
 
-    cm = ClawMemory(db_path=db_path, key_file=key_path, encrypted=False)
+    cm = MindForge(db_path=db_path, key_file=key_path, encrypted=False)
 
     print("\n【1】添加一批带标签的记忆")
     print("-" * 40)

@@ -1,5 +1,5 @@
-"""
-ClawMemory v5.0 通用 API 适配器
+﻿"""
+MindForge v5.0 通用 API 适配器
 REST API / SDK 风格接口
 """
 
@@ -11,8 +11,8 @@ from dataclasses import dataclass
 class GenericAPIAdapter:
     """通用 API 适配器"""
 
-    def __init__(self, clawmemory):
-        self.cm = clawmemory
+    def __init__(self, MindForge):
+        self.cm = MindForge
         self._handlers: Dict[str, Callable] = {}
         self._register_default_handlers()
 

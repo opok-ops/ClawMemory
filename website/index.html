@@ -1,32 +1,32 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="ClawMemory v5.0.9 - AI Agent 终身记忆系统，多层记忆架构、知识图谱、多模态支持，100% 本地加密">
-<meta name="keywords" content="ClawMemory, AI Memory, Agent Memory, 知识图谱, 终身记忆, AI Agent, 记忆系统, 本地加密">
-<meta name="author" content="ClawMemory Project">
+<meta name="description" content="MindForge v5.1.0 - AI Agent 终身记忆系统，多层记忆架构、知识图谱、多模态支持，100% 本地加密">
+<meta name="keywords" content="MindForge, AI Memory, Agent Memory, 知识图谱, 终身记忆, AI Agent, 记忆系统, 本地加密">
+<meta name="author" content="MindForge Project">
 <meta name="robots" content="index, follow">
 
 <!-- v5.0.7: Favicon -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'><circle cx='20' cy='20' r='18' stroke='url(%23g)' stroke-width='2' fill='none'/><path d='M12 20C12 15.582 15.582 12 20 12C24.418 12 28 15.582 28 20' stroke='url(%23g)' stroke-width='2' stroke-linecap='round' fill='none'/><circle cx='20' cy='20' r='3' fill='url(%23g)'/><defs><linearGradient id='g' x1='0' y1='0' x2='40' y2='40'><stop offset='0%' stop-color='%2300d4ff'/><stop offset='100%' stop-color='%23a855f7'/></linearGradient></defs></svg>">
 
 <!-- v5.0.7: Open Graph 社交分享优化 -->
-<meta property="og:title" content="ClawMemory — AI Agent 终身记忆系统">
+<meta property="og:title" content="MindForge — AI Agent 终身记忆系统">
 <meta property="og:description" content="四层记忆架构模拟人类认知，知识图谱自动关联推理，100% 本地端侧加密，零云端依赖">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://opok-ops.github.io/ClawMemory/">
-<meta property="og:image" content="https://opok-ops.github.io/ClawMemory/assets/og-image.png">
+<meta property="og:url" content="https://opok-ops.github.io/MindForge/">
+<meta property="og:image" content="https://opok-ops.github.io/MindForge/assets/og-image.png">
 <meta property="og:locale" content="zh_CN">
-<meta property="og:site_name" content="ClawMemory">
+<meta property="og:site_name" content="MindForge">
 
 <!-- Twitter Card -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="ClawMemory — AI Agent 终身记忆系统">
+<meta name="twitter:title" content="MindForge — AI Agent 终身记忆系统">
 <meta name="twitter:description" content="四层记忆架构模拟人类认知，知识图谱自动关联推理，100% 本地端侧加密">
-<meta name="twitter:image" content="https://opok-ops.github.io/ClawMemory/assets/og-image.png">
+<meta name="twitter:image" content="https://opok-ops.github.io/MindForge/assets/og-image.png">
 
-<title>ClawMemory v5.0.9 — AI Agent 终身记忆系统</title>
+<title>MindForge v5.1.0 — AI Agent 终身记忆系统</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@500;600;700;800;900&display=swap" rel="stylesheet">
@@ -55,7 +55,7 @@
           </defs>
         </svg>
       </div>
-      <span class="logo-text">ClawMemory <em>v5.0.9</em></span>
+      <span class="logo-text">MindForge <em>v5.1.0</em></span>
     </a>
     <ul class="nav-links">
       <li><a href="#features">功能</a></li>
@@ -65,7 +65,7 @@
       <li><a href="#docs">文档</a></li>
     </ul>
     <div class="nav-actions">
-      <a href="https://github.com/opok-ops/ClawMemory" class="btn btn-ghost" target="_blank">
+      <a href="https://github.com/opok-ops/MindForge" class="btn btn-ghost" target="_blank">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
         GitHub
       </a>
@@ -83,7 +83,7 @@
   <div class="hero-content">
     <div class="hero-badge">
       <span class="badge-dot"></span>
-      v5.0.9 全新发布 · 多层记忆架构 · 知识图谱引擎
+      v5.1.0 全新发布 · 多层记忆架构 · 知识图谱引擎
     </div>
     <h1 class="hero-title">
       让 AI Agent 拥有
@@ -138,7 +138,7 @@
   <div class="container">
     <div class="section-header reveal">
       <span class="section-tag">核心能力</span>
-      <h2 class="section-title">v5.0.9 带来<span class="gradient-text"> 六大突破</span></h2>
+      <h2 class="section-title">v5.1.0 带来<span class="gradient-text"> 六大突破</span></h2>
       <p class="section-desc">
         从简单的文本记忆进化到完整的认知记忆系统，模拟人类大脑的记忆形成、巩固与遗忘机制。
       </p>
@@ -380,7 +380,7 @@
       <span class="section-tag">在线演示</span>
       <h2 class="section-title">亲身体验 <span class="gradient-text">记忆检索</span></h2>
       <p class="section-desc">
-        在下方输入查询，感受 ClawMemory 的语义检索和知识关联能力。（演示数据为模拟数据）
+        在下方输入查询，感受 MindForge 的语义检索和知识关联能力。（演示数据为模拟数据）
       </p>
     </div>
 
@@ -536,22 +536,22 @@
       </div>
       <div class="code-panel">
         <pre class="code-block active" id="tab-install"><code><span class="c"># 克隆仓库</span>
-git clone https://github.com/opok-ops/ClawMemory.git
-cd ClawMemory
+git clone https://github.com/opok-ops/MindForge.git
+cd MindForge
 
 <span class="c"># 初始化（生成加密密钥）</span>
 python cli/main.py init
 
 <span class="c"># 添加第一条记忆</span>
-python cli/main.py add <span class="str">"ClawMemory v5.0 真的太强了！"</span> --category tech --importance high
+python cli/main.py add <span class="str">"MindForge v5.0 真的太强了！"</span> --category tech --importance high
 
 <span class="c"># 启动 Web UI</span>
 python cli/main.py serve</code></pre>
 
-        <pre class="code-block" id="tab-basic"><code><span class="kw">from</span> clawmemory <span class="kw">import</span> ClawMemory, PrivacyLevel, Importance
+        <pre class="code-block" id="tab-basic"><code><span class="kw">from</span> MindForge <span class="kw">import</span> MindForge, PrivacyLevel, Importance
 
 <span class="c"># 初始化记忆系统</span>
-memory = ClawMemory(
+memory = MindForge(
     db_path=<span class="str">"./data/memory.db"</span>,
     encrypted=<span class="kw">True</span>,
 )
@@ -569,7 +569,7 @@ entry = memory.add(
 result = memory.get(entry.id)
 <span class="kw">print</span>(result.content)</code></pre>
 
-        <pre class="code-block" id="tab-search"><code><span class="kw">from</span> clawmemory <span class="kw">import</span> RecallConfig
+        <pre class="code-block" id="tab-search"><code><span class="kw">from</span> MindForge <span class="kw">import</span> RecallConfig
 
 <span class="c"># 语义搜索</span>
 results = memory.search(
@@ -591,19 +591,19 @@ related = memory.graph_traverse(
 <span class="kw">for</span> item <span class="kw">in</span> results:
     <span class="kw">print</span>(<span class="str">f"[{item.relevance:.2f}] {item.content[:50]}"</span>)</code></pre>
 
-        <pre class="code-block" id="tab-openclaw"><code><span class="c"># 在 OpenClaw 配置中启用 ClawMemory</span>
+        <pre class="code-block" id="tab-openclaw"><code><span class="c"># 在 OpenClaw 配置中启用 MindForge</span>
 <span class="c"># config.yaml</span>
 memory:
-  adapter: clawmemory
+  adapter: MindForge
   adapter_config:
-    db_path: ~/.clawmemory/data/store/memory.db
-    key_file: ~/.clawmemory/data/.key
+    db_path: ~/.MindForge/data/store/memory.db
+    key_file: ~/.MindForge/data/.key
     encrypted: <span class="kw">true</span>
     default_privacy: INTERNAL
     auto_consolidate: <span class="kw">true</span>
 
 <span class="c"># 或者使用 CLI 配置</span>
-openclaw config set memory.adapter clawmemory
+openclaw config set memory.adapter MindForge
 openclaw config set memory.encrypted <span class="kw">true</span>
 openclaw config set memory.auto_consolidate <span class="kw">true</span>
 
@@ -621,7 +621,7 @@ openclaw restart</code></pre>
         <h2>准备好让你的 Agent<br>拥有<span class="gradient-text"> 终身记忆</span>了吗？</h2>
         <p>加入数千名开发者，一起构建更智能、更懂你的 AI Agent。</p>
         <div class="cta-actions">
-          <a href="https://github.com/opok-ops/ClawMemory" class="btn btn-primary btn-lg" target="_blank">
+          <a href="https://github.com/opok-ops/MindForge" class="btn btn-primary btn-lg" target="_blank">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
             GitHub 仓库
           </a>
@@ -667,11 +667,11 @@ openclaw restart</code></pre>
               </defs>
             </svg>
           </div>
-          <span>ClawMemory</span>
+          <span>MindForge</span>
         </div>
         <p>AI Agent 终身记忆系统<br>本地化 · 结构化 · 隐私优先</p>
         <div class="social-links">
-          <a href="https://github.com/opok-ops/ClawMemory" target="_blank" aria-label="GitHub">
+          <a href="https://github.com/opok-ops/MindForge" target="_blank" aria-label="GitHub">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
           </a>
         </div>
@@ -697,15 +697,15 @@ openclaw restart</code></pre>
       <div class="footer-col">
         <h5>社区</h5>
         <ul>
-          <li><a href="https://github.com/opok-ops/ClawMemory/discussions" target="_blank">讨论区</a></li>
-          <li><a href="https://github.com/opok-ops/ClawMemory/issues" target="_blank">提交 Issue</a></li>
+          <li><a href="https://github.com/opok-ops/MindForge/discussions" target="_blank">讨论区</a></li>
+          <li><a href="https://github.com/opok-ops/MindForge/issues" target="_blank">提交 Issue</a></li>
           <li><a href="#">贡献指南</a></li>
           <li><a href="#">更新日志</a></li>
         </ul>
       </div>
     </div>
     <div class="footer-bottom">
-      <p>&copy; 2026 ClawMemory Project. MIT License + 自定义隐私附加条款.</p>
+      <p>&copy; 2026 MindForge Project. MIT License + 自定义隐私附加条款.</p>
       <p>Made with 🧠 for the future of AI memory.</p>
     </div>
   </div>

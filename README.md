@@ -1,4 +1,4 @@
-# ClawMemory v5.0.9
+﻿# MindForge v5.1.0
 
 **AI Agent 终身记忆系统 — 四层记忆架构 · 知识图谱 · 多模态 · 人格化 · 联邦网络**
 
@@ -6,7 +6,7 @@
 
 ---
 
-## ✨ v5.0.9 六大突破
+## ✨ v5.1.0 六大突破
 
 | 特性 | 说明 |
 |------|------|
@@ -23,7 +23,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    ClawMemory v5.0.9                        │
+│                    MindForge v5.1.0                        │
 ├─────────────────────────────────────────────────────────┤
 │  🎯 认知层 (Cognitive Layer)                              │
 │     人格引擎 · 知识图谱 · 记忆演化 · 联邦网络              │
@@ -48,61 +48,61 @@
 **方式一：pip 安装（推荐）**
 
 ```bash
-pip install clawmemory
+pip install MindForge
 ```
 
 **方式二：从源码安装**
 
 ```bash
 # 克隆仓库
-git clone https://github.com/opok-ops/ClawMemory.git
-cd ClawMemory
+git clone https://github.com/opok-ops/MindForge.git
+cd MindForge
 
 # 本地安装
 pip install -e .
 
 # 初始化（生成加密密钥）
-clawmemory init
+MindForge init
 ```
 
-> **注意**：如果 `pip install clawmemory` 提示找不到包，请升级 pip 后重试：
+> **注意**：如果 `pip install MindForge` 提示找不到包，请升级 pip 后重试：
 > ```bash
 > python -m pip install --upgrade pip
-> pip install clawmemory
+> pip install MindForge
 > ```
 
 ### CLI 使用
 
 ```bash
 # 添加记忆
-clawmemory add "ClawMemory v5.0.6 真的太强了！" --category tech --importance high
+MindForge add "MindForge v5.0.6 真的太强了！" --category tech --importance high
 
 # 搜索记忆
-clawmemory search "数据库优化"
+MindForge search "数据库优化"
 
 # 查看统计
-clawmemory stats
+MindForge stats
 
 # 记忆巩固（短期→长期）
-clawmemory consolidate
+MindForge consolidate
 
 # 知识图谱统计
-clawmemory graph stats
+MindForge graph stats
 
 # 用户画像
-clawmemory personality profile
+MindForge personality profile
 
 # 启动 Web UI
-clawmemory serve --port 8080
+MindForge serve --port 8080
 ```
 
 ### Python SDK
 
 ```python
-from clawmemory import ClawMemory, PrivacyLevel, Importance, MemoryLayer
+from MindForge import MindForge, PrivacyLevel, Importance, MemoryLayer
 
 # 初始化记忆系统
-memory = ClawMemory(
+memory = MindForge(
     db_path="./data/memory.db",
     encrypted=False,  # 生产环境建议开启
 )
@@ -164,7 +164,7 @@ for chunk in results.chunks:
 ## 🕸️ 知识图谱
 
 ```python
-from clawmemory import KnowledgeGraph
+from MindForge import KnowledgeGraph
 
 kg = KnowledgeGraph()
 
@@ -186,7 +186,7 @@ path = kg.find_path("Python", "PostgreSQL")
 ## 👤 人格化引擎
 
 ```python
-from clawmemory import PersonalityEngine
+from MindForge import PersonalityEngine
 
 pe = PersonalityEngine(storage)
 
@@ -215,7 +215,7 @@ interests = pe.get_top_interests("user_001", top_n=5)
 ## 🤝 联邦记忆网络
 
 ```python
-from clawmemory import FederatedMemory
+from MindForge import FederatedMemory
 
 fed = FederatedMemory(storage, local_peer_id="peer_alpha")
 
@@ -273,10 +273,10 @@ results = fed.federated_search(
 ## 📁 项目结构
 
 ```
-ClawMemory/
+MindForge/
 ├── core/                    # 核心层
 │   ├── __init__.py
-│   ├── clawmemory.py       # 主入口类
+│   ├── MindForge.py       # 主入口类
 │   ├── types.py            # 类型定义
 │   ├── storage.py          # 存储引擎
 │   ├── encryption.py       # 加密引擎
@@ -317,10 +317,10 @@ ClawMemory/
 ```yaml
 # config.yaml
 memory:
-  adapter: clawmemory
+  adapter: MindForge
   adapter_config:
-    db_path: ~/.clawmemory/data/store/memory.db
-    key_file: ~/.clawmemory/data/.key
+    db_path: ~/.MindForge/data/store/memory.db
+    key_file: ~/.MindForge/data/.key
     encrypted: true
     auto_consolidate: true
 ```
@@ -328,7 +328,7 @@ memory:
 ### Claude Code 集成
 
 ```python
-from clawmemory.adapters import ClaudeCodeAdapter
+from MindForge.adapters import ClaudeCodeAdapter
 
 adapter = ClaudeCodeAdapter.from_env()
 
@@ -343,13 +343,13 @@ context = adapter.get_context("数据库优化")
 
 ## 📝 更新日志
 
-### v5.0.9 (2026-07-21)
+### v5.1.0 (2026-07-21)
 
 **✨ CLI 新增命令**
 - `export-html` - 导出记忆为美观的 HTML 页面（渐变背景、卡片式布局、响应式设计）
 
 **📋 其他**
-- 官网版本号全面更新至 v5.0.9
+- 官网版本号全面更新至 v5.1.0
 
 ### v5.0.8 (2026-07-21)
 
@@ -437,7 +437,7 @@ context = adapter.get_context("数据库优化")
 - 优化 `get_stats` 中标签统计的稳定性
 
 **📦 安装修复**（来自 v5.0.3 末尾的 hotfix）
-- 修复 `cli/__init__.py` 缺失导致 `pip install` 后 `clawmemory` 命令找不到的问题
+- 修复 `cli/__init__.py` 缺失导致 `pip install` 后 `MindForge` 命令找不到的问题
 - 修复 `setup.py` 用 `exec()` 读取版本号失败的问题
 - 修复根 `__init__.py` 相对导入在包安装模式下失败的问题
 - 新增 `pyproject.toml` 支持 PEP 517/518 现代构建
@@ -470,7 +470,7 @@ context = adapter.get_context("数据库优化")
   - 新增 `star` / `unstar` 命令
   - `add` 命令新增 `--star` 参数
   - `list` 命令新增 `--starred` / `--unstarred` / `--after` / `--before` 参数
-- **setup.py**：支持 `pip install clawmemory` 安装
+- **setup.py**：支持 `pip install MindForge` 安装
 - **新示例**：`examples/starred_and_time_filter.py` - 星标与时间范围筛选演示
 
 ### v5.0.1 (2026-07-18)
@@ -502,9 +502,9 @@ context = adapter.get_context("数据库优化")
 
 ## 📄 许可证
 
-MIT License + ClawMemory 自定义隐私附加条款
+MIT License + MindForge 自定义隐私附加条款
 
-Copyright (c) 2026 ClawMemory Project
+Copyright (c) 2026 MindForge Project
 
 ---
 

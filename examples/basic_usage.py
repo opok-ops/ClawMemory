@@ -1,5 +1,5 @@
-"""
-ClawMemory v5.0 基础使用示例
+﻿"""
+MindForge v5.0 基础使用示例
 """
 
 import sys
@@ -7,16 +7,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core import ClawMemory, PrivacyLevel, Importance, MemoryLayer
+from core import MindForge, PrivacyLevel, Importance, MemoryLayer
 
 
 def basic_usage():
     """基础使用示例"""
     print("=" * 60)
-    print("ClawMemory v5.0 - 基础使用示例")
+    print("MindForge v5.0 - 基础使用示例")
     print("=" * 60)
 
-    memory = ClawMemory(
+    memory = MindForge(
         db_path="./data/example.db",
         encrypted=False,
     )
@@ -24,9 +24,9 @@ def basic_usage():
     print("\n1. 添加记忆...")
     entries = [
         memory.add(
-            content="今天学习了 ClawMemory v5.0 的四层记忆架构",
+            content="今天学习了 MindForge v5.0 的四层记忆架构",
             category="learning",
-            tags=["clawmemory", "记忆系统", "AI"],
+            tags=["MindForge", "记忆系统", "AI"],
             importance=Importance.HIGH,
             layer=MemoryLayer.SHORT_TERM,
         ),

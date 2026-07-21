@@ -1,4 +1,4 @@
-"""ClawMemory v5.0 单元测试"""
+﻿"""MindForge v5.0 单元测试"""
 import sys
 from pathlib import Path
 
@@ -162,8 +162,8 @@ class TestStorageEngine(unittest.TestCase):
         self.assertEqual(stats["total"], 3)
 
 
-class TestClawMemory(unittest.TestCase):
-    """ClawMemory 主类测试"""
+class TestMindForge(unittest.TestCase):
+    """MindForge 主类测试"""
 
     def setUp(self):
         self.tmp_dir = tempfile.mkdtemp()
@@ -174,9 +174,9 @@ class TestClawMemory(unittest.TestCase):
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def test_init(self):
-        from core.clawmemory import ClawMemory
+        from core.MindForge import MindForge
 
-        cm = ClawMemory(db_path=self.db_path, encrypted=False)
+        cm = MindForge(db_path=self.db_path, encrypted=False)
         self.assertIsNotNone(cm)
         self.assertIsNotNone(cm.storage)
         self.assertIsNotNone(cm.index)
@@ -184,9 +184,9 @@ class TestClawMemory(unittest.TestCase):
         cm.close()
 
     def test_add_and_search(self):
-        from core.clawmemory import ClawMemory
+        from core.MindForge import MindForge
 
-        cm = ClawMemory(db_path=self.db_path, encrypted=False)
+        cm = MindForge(db_path=self.db_path, encrypted=False)
 
         cm.add(
             content="Python 是一种高级编程语言",
@@ -205,10 +205,10 @@ class TestClawMemory(unittest.TestCase):
         cm.close()
 
     def test_export_import_json(self):
-        from core.clawmemory import ClawMemory
+        from core.MindForge import MindForge
         import json
 
-        cm = ClawMemory(db_path=self.db_path, encrypted=False)
+        cm = MindForge(db_path=self.db_path, encrypted=False)
 
         cm.add(content="导出测试 1", category="test", tags=["export"])
         cm.add(content="导出测试 2", category="test", tags=["export"])
@@ -223,7 +223,7 @@ class TestClawMemory(unittest.TestCase):
         self.assertEqual(len(data["memories"]), 2)
 
         new_db = os.path.join(self.tmp_dir, "new.db")
-        cm2 = ClawMemory(db_path=new_db, encrypted=False)
+        cm2 = MindForge(db_path=new_db, encrypted=False)
         stats = cm2.import_json(export_path)
         self.assertEqual(stats["imported"], 2)
         self.assertEqual(stats["skipped"], 0)
@@ -236,10 +236,10 @@ class TestClawMemory(unittest.TestCase):
         cm2.close()
 
     def test_export_csv(self):
-        from core.clawmemory import ClawMemory
+        from core.MindForge import MindForge
         import csv
 
-        cm = ClawMemory(db_path=self.db_path, encrypted=False)
+        cm = MindForge(db_path=self.db_path, encrypted=False)
 
         cm.add(content="CSV 测试 1", category="csv_test")
         cm.add(content="CSV 测试 2", category="csv_test")
@@ -296,10 +296,10 @@ class TestPersonalityEngine(unittest.TestCase):
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def test_learn_and_profile(self):
-        from core.clawmemory import ClawMemory
+        from core.MindForge import MindForge
         from modules.personality import PersonalityEngine
 
-        cm = ClawMemory(db_path=self.db_path, encrypted=False)
+        cm = MindForge(db_path=self.db_path, encrypted=False)
         pe = PersonalityEngine(cm.storage)
 
         pe.learn_from_interaction(

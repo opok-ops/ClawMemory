@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+﻿from setuptools import setup, find_packages
 from pathlib import Path
 import re
 
@@ -11,13 +11,13 @@ version_match = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', init_conten
 version = version_match.group(1) if version_match else "0.0.0"
 
 setup(
-    name="clawmemory",
+    name="MindForge",
     version=version,
     description="AI Agent 终身记忆系统 - 四层记忆架构 · 知识图谱 · 多模态支持",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/opok-ops/ClawMemory",
-    author="ClawMemory Project",
+    url="https://github.com/opok-ops/MindForge",
+    author="MindForge Project",
     license="MIT",
     classifiers=[
         "Development Status :: 4 - Beta",
@@ -44,12 +44,12 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "clawmemory=cli.main:main",
+            "MindForge=cli.main:main",
         ],
     },
     project_urls={
-        "Bug Reports": "https://github.com/opok-ops/ClawMemory/issues",
-        "Source": "https://github.com/opok-ops/ClawMemory",
-        "Homepage": "https://opok-ops.github.io/ClawMemory/",
+        "Bug Reports": "https://github.com/opok-ops/MindForge/issues",
+        "Source": "https://github.com/opok-ops/MindForge",
+        "Homepage": "https://opok-ops.github.io/MindForge/",
     },
 )

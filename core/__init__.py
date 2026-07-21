@@ -1,5 +1,5 @@
 """
-ClawMemory v5.0 Core Module
+MindForge v5.0 Core Module
 核心层：存储引擎、索引引擎、加密引擎、查询引擎
 """
 
@@ -14,10 +14,10 @@ from .types import (
     MemoryLayer,
     MemoryConfig,
 )
-from .clawmemory import ClawMemory
+from .mindforge import MindForge
 
 __all__ = [
-    "ClawMemory",
+    "MindForge",
     "StorageEngine",
     "MemoryEntry",
     "AuditRecord",

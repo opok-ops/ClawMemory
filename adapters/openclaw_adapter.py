@@ -1,5 +1,5 @@
-"""
-ClawMemory v5.0 OpenClaw 适配器
+﻿"""
+MindForge v5.0 OpenClaw 适配器
 """
 
 import json
@@ -9,8 +9,8 @@ from typing import List, Dict, Optional, Any
 class OpenClawAdapter:
     """OpenClaw 记忆适配器"""
 
-    def __init__(self, clawmemory):
-        self.cm = clawmemory
+    def __init__(self, MindForge):
+        self.cm = MindForge
         self.session_id = "openclaw"
         self.agent_id = "openclaw"
 
@@ -78,7 +78,7 @@ class OpenClawAdapter:
     def to_config_dict(self) -> Dict:
         """输出配置字典格式"""
         return {
-            "adapter": "clawmemory",
+            "adapter": "MindForge",
             "version": "5.0.1",
             "features": [
                 "four_layer_memory",

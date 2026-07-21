@@ -1,5 +1,5 @@
-"""
-ClawMemory v5.0 适配器
+﻿"""
+MindForge v5.0 适配器
 OpenClaw · Claude Code · 通用 API
 """
 

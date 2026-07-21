@@ -1,5 +1,5 @@
-"""
-ClawMemory v5.0 存储引擎
+﻿"""
+MindForge v5.0 存储引擎
 支持四层记忆架构：感官记忆 → 短期记忆 → 长期记忆 → 永久记忆
 """
 
@@ -915,7 +915,7 @@ class StorageEngine:
             return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
 
         lines = [
-            "# ClawMemory 记忆导出",
+            "# MindForge 记忆导出",
             "",
             f"- 导出时间：{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
             f"- 记忆总数：{len(entries)}",

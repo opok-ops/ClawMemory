@@ -1,5 +1,5 @@
-"""
-ClawMemory v5.0.5 - 健康检查与记忆摘要演示
+﻿"""
+MindForge v5.0.5 - 健康检查与记忆摘要演示
 
 本示例展示两个新功能：
 1. health_check() - 全面体检数据库状态
@@ -14,17 +14,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core import ClawMemory, MemoryConfig, Importance, MemoryLayer
+from core import MindForge, MemoryConfig, Importance, MemoryLayer
 
 
 def main():
     tmpdir = tempfile.mkdtemp()
     try:
         db_path = os.path.join(tmpdir, "demo.db")
-        cm = ClawMemory(config=MemoryConfig(db_path=db_path, encrypted=False))
+        cm = MindForge(config=MemoryConfig(db_path=db_path, encrypted=False))
 
         print("=" * 60)
-        print("ClawMemory v5.0.5 - 健康检查与记忆摘要演示")
+        print("MindForge v5.0.5 - 健康检查与记忆摘要演示")
         print("=" * 60)
 
         # === 添加一些测试数据 ===

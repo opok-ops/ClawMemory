@@ -1,5 +1,5 @@
-"""
-ClawMemory v5.0.2 - 星标与时间范围筛选示例
+﻿"""
+MindForge v5.0.2 - 星标与时间范围筛选示例
 演示如何使用收藏功能和时间范围搜索
 """
 import sys
@@ -8,13 +8,13 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.clawmemory import ClawMemory
+from core.MindForge import MindForge
 from core.types import MemoryLayer, PrivacyLevel, Importance
 
 
 def main():
     print("=" * 60)
-    print("ClawMemory v5.0.2 - 星标与时间范围筛选示例")
+    print("MindForge v5.0.2 - 星标与时间范围筛选示例")
     print("=" * 60)
 
     db_path = "./data/starred_example.db"
@@ -24,7 +24,7 @@ def main():
         if os.path.exists(p):
             os.remove(p)
 
-    cm = ClawMemory(db_path=db_path, key_file=key_path, encrypted=False)
+    cm = MindForge(db_path=db_path, key_file=key_path, encrypted=False)
 
     print("\n【1】添加一批记忆（部分收藏）")
     print("-" * 40)

@@ -1,5 +1,5 @@
-"""
-ClawMemory v5.0 Claude Code 适配器
+﻿"""
+MindForge v5.0 Claude Code 适配器
 """
 
 import os
@@ -9,26 +9,26 @@ from typing import List, Dict, Optional
 class ClaudeCodeAdapter:
     """Claude Code 记忆适配器"""
 
-    def __init__(self, clawmemory):
-        self.cm = clawmemory
+    def __init__(self, MindForge):
+        self.cm = MindForge
         self.session_id = os.environ.get("CLAUDE_SESSION_ID", "claude")
         self.agent_id = "claude_code"
 
     @classmethod
     def from_env(cls):
         """从环境变量创建"""
-        from ..core import ClawMemory, MemoryConfig
+        from ..core import MindForge, MemoryConfig
 
-        db_path = os.environ.get("CLAWMEMORY_DB_PATH", "./data/memory.db")
-        key_file = os.environ.get("CLAWMEMORY_KEY_FILE", "./data/.key")
-        encrypted = os.environ.get("CLAWMEMORY_ENCRYPTED", "true").lower() == "true"
+        db_path = os.environ.get("MindForge_DB_PATH", "./data/memory.db")
+        key_file = os.environ.get("MindForge_KEY_FILE", "./data/.key")
+        encrypted = os.environ.get("MindForge_ENCRYPTED", "true").lower() == "true"
 
         config = MemoryConfig(
             db_path=db_path,
             key_file=key_file,
             encrypted=encrypted,
         )
-        cm = ClawMemory(config=config)
+        cm = MindForge(config=config)
         return cls(cm)
 
     def remember(self, content: str, tags: Optional[List[str]] = None) -> str:

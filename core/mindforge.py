@@ -1,5 +1,5 @@
-"""
-ClawMemory v5.0 主入口类
+﻿"""
+MindForge v5.0 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -28,8 +28,8 @@ except (ImportError, ValueError):
     __version__ = "5.0.6"
 
 
-class ClawMemory:
-    """ClawMemory 主类 - AI Agent 终身记忆系统 v5.0"""
+class MindForge:
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.0"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -546,8 +546,8 @@ class ClawMemory:
             self._storage.close()
 
     @classmethod
-    def from_config(cls, config_path: str) -> "ClawMemory":
-        """从配置文件创建 ClawMemory 实例"""
+    def from_config(cls, config_path: str) -> "MindForge":
+        """从配置文件创建 MindForge 实例"""
         path = Path(config_path)
         if not path.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")

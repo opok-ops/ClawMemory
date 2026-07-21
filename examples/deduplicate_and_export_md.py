@@ -1,5 +1,5 @@
-"""
-ClawMemory v5.0.4 - 记忆去重与 Markdown 导出演示
+﻿"""
+MindForge v5.0.4 - 记忆去重与 Markdown 导出演示
 
 本示例展示两个新功能：
 1. deduplicate() - 检测并合并相似/重复记忆
@@ -14,7 +14,7 @@ from pathlib import Path
 # 添加项目根目录到 path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core import ClawMemory, MemoryConfig, PrivacyLevel, Importance, MemoryLayer
+from core import MindForge, MemoryConfig, PrivacyLevel, Importance, MemoryLayer
 
 
 def main():
@@ -22,10 +22,10 @@ def main():
     tmpdir = tempfile.mkdtemp()
     try:
         db_path = os.path.join(tmpdir, "demo.db")
-        cm = ClawMemory(config=MemoryConfig(db_path=db_path, encrypted=False))
+        cm = MindForge(config=MemoryConfig(db_path=db_path, encrypted=False))
 
         print("=" * 60)
-        print("ClawMemory v5.0.4 - 去重与 Markdown 导出演示")
+        print("MindForge v5.0.4 - 去重与 Markdown 导出演示")
         print("=" * 60)
 
         # === 添加一些记忆，故意制造重复 ===
