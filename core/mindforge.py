@@ -25,7 +25,7 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.0.6"
+    __version__ = "5.1.2"
 
 
 class MindForge:

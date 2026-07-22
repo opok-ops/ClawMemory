@@ -12,13 +12,23 @@ from pathlib import Path
 from typing import Optional, Tuple
 from dataclasses import dataclass
 
-try:
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-    from cryptography.hazmat.primitives import hashes
-    _HAS_CRYPTO = True
-except ImportError:
-    _HAS_CRYPTO = False
+# 懒加载 cryptography：避免 CLI 启动时导入耗时（低配电脑 300ms+）
+_CRYPTO_MODULE = None
+
+def _get_crypto():
+    global _CRYPTO_MODULE
+    if _CRYPTO_MODULE is None:
+        try:
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+            from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+            from cryptography.hazmat.primitives import hashes
+            _CRYPTO_MODULE = (AESGCM, PBKDF2HMAC, hashes)
+        except ImportError:
+            _CRYPTO_MODULE = False
+    return _CRYPTO_MODULE
+
+# PBKDF2 迭代次数：60000（OWASP 2023 推荐最低值，兼顾安全与低配电脑性能）
+_PBKDF2_ITERATIONS = 60000
 
 
 class SecurityError(Exception):
@@ -57,7 +67,10 @@ class EncryptionEngine:
 
     def __init__(self, key: bytes):
         self._key = key
-        if _HAS_CRYPTO:
+        self._aesgcm = None
+        crypto = _get_crypto()
+        if crypto:
+            AESGCM = crypto[0]
             self._aesgcm = AESGCM(key)
 
     @classmethod
@@ -66,16 +79,18 @@ class EncryptionEngine:
         if salt is None:
             salt = os.urandom(16)
 
-        if _HAS_CRYPTO:
+        crypto = _get_crypto()
+        if crypto:
+            _, PBKDF2HMAC, hashes = crypto
             kdf = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
                 length=32,
                 salt=salt,
-                iterations=100000,
+                iterations=_PBKDF2_ITERATIONS,
             )
             key = kdf.derive(password.encode())
         else:
-            dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100000, dklen=32)
+            dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, _PBKDF2_ITERATIONS, dklen=32)
             key = dk
 
         return cls(key), salt
@@ -86,7 +101,7 @@ class EncryptionEngine:
         nonce = os.urandom(12)
         salt = os.urandom(16)
 
-        if _HAS_CRYPTO:
+        if self._aesgcm is not None:
             ciphertext = self._aesgcm.encrypt(nonce, plaintext_bytes, None)
             return EncryptedBlob(ciphertext=ciphertext, nonce=nonce, salt=salt)
         else:
@@ -95,7 +110,7 @@ class EncryptionEngine:
 
     def decrypt(self, blob: EncryptedBlob) -> str:
         """解密文本"""
-        if _HAS_CRYPTO:
+        if self._aesgcm is not None:
             try:
                 plaintext = self._aesgcm.decrypt(blob.nonce, blob.ciphertext, None)
                 return plaintext.decode("utf-8")
@@ -158,7 +173,7 @@ def init_engine(password: str, key_file: str = "./data/.key") -> EncryptionEngin
                 "salt": base64.b64encode(salt).decode(),
                 "version": "5.0",
                 "kdf": "PBKDF2-SHA256",
-                "iterations": 100000,
+                "iterations": _PBKDF2_ITERATIONS,
             }, f, indent=2)
 
     _global_engine = engine

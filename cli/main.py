@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.1.1 CLI - 命令行工具
+MindForge v5.1.2 CLI - 命令行工具
 =================================
 
 Usage:
@@ -51,17 +51,39 @@ from core import (
     MemoryLayer,
 )
 
-from modules import (
-    RecallConfig,
-    KnowledgeGraph,
-    MemoryEvolution,
-    PersonalityEngine,
-    MultimodalMemory,
-    FederatedMemory,
-    TaxonomyManager,
-    PrivacyEngine,
-    MemoryIntegrator,
-)
+# 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
+_modules_cache = {}
+
+def _lazy_import(name):
+    if name not in _modules_cache:
+        if name == "TaxonomyManager":
+            from modules.categorizer import TaxonomyManager
+            _modules_cache[name] = TaxonomyManager
+        elif name == "RecallConfig":
+            from modules.recall import RecallConfig
+            _modules_cache[name] = RecallConfig
+        elif name == "KnowledgeGraph":
+            from modules.knowledge_graph import KnowledgeGraph
+            _modules_cache[name] = KnowledgeGraph
+        elif name == "MemoryEvolution":
+            from modules.evolution import MemoryEvolution
+            _modules_cache[name] = MemoryEvolution
+        elif name == "PersonalityEngine":
+            from modules.personality import PersonalityEngine
+            _modules_cache[name] = PersonalityEngine
+        elif name == "MultimodalMemory":
+            from modules.multimodal import MultimodalMemory
+            _modules_cache[name] = MultimodalMemory
+        elif name == "FederatedMemory":
+            from modules.federated import FederatedMemory
+            _modules_cache[name] = FederatedMemory
+        elif name == "PrivacyEngine":
+            from modules.privacy import PrivacyEngine
+            _modules_cache[name] = PrivacyEngine
+        elif name == "MemoryIntegrator":
+            from modules.integrator import MemoryIntegrator
+            _modules_cache[name] = MemoryIntegrator
+    return _modules_cache[name]
 
 COLORS = {
     "cyan": "\033[96m",
@@ -95,7 +117,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}MindForge v5.1.1 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}MindForge v5.1.2 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -154,7 +176,7 @@ def _get_memory(args) -> MindForge:
 def cmd_add(args):
     """添加记忆"""
     cm = _get_memory(args)
-    taxonomy = TaxonomyManager()
+    taxonomy = _lazy_import("TaxonomyManager")()
 
     content = args.content
     category = args.category
@@ -200,7 +222,7 @@ def cmd_search(args):
     """搜索记忆"""
     cm = _get_memory(args)
 
-    cfg = RecallConfig(
+    cfg = _lazy_import("RecallConfig")(
         max_results=args.limit,
         min_relevance=0.2,
         include_categories=[args.category] if args.category else None,
@@ -1100,7 +1122,7 @@ def cmd_unstar(args):
 def cmd_consolidate(args):
     """记忆巩固"""
     cm = _get_memory(args)
-    evolution = MemoryEvolution(cm.storage)
+    evolution = _lazy_import("MemoryEvolution")(cm.storage)
 
     print(c("正在执行记忆巩固...", "cyan"))
     result = evolution.consolidate(agent_id=args.agent, session_id=args.session)
@@ -1124,7 +1146,7 @@ def cmd_consolidate(args):
 def cmd_graph(args):
     """知识图谱操作"""
     cm = _get_memory(args)
-    kg = KnowledgeGraph(storage=cm.storage)
+    kg = _lazy_import("KnowledgeGraph")(storage=cm.storage)
 
     if args.graph_action == "stats":
         stats = kg.get_entity_stats()
@@ -1158,7 +1180,7 @@ def cmd_graph(args):
 def cmd_personality(args):
     """人格化引擎"""
     cm = _get_memory(args)
-    pe = PersonalityEngine(cm.storage)
+    pe = _lazy_import("PersonalityEngine")(cm.storage)
 
     if args.personality_action == "profile":
         profile = pe.get_profile(args.user_id)
@@ -1248,7 +1270,7 @@ def cmd_import(args):
 def cmd_compliance(args):
     """合规报告"""
     cm = _get_memory(args)
-    privacy_engine = PrivacyEngine(cm.storage)
+    privacy_engine = _lazy_import("PrivacyEngine")(cm.storage)
     report = privacy_engine.generate_compliance_report()
 
     print(c("隐私合规报告", "bold"))
@@ -1297,10 +1319,10 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="mindforge",
-        description="MindForge v5.1.1 - AI Agent 终身记忆系统",
+        description="MindForge v5.1.2 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", "-v", action="version", version="MindForge v5.1.1")
+    parser.add_argument("--version", "-v", action="version", version="MindForge v5.1.2")
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")

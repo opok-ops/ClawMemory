@@ -1277,7 +1277,7 @@ class StorageEngine:
         )
 
     def _update_access(self, entry: MemoryEntry, actor: str, session_id: str):
-        """更新访问计数"""
+        """更新访问计数（v5.1.2 优化：不再每次 get 都写审计日志，减轻低配电脑负担）"""
         conn = self._get_conn()
         now = time.time()
         conn.execute("""
@@ -1285,7 +1285,6 @@ class StorageEngine:
             WHERE id = ?
         """, (now, entry.id))
         conn.commit()
-        self._add_audit("access", entry.id, actor, session_id, entry.privacy.value)
 
     def _add_audit(self, action: str, memory_id: str, actor: str,
                    session_id: str, privacy_level: str, details: Optional[dict] = None):
