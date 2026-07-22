@@ -1,4 +1,4 @@
-﻿"""
+"""
 MindForge v5.0 加密引擎
 AES-256-GCM + PBKDF2 密钥派生
 """

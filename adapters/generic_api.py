@@ -1,4 +1,4 @@
-﻿"""
+"""
 MindForge v5.0 通用 API 适配器
 REST API / SDK 风格接口
 """

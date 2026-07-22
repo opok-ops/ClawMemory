@@ -1,4 +1,4 @@
-﻿"""
+"""
 MindForge v5.0 Claude Code 适配器
 """
 

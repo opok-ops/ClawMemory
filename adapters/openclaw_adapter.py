@@ -1,4 +1,4 @@
-﻿"""
+"""
 MindForge v5.0 OpenClaw 适配器
 """
 

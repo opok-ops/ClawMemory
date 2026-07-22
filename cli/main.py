@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 MindForge v5.1.1 CLI - 命令行工具
 =================================
@@ -1300,6 +1300,7 @@ def main():
         description="MindForge v5.1.1 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument("--version", "-v", action="version", version="MindForge v5.1.1")
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")
