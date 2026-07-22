@@ -25,11 +25,11 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.1.2"
+    __version__ = "5.1.3"
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.0"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.1.3"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -545,6 +545,42 @@ class MindForge:
     @property
     def query(self) -> QueryEngine:
         return self._query
+
+    def cleanup(self, max_age_hours: int = 24, layer: str = "sensory") -> int:
+        """清理过期记忆（v5.1.3 新增）
+
+        Args:
+            max_age_hours: 最大保留时长（小时），超过此时间的记忆将被软删除
+            layer: 记忆层级（sensory/short_term/long_term/permanent）
+
+        Returns:
+            被清理的记忆数量
+        """
+        return self._storage.cleanup_expired(max_age_hours, layer)
+
+    def batch_add(self, entries: List[Dict[str, Any]]) -> int:
+        """批量添加记忆（v5.1.3 新增）
+
+        Args:
+            entries: 记忆条目列表，每个条目包含 content、category、tags 等字段
+
+        Returns:
+            成功添加的记忆数量
+        """
+        return self._storage.batch_add(entries)
+
+    def find_similar(self, content: str, limit: int = 5, threshold: float = 0.3):
+        """查找相似记忆（v5.1.3 新增）
+
+        Args:
+            content: 参考内容
+            limit: 返回数量限制
+            threshold: 相似度阈值（0-1）
+
+        Returns:
+            相似记忆列表
+        """
+        return self._storage.find_similar(content, limit, threshold)
 
     def close(self):
         if self._storage:

@@ -1305,3 +1305,168 @@ class StorageEngine:
         if self._conn:
             self._conn.close()
             self._conn = None
+
+    def cleanup_expired(self, max_age_hours: int = 24, layer: str = "sensory") -> int:
+        """清理过期记忆（v5.1.3 新增）
+
+        Args:
+            max_age_hours: 最大保留时长（小时），超过此时间的记忆将被软删除
+            layer: 记忆层级（sensory/short_term/long_term/permanent）
+
+        Returns:
+            被清理的记忆数量
+        """
+        conn = self._get_conn()
+        now = time.time()
+        cutoff_time = now - (max_age_hours * 3600)
+
+        rows = conn.execute("""
+            SELECT id, category FROM memories
+            WHERE layer = ? AND deleted = 0 AND created_at < ?
+        """, (layer, cutoff_time)).fetchall()
+
+        if not rows:
+            return 0
+
+        deleted_count = 0
+        for row in rows:
+            entry_id = row["id"]
+            old_category = row["category"]
+
+            try:
+                conn.execute("""
+                    UPDATE memories SET
+                        deleted = 1,
+                        category = 'trash',
+                        metadata = JSON_SET(metadata, '$.original_category', ?),
+                        updated_at = ?
+                    WHERE id = ?
+                """, (old_category, now, entry_id))
+
+                if not self.encrypted:
+                    conn.execute("""
+                        INSERT INTO memory_fts(memory_fts, rowid, content, category, tags)
+                        VALUES('delete', (SELECT rowid FROM memories WHERE id = ?), '', '', '')
+                    """, (entry_id,))
+
+                deleted_count += 1
+            except Exception:
+                pass
+
+        conn.commit()
+        return deleted_count
+
+    def batch_add(self, entries: List[Dict[str, Any]]) -> int:
+        """批量添加记忆（v5.1.3 新增）
+
+        Args:
+            entries: 记忆条目列表，每个条目包含 content、category、tags 等字段
+
+        Returns:
+            成功添加的记忆数量
+        """
+        conn = self._get_conn()
+        now = time.time()
+        added_count = 0
+
+        for entry_data in entries:
+            try:
+                entry_id = str(uuid.uuid4())
+                content = entry_data.get("content", "")
+                category = entry_data.get("category", "general")
+                tags = entry_data.get("tags", [])
+                privacy_str = entry_data.get("privacy", "internal")
+                importance_str = entry_data.get("importance", "medium")
+                layer_str = entry_data.get("layer", "short_term")
+
+                ciphertext = None
+                nonce = None
+                salt = None
+                stored_content = content
+
+                if self.encrypted and self.encryption:
+                    blob = self.encryption.encrypt(content)
+                    ciphertext = blob.ciphertext
+                    nonce = blob.nonce
+                    salt = blob.salt
+                    stored_content = ""
+
+                conn.execute("""
+                    INSERT INTO memories (
+                        id, content, ciphertext, nonce, salt, category, tags,
+                        privacy, importance, memory_type, layer,
+                        source_session, source_agent, created_at, updated_at,
+                        last_accessed_at, access_count, consolidation_count,
+                        forgetting_score, strength, starred, metadata, encrypted
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    entry_id, stored_content, ciphertext, nonce, salt,
+                    category, json.dumps(tags, ensure_ascii=False),
+                    privacy_str, importance_str, "text",
+                    layer_str, "", "",
+                    now, now, now,
+                    0, 0, 0.0, 1.0, 0,
+                    json.dumps({}, ensure_ascii=False), int(self.encrypted)
+                ))
+
+                if not self.encrypted:
+                    conn.execute("""
+                        INSERT INTO memory_fts (rowid, content, category, tags)
+                        VALUES ((SELECT rowid FROM memories WHERE id = ?), ?, ?, ?)
+                    """, (entry_id, content, category, json.dumps(tags, ensure_ascii=False)))
+
+                added_count += 1
+            except Exception:
+                pass
+
+        conn.commit()
+        return added_count
+
+    def find_similar(self, content: str, limit: int = 5, threshold: float = 0.3) -> List[MemoryEntry]:
+        """查找相似记忆（v5.1.3 新增）
+
+        使用简单的 Jaccard 相似度匹配，在低配电脑上也能快速运行
+
+        Args:
+            content: 参考内容
+            limit: 返回数量限制
+            threshold: 相似度阈值（0-1）
+
+        Returns:
+            相似记忆列表（按相似度降序）
+        """
+        import re
+
+        conn = self._get_conn()
+        rows = conn.execute("""
+            SELECT * FROM memories WHERE deleted = 0 AND encrypted = 0
+        """).fetchall()
+
+        def jaccard_similarity(s1: str, s2: str) -> float:
+            words1 = set(re.findall(r'\w+', s1.lower()))
+            words2 = set(re.findall(r'\w+', s2.lower()))
+            if not words1 and not words2:
+                return 0.0
+            intersection = words1 & words2
+            union = words1 | words2
+            return len(intersection) / len(union)
+
+        similarities = []
+        for row in rows:
+            entry_content = row["content"] or ""
+            if entry_content:
+                sim = jaccard_similarity(content, entry_content)
+                if sim >= threshold:
+                    similarities.append((sim, row))
+
+        similarities.sort(key=lambda x: x[0], reverse=True)
+        results = []
+        for sim, row in similarities[:limit]:
+            entry = self._row_to_entry(row)
+            if self.encrypted and self.encryption:
+                entry.content = self.encryption.decrypt(
+                    EncryptedBlob(ciphertext=entry.ciphertext, nonce=entry.nonce, salt=entry.salt)
+                )
+            results.append(entry)
+
+        return results
