@@ -356,8 +356,8 @@ context = adapter.get_context("数据库优化")
 
 **🔧 修复**
 - 软删除（delete / batch-delete）时丢失原分类的问题：现在将原分类保存到 metadata，恢复时可还原
-- `pyproject.toml` 与 `setup.py` 中的 GitHub 仓库 URL 仍指向旧名 `MindForge`，已修正为实际仓库名 `ClawMemory`
-- 官网 Open Graph / Twitter Card / GitHub 链接使用正确的 `ClawMemory` 路径
+- `pyproject.toml` 与 `setup.py` 中的 GitHub 仓库 URL 仍指向旧名 `MindForge`，已修正为实际仓库名 `MindForge`（重命名已同步）
+- 官网 Open Graph / Twitter Card / GitHub 链接全部更新至 `MindForge` 路径
 
 **📋 其他**
 - 版本号全面更新至 v5.1.1
