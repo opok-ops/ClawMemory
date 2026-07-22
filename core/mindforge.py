@@ -1,4 +1,4 @@
-﻿"""
+"""
 MindForge v5.0 主入口类
 统一的 API 接口，集成所有核心功能
 """
@@ -224,6 +224,11 @@ class MindForge:
         if success and hard_delete:
             self._index.remove_memory(memory_id)
         return success
+
+    def restore(self, memory_id: str, actor: str = "",
+                session_id: str = "") -> bool:
+        """从回收站恢复记忆（v5.1.1 新增）"""
+        return self._storage.restore_memory(memory_id, actor, session_id)
 
     def batch_delete(self,
                      category: Optional[str] = None,

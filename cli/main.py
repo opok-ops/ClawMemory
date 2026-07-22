@@ -1,6 +1,6 @@
 ﻿#!/usr/bin/env python3
 """
-MindForge v5.1.0 CLI - 命令行工具
+MindForge v5.1.1 CLI - 命令行工具
 =================================
 
 Usage:
@@ -11,11 +11,14 @@ Commands:
     add <content>       添加记忆
     search <query>      搜索记忆
     list                列出所有记忆
-    get <id>            获取单条记忆
-    update <id>         更新记忆
-    delete <id>         删除记忆
+    get <id>            获取单条记忆（v5.1.1 补全）
+    update <id>         更新记忆（v5.1.1 补全）
+    delete <id>         删除记忆（v5.1.1 补全）
     stats               统计信息
-    audit               审计日志
+    audit               审计日志（v5.1.1 补全）
+    recent              最近添加的记忆（v5.1.1 新增）
+    trash               查看回收站（v5.1.1 新增）
+    restore <id>        从回收站恢复记忆（v5.1.1 新增）
     backup              备份数据
     export <file>       导出记忆
     import <file>       导入记忆
@@ -92,7 +95,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}MindForge v5.1.0 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}MindForge v5.1.1 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -225,6 +228,231 @@ def cmd_search(args):
             print("...")
 
     return 0
+
+
+def cmd_get(args):
+    """获取单条记忆（v5.1.1 补全）"""
+    cm = _get_memory(args)
+    entry = cm.get(args.id, actor=args.agent, session_id=args.session)
+
+    if not entry:
+        print(c("❌ 记忆不存在或无权访问", "red"))
+        return 1
+
+    privacy_color = {
+        "PUBLIC": "green",
+        "INTERNAL": "yellow",
+        "PRIVATE": "red",
+        "STRICT": "pink",
+    }.get(entry.privacy.value, "reset")
+
+    layer_color = {
+        "sensory": "cyan",
+        "short_term": "cyan",
+        "long_term": "purple",
+        "permanent": "green",
+    }.get(entry.layer.value, "reset")
+
+    star_mark = "⭐ " if entry.starred else ""
+
+    print(c("\n📄 记忆详情", "bold"))
+    print("=" * 50)
+    print(f"ID:       {entry.id}")
+    print(f"分类:     [{entry.category}]")
+    print(f"隐私:     {c(entry.privacy.value, privacy_color)}")
+    print(f"层级:     {c(entry.layer.value, layer_color)}")
+    print(f"重要性:   {entry.importance.value}")
+    print(f"类型:     {entry.memory_type.value}")
+    print(f"标签:     {', '.join(entry.tags) if entry.tags else '无'}")
+    print(f"创建:     {format_time(entry.created_at)}")
+    print(f"更新:     {format_time(entry.updated_at)}")
+    print(f"访问:     {entry.access_count} 次")
+    print(f"状态:     {star_mark + '已收藏' if entry.starred else '未收藏'}")
+    print(f"\n内容:\n{entry.content}")
+
+    if entry.metadata:
+        print(f"\n元数据: {json.dumps(entry.metadata, ensure_ascii=False, indent=2)}")
+
+    cm.close()
+    return 0
+
+
+def cmd_update(args):
+    """更新记忆（v5.1.1 补全）"""
+    cm = _get_memory(args)
+
+    privacy = PrivacyLevel.from_string(args.privacy) if args.privacy else None
+    layer = MemoryLayer.from_string(args.layer) if args.layer else None
+    importance = Importance.from_string(args.importance) if args.importance else None
+
+    starred = None
+    if args.star:
+        starred = True
+    elif args.unstar:
+        starred = False
+
+    # 至少要更新一个字段
+    if not any([args.content, args.category, args.tags, args.privacy,
+                args.importance, args.layer, starred is not None]):
+        print(c("⚠️  请至少指定一个要更新的字段", "yellow"))
+        return 1
+
+    success = cm.update(
+        memory_id=args.id,
+        content=args.content,
+        category=args.category,
+        tags=args.tags,
+        privacy=privacy,
+        importance=importance,
+        layer=layer,
+        starred=starred,
+        actor=args.agent,
+        session_id=args.session,
+    )
+
+    if success:
+        print(c("\n✅ 记忆已更新", "green"))
+    else:
+        print(c("\n❌ 更新失败：记忆不存在", "red"))
+
+    cm.close()
+    return 0 if success else 1
+
+
+def cmd_delete(args):
+    """删除记忆（v5.1.1 补全）"""
+    cm = _get_memory(args)
+
+    entry = cm.get(args.id, actor=args.agent, session_id=args.session)
+    if not entry:
+        print(c("❌ 记忆不存在", "red"))
+        return 1
+
+    if not args.force:
+        print(c(f"\n⚠️  将删除记忆：", "yellow"))
+        print(f"   [{entry.category}] {entry.preview[:60]}...")
+        print(c(f"\n确认删除？加 --force 执行（软删除，可在回收站恢复）", "yellow"))
+        print(c(f"彻底删除请加 --hard", "yellow"))
+        return 1
+
+    success = cm.delete(
+        args.id,
+        actor=args.agent,
+        session_id=args.session,
+        hard_delete=args.hard,
+    )
+
+    if success:
+        action = "彻底删除" if args.hard else "移到回收站"
+        print(c(f"\n🗑️  已{action}", "green"))
+    else:
+        print(c("\n❌ 删除失败", "red"))
+
+    cm.close()
+    return 0 if success else 1
+
+
+def cmd_audit(args):
+    """审计日志（v5.1.1 补全）"""
+    cm = _get_memory(args)
+
+    logs = cm.audit_log(
+        memory_id=args.id,
+        actor=args.actor,
+        limit=args.limit,
+    )
+
+    print(c("\n📋 审计日志", "bold"))
+    print("=" * 50)
+    print(f"共 {c(str(len(logs)), 'cyan')} 条记录")
+
+    for log in logs:
+        ts = format_time(log.timestamp)
+        action = log.action or "unknown"
+        mid = log.memory_id or "-"
+        actor = log.actor or "-"
+        detail = ""
+        if log.details:
+            if isinstance(log.details, dict):
+                detail = log.details.get("message", "")
+                if not detail:
+                    detail = json.dumps(log.details, ensure_ascii=False)
+            else:
+                detail = str(log.details)
+        print(f"\n[{ts}] {c(action.upper(), 'purple')}")
+        print(f"   记忆ID: {mid[:16]}... | 操作者: {actor}")
+        if detail:
+            print(f"   详情: {detail}")
+
+    cm.close()
+    return 0
+
+
+def cmd_recent(args):
+    """最近添加的记忆（v5.1.1 新增）"""
+    cm = _get_memory(args)
+
+    now = datetime.now().timestamp()
+    since = now - args.hours * 3600
+
+    entries = cm.list(
+        created_after=since,
+        limit=args.limit,
+        offset=args.offset,
+    )
+
+    print(f"\n最近 {c(str(args.hours), 'cyan')} 小时内添加的记忆"
+          f"（共 {c(str(len(entries)), 'cyan')} 条）")
+
+    for entry in entries:
+        star_mark = "⭐ " if entry.starred else ""
+        print(f"\n--- [{entry.category}] {star_mark}{entry.preview[:60]} ---")
+        print(f"  层级: {entry.layer.value} | 重要性: {entry.importance.value}")
+        print(f"  标签: {', '.join(entry.tags) if entry.tags else '无'}")
+        print(f"  创建: {format_time(entry.created_at)}")
+
+    cm.close()
+    return 0
+
+
+def cmd_trash(args):
+    """查看回收站（v5.1.1 新增）"""
+    cm = _get_memory(args)
+    entries = cm.list(category="trash", limit=args.limit, offset=args.offset)
+
+    print(f"\n🗑️  回收站（共 {c(str(len(entries)), 'cyan')} 条）")
+
+    for entry in entries:
+        original = entry.metadata.get("_original_category", "unknown")
+        print(f"\n--- 原分类: [{original}] {entry.preview[:60]} ---")
+        print(f"  ID: {entry.id}")
+        print(f"  删除时间: {format_time(entry.updated_at)}")
+        print(f"  标签: {', '.join(entry.tags) if entry.tags else '无'}")
+
+    if not entries:
+        print(c("回收站为空", "yellow"))
+
+    cm.close()
+    return 0
+
+
+def cmd_restore(args):
+    """从回收站恢复记忆（v5.1.1 新增）"""
+    cm = _get_memory(args)
+
+    success = cm.restore(
+        args.id,
+        actor=args.agent,
+        session_id=args.session,
+    )
+
+    if success:
+        print(c("\n♻️  记忆已恢复", "green"))
+    else:
+        print(c("\n❌ 恢复失败：记忆不存在或不在回收站", "red"))
+
+    cm.close()
+    return 0 if success else 1
 
 
 def cmd_list(args):
@@ -812,7 +1040,7 @@ def cmd_export_html(args):
         </div>
         {cards}
         <div class="footer">
-            <p>Generated by MindForge v5.0.9</p>
+            <p>Generated by MindForge v5.1.1</p>
         </div>
     </div>
 </body>
@@ -1069,7 +1297,7 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="mindforge",
-        description="MindForge v5.1.0 - AI Agent 终身记忆系统",
+        description="MindForge v5.1.1 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -1114,6 +1342,54 @@ def main():
     p_list.add_argument("--before", help="创建时间之前 (YYYY-MM-DD 或 ISO 格式)")
     p_list.add_argument("--limit", type=int, default=50, help="数量限制")
     p_list.add_argument("--offset", type=int, default=0, help="偏移量")
+
+    p_get = sub.add_parser("get", help="获取单条记忆（v5.1.1 补全）")
+    p_get.add_argument("id", help="记忆 ID")
+    p_get.add_argument("--agent", default="cli", help="Agent ID")
+    p_get.add_argument("--session", default="cli", help="会话 ID")
+
+    p_update = sub.add_parser("update", help="更新记忆（v5.1.1 补全）")
+    p_update.add_argument("id", help="记忆 ID")
+    p_update.add_argument("--content", help="新的记忆内容")
+    p_update.add_argument("--category", "-c", help="新的分类")
+    p_update.add_argument("--tags", "-t", nargs="+", help="新的标签")
+    p_update.add_argument("--privacy", "-p",
+                          choices=["PUBLIC", "INTERNAL", "PRIVATE", "STRICT"], help="隐私等级")
+    p_update.add_argument("--importance", "-i",
+                          choices=["LOW", "MEDIUM", "HIGH", "CRITICAL"], help="重要性")
+    p_update.add_argument("--layer", "-l",
+                          choices=["sensory", "short_term", "long_term", "permanent"],
+                          help="记忆层级")
+    p_update.add_argument("--star", action="store_true", help="设为收藏")
+    p_update.add_argument("--unstar", action="store_true", help="取消收藏")
+    p_update.add_argument("--agent", default="cli", help="Agent ID")
+    p_update.add_argument("--session", default="cli", help="会话 ID")
+
+    p_delete = sub.add_parser("delete", help="删除记忆（v5.1.1 补全）")
+    p_delete.add_argument("id", help="记忆 ID")
+    p_delete.add_argument("--hard", action="store_true", help="彻底删除（不可恢复）")
+    p_delete.add_argument("--force", action="store_true", help="确认删除")
+    p_delete.add_argument("--agent", default="cli", help="Agent ID")
+    p_delete.add_argument("--session", default="cli", help="会话 ID")
+
+    p_audit = sub.add_parser("audit", help="查看审计日志（v5.1.1 补全）")
+    p_audit.add_argument("--id", help="限定记忆 ID")
+    p_audit.add_argument("--actor", help="限定操作者")
+    p_audit.add_argument("--limit", type=int, default=100, help="数量限制")
+
+    p_recent = sub.add_parser("recent", help="最近添加的记忆（v5.1.1 新增）")
+    p_recent.add_argument("--hours", type=int, default=24, help="最近 N 小时，默认 24")
+    p_recent.add_argument("--limit", type=int, default=20, help="数量限制")
+    p_recent.add_argument("--offset", type=int, default=0, help="偏移量")
+
+    p_trash = sub.add_parser("trash", help="查看回收站（v5.1.1 新增）")
+    p_trash.add_argument("--limit", type=int, default=50, help="数量限制")
+    p_trash.add_argument("--offset", type=int, default=0, help="偏移量")
+
+    p_restore = sub.add_parser("restore", help="从回收站恢复记忆（v5.1.1 新增）")
+    p_restore.add_argument("id", help="记忆 ID")
+    p_restore.add_argument("--agent", default="cli", help="Agent ID")
+    p_restore.add_argument("--session", default="cli", help="会话 ID")
 
     p_stats = sub.add_parser("stats", help="统计信息")
 
@@ -1243,6 +1519,9 @@ def main():
         "add": cmd_add,
         "search": cmd_search,
         "list": cmd_list,
+        "get": cmd_get,
+        "update": cmd_update,
+        "delete": cmd_delete,
         "stats": cmd_stats,
         "star": cmd_star,
         "unstar": cmd_unstar,
@@ -1258,6 +1537,10 @@ def main():
         "import-md": cmd_import_md,
         "migrate": cmd_migrate,
         "export-html": cmd_export_html,
+        "audit": cmd_audit,
+        "recent": cmd_recent,
+        "trash": cmd_trash,
+        "restore": cmd_restore,
         "consolidate": cmd_consolidate,
         "graph": cmd_graph,
         "personality": cmd_personality,

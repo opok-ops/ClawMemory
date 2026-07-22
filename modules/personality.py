@@ -1,4 +1,4 @@
-﻿"""
+"""
 MindForge v5.0 人格化引擎
 学习用户偏好、语言风格、思维模式
 """
@@ -7,7 +7,7 @@ import json
 import time
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from collections import defaultdict, Counter
 
 from core.storage import StorageEngine

@@ -1,4 +1,4 @@
-﻿"""
+"""
 MindForge v5.0 存储引擎
 支持四层记忆架构：感官记忆 → 短期记忆 → 长期记忆 → 永久记忆
 """
@@ -604,8 +604,24 @@ class StorageEngine:
                     pass
         else:
             now = time.time()
-            conn.execute("UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
-                         (now, entry_id))
+            # v5.1.1 修复：软删除时保存原分类到 metadata，便于恢复
+            row = conn.execute(
+                "SELECT category, metadata FROM memories WHERE id = ?",
+                (entry_id,)
+            ).fetchone()
+            if row:
+                try:
+                    meta = json.loads(row["metadata"]) if row["metadata"] else {}
+                except Exception:
+                    meta = {}
+                meta["_original_category"] = row["category"]
+                conn.execute(
+                    "UPDATE memories SET category = 'trash', updated_at = ?, metadata = ? WHERE id = ?",
+                    (now, json.dumps(meta, ensure_ascii=False), entry_id)
+                )
+            else:
+                conn.execute("UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
+                             (now, entry_id))
 
         conn.commit()
         self._add_audit("delete", entry_id, actor, session_id, "")
@@ -666,17 +682,58 @@ class StorageEngine:
                 except Exception:
                     pass
         else:
-            placeholders = ",".join(["?"] * len(ids))
-            conn.execute(
-                f"UPDATE memories SET category = 'trash', updated_at = ? WHERE id IN ({placeholders})",
-                [now] + ids
-            )
+            # v5.1.1 修复：批量软删除时也保存原分类到 metadata
+            for row in rows:
+                try:
+                    meta = json.loads(row["metadata"]) if row.get("metadata") else {}
+                except Exception:
+                    meta = {}
+                meta["_original_category"] = row["category"]
+                conn.execute(
+                    "UPDATE memories SET category = 'trash', updated_at = ?, metadata = ? WHERE id = ?",
+                    (now, json.dumps(meta, ensure_ascii=False), row["id"])
+                )
 
         conn.commit()
         for mid in ids:
             self._add_audit("delete", mid, actor, session_id, "")
 
         return len(ids)
+
+    def restore_memory(self, entry_id: str,
+                       actor: str = "", session_id: str = "") -> bool:
+        """从回收站恢复记忆（v5.1.1 新增）
+
+        将 category='trash' 的记忆恢复到软删除前的原分类；
+        如果找不到原分类，则恢复到 'default'。
+        """
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT category, metadata FROM memories WHERE id = ?",
+            (entry_id,)
+        ).fetchone()
+
+        if not row or row["category"] != "trash":
+            return False
+
+        try:
+            meta = json.loads(row["metadata"]) if row["metadata"] else {}
+        except Exception:
+            meta = {}
+
+        original_category = meta.pop("_original_category", "default")
+        now = time.time()
+
+        conn.execute(
+            "UPDATE memories SET category = ?, metadata = ?, updated_at = ? WHERE id = ?",
+            (original_category, json.dumps(meta, ensure_ascii=False), now, entry_id)
+        )
+        conn.commit()
+        self._add_audit(
+            "restore", entry_id, actor, session_id, "",
+            details={"message": f"恢复到 {original_category}", "original_category": original_category}
+        )
+        return True
 
     def count_memories(self, category: Optional[str] = None,
                        layer: Optional[MemoryLayer] = None) -> int:

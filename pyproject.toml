@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "MindForge"
-version = "5.1.0"
+version = "5.1.1"
 description = "AI Agent 终身记忆系统 - 四层记忆架构 · 知识图谱 · 多模态支持"
 readme = "README.md"
 license = {text = "MIT"}
@@ -23,9 +23,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://opok-ops.github.io/MindForge/"
-"Bug Reports" = "https://github.com/opok-ops/MindForge/issues"
-Source = "https://github.com/opok-ops/MindForge"
+Homepage = "https://opok-ops.github.io/ClawMemory/"
+"Bug Reports" = "https://github.com/opok-ops/ClawMemory/issues"
+Source = "https://github.com/opok-ops/ClawMemory"
 
 [project.scripts]
 MindForge = "cli.main:main"

@@ -1,4 +1,4 @@
-﻿"""
+"""
 MindForge v5.0 隐私引擎
 隐私扫描、访问控制、合规报告
 """
@@ -7,7 +7,7 @@ import re
 import json
 import hashlib
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from datetime import datetime
 
 from core.storage import StorageEngine, MemoryEntry
