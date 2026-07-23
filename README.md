@@ -1,4 +1,4 @@
-# MindForge v5.1.3
+# MindForge v5.1.4
 
 **AI Agent 终身记忆系统 — 四层记忆架构 · 知识图谱 · 多模态 · 人格化 · 联邦网络**
 
@@ -23,7 +23,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    MindForge v5.1.1                        │
+│                    MindForge v5.1.4                        │
 ├─────────────────────────────────────────────────────────┤
 │  🎯 认知层 (Cognitive Layer)                              │
 │     人格引擎 · 知识图谱 · 记忆演化 · 联邦网络              │
@@ -342,6 +342,50 @@ context = adapter.get_context("数据库优化")
 ---
 
 ## 📝 更新日志
+
+### v5.1.4 (2026-07-23)
+
+**✨ CLI 新增命令**
+- `export-xml` - 导出记忆为 XML 格式，支持完整元数据（v5.1.4 新增）
+- `import-xml` - 从 XML 文件导入记忆，支持预览和确认（v5.1.4 新增）
+
+**🔧 CLI 增强**
+- `list` 命令新增 `--sort/-s` 参数，支持按 `created_at`/`updated_at`/`last_accessed_at`/`access_count`/`strength`/`forgetting_score` 排序
+- `list` 命令新增 `--order/-o` 参数，支持 `asc`/`desc` 排序顺序
+- `stats` 命令新增 `--detailed` 参数，显示详细统计（回收站、加密数、时间范围、平均指标、极值指标等）
+
+**📊 核心增强**
+- `list_memories` 方法新增 `sort_by` 和 `sort_order` 参数支持排序
+- `get_detailed_stats` 方法新增，提供多维度详细统计数据
+- `MindForge` 类新增 `detailed_stats` 接口
+
+**📋 其他**
+- 版本号全面更新至 v5.1.4
+- 修复 README.md 更新日志缺失问题
+
+### v5.1.3 (2026-07-22)
+
+**✨ CLI 新增命令**
+- `cleanup` - 清理过期记忆，支持按层级和时长筛选
+- `batch-add` - 从 JSON 文件批量添加记忆
+- `import-url` - 从网页 URL 导入内容
+- `similar` - 查找相似记忆（基于 Jaccard 相似度）
+
+**📊 核心增强**
+- `cleanup_expired` - 清理过期记忆方法
+- `batch_add` - 批量添加记忆方法
+- `find_similar` - 相似记忆查找方法
+
+### v5.1.2 (2026-07-22)
+
+**⚡ 性能优化**
+- CLI 启动优化：懒加载模块和加密库，减少启动时间
+- PBKDF2 迭代次数从 100000 降至 60000（符合 OWASP 2023 推荐）
+- `get_memory` 方法减少不必要的数据库写入，减轻低配电脑负担
+
+**🔧 修复**
+- 修复 UTF-8 BOM 导致的 TOML 解析失败问题
+- 修复 28 个源文件的 UTF-8 BOM
 
 ### v5.1.1 (2026-07-22)
 

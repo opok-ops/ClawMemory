@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.1.3 CLI - 命令行工具
+MindForge v5.1.4 CLI - 命令行工具
 =================================
 
 Usage:
@@ -117,7 +117,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}MindForge v5.1.3 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}MindForge v5.1.4 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -127,7 +127,7 @@ def print_banner():
 def cmd_init(args):
     """初始化 MindForge"""
     print_banner()
-    print(c("MindForge 初始化向导", "bold"))
+    print(c("MindForge v5.1.4 初始化向导", "bold"))
     print("=" * 50)
 
     password = getpass.getpass("请设置加密密码（用于保护记忆）：")
@@ -504,6 +504,8 @@ def cmd_list(args):
         created_before=created_before,
         limit=args.limit,
         offset=args.offset,
+        sort_by=args.sort,
+        sort_order=args.order,
     )
 
     total = cm.stats()["total"]
@@ -555,38 +557,81 @@ def cmd_list(args):
 def cmd_stats(args):
     """统计信息"""
     cm = _get_memory(args)
-    stats = cm.stats()
 
-    print_banner()
-    print(c("MindForge 统计报告", "bold"))
-    print("=" * 50)
-    print(f"总记忆数：  {c(str(stats['total']), 'cyan')}")
-    print(f"⭐ 收藏数： {c(str(stats.get('starred_count', 0)), 'yellow')}")
-    print(f"数据库大小：{format_size(stats['db_size_bytes'])}")
-    print(f"数据库路径：{stats['db_path']}")
+    if args.detailed:
+        stats = cm.detailed_stats()
+        print_banner()
+        print(c("MindForge 详细统计报告", "bold"))
+        print("=" * 50)
+        print(f"总记忆数：        {c(str(stats.get('total', 0)), 'cyan')}")
+        print(f"回收站：          {c(str(stats.get('trash', 0)), 'yellow')}")
+        print(f"⭐ 收藏数：       {c(str(stats.get('starred', 0)), 'yellow')}")
+        print(f"加密记忆数：      {c(str(stats.get('encrypted', 0)), 'purple')}")
 
-    print(f"\n按隐私分级：")
-    for level, count in stats.get("by_privacy", {}).items():
-        print(f"  {level}: {count}")
+        if stats.get("first_created"):
+            print(f"\n创建时间范围：")
+            print(f"  最早： {format_time(stats['first_created'])}")
+            print(f"  最近： {format_time(stats['last_created'])}")
 
-    print(f"\n按记忆层级：")
-    for layer, count in stats.get("by_layer", {}).items():
-        print(f"  {layer}: {count}")
+        print(f"\n📊 平均指标：")
+        print(f"  平均访问次数：   {stats.get('avg_access_count', 0)}")
+        print(f"  平均记忆强度：   {stats.get('avg_strength', 0)}")
+        print(f"  平均遗忘分数：   {stats.get('avg_forgetting_score', 0)}")
 
-    print(f"\n按重要性：")
-    for level, count in stats.get("by_importance", {}).items():
-        print(f"  {level}: {count}")
+        print(f"\n🔝 极值指标：")
+        print(f"  最高访问次数：   {stats.get('max_access_count', 0)}")
+        print(f"  最低记忆强度：   {stats.get('min_strength', 0)}")
 
-    print(f"\n分类统计（前10）：")
-    for cat, count in list(stats.get("top_categories", {}).items())[:10]:
-        print(f"  {cat}: {count}")
+        print(f"\n📂 按分类：")
+        for cat, count in stats.get("by_category", {}).items():
+            print(f"  {cat}: {count}")
 
-    top_tags = stats.get("top_tags", {})
-    if top_tags:
-        print(f"\n标签统计（前10）：")
-        for tag, count in list(top_tags.items())[:10]:
-            print(f"  #{tag}: {count}")
+        print(f"\n🧠 按层级：")
+        for lay, count in stats.get("by_layer", {}).items():
+            print(f"  {lay}: {count}")
 
+        print(f"\n🔐 按隐私：")
+        for pri, count in stats.get("by_privacy", {}).items():
+            print(f"  {pri}: {count}")
+
+        print(f"\n⭐ 按重要性：")
+        for imp, count in stats.get("by_importance", {}).items():
+            print(f"  {imp}: {count}")
+
+        print(f"\n📋 审计记录数：   {stats.get('audit_records', 0)}")
+    else:
+        stats = cm.stats()
+        print_banner()
+        print(c("MindForge 统计报告", "bold"))
+        print("=" * 50)
+        print(f"总记忆数：  {c(str(stats['total']), 'cyan')}")
+        print(f"⭐ 收藏数： {c(str(stats.get('starred_count', 0)), 'yellow')}")
+        print(f"数据库大小：{format_size(stats['db_size_bytes'])}")
+        print(f"数据库路径：{stats['db_path']}")
+
+        print(f"\n按隐私分级：")
+        for level, count in stats.get("by_privacy", {}).items():
+            print(f"  {level}: {count}")
+
+        print(f"\n按记忆层级：")
+        for layer, count in stats.get("by_layer", {}).items():
+            print(f"  {layer}: {count}")
+
+        print(f"\n按重要性：")
+        for level, count in stats.get("by_importance", {}).items():
+            print(f"  {level}: {count}")
+
+        print(f"\n分类统计（前10）：")
+        for cat, count in list(stats.get("top_categories", {}).items())[:10]:
+            print(f"  {cat}: {count}")
+
+        top_tags = stats.get("top_tags", {})
+        if top_tags:
+            print(f"\n标签统计（前10）：")
+            for tag, count in list(top_tags.items())[:10]:
+                print(f"  #{tag}: {count}")
+
+    cm.close()
     return 0
 
 
@@ -1319,10 +1364,10 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="mindforge",
-        description="MindForge v5.1.3 - AI Agent 终身记忆系统",
+        description="MindForge v5.1.4 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", "-v", action="version", version="MindForge v5.1.3")
+    parser.add_argument("--version", "-v", action="version", version="MindForge v5.1.4")
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")
@@ -1365,6 +1410,12 @@ def main():
     p_list.add_argument("--before", help="创建时间之前 (YYYY-MM-DD 或 ISO 格式)")
     p_list.add_argument("--limit", type=int, default=50, help="数量限制")
     p_list.add_argument("--offset", type=int, default=0, help="偏移量")
+    p_list.add_argument("--sort", "-s", default="created_at",
+                        choices=["created_at", "updated_at", "last_accessed_at", "access_count", "strength", "forgetting_score"],
+                        help="排序字段（v5.1.4 新增）")
+    p_list.add_argument("--order", "-o", default="desc",
+                        choices=["asc", "desc"],
+                        help="排序顺序（v5.1.4 新增）")
 
     p_get = sub.add_parser("get", help="获取单条记忆（v5.1.1 补全）")
     p_get.add_argument("id", help="记忆 ID")
@@ -1415,6 +1466,7 @@ def main():
     p_restore.add_argument("--session", default="cli", help="会话 ID")
 
     p_stats = sub.add_parser("stats", help="统计信息")
+    p_stats.add_argument("--detailed", action="store_true", help="显示详细统计（v5.1.4 新增）")
 
     p_star = sub.add_parser("star", help="收藏记忆")
     p_star.add_argument("id", help="记忆 ID")
@@ -1500,6 +1552,14 @@ def main():
     p_export_html.add_argument("--output", "-o", default="memory_export.html",
                                help="输出文件路径")
 
+    p_export_xml = sub.add_parser("export-xml", help="导出记忆为 XML（v5.1.4 新增）")
+    p_export_xml.add_argument("--output", "-o", default="./data/memory_export.xml",
+                              help="输出文件路径")
+
+    p_import_xml = sub.add_parser("import-xml", help="从 XML 导入记忆（v5.1.4 新增）")
+    p_import_xml.add_argument("input", help="XML 文件路径")
+    p_import_xml.add_argument("--force", action="store_true", help="强制导入（覆盖重复）")
+
     p_consolidate = sub.add_parser("consolidate", help="记忆巩固")
     p_consolidate.add_argument("--agent", default="cli", help="Agent ID")
     p_consolidate.add_argument("--session", default="cli", help="会话 ID")
@@ -1583,6 +1643,8 @@ def main():
         "import-md": cmd_import_md,
         "migrate": cmd_migrate,
         "export-html": cmd_export_html,
+        "export-xml": cmd_export_xml,
+        "import-xml": cmd_import_xml,
         "audit": cmd_audit,
         "recent": cmd_recent,
         "trash": cmd_trash,
@@ -1710,6 +1772,135 @@ def cmd_similar(args):
         print(f"   分类: {entry.category}")
         print(f"   内容: {entry.content[:150]}...")
 
+    cm.close()
+    return 0
+
+
+def cmd_export_xml(args):
+    """导出记忆为 XML（v5.1.4 新增）"""
+    cm = _get_memory(args)
+    entries = cm.list(limit=99999)
+
+    if not entries:
+        print(c("⚠️  没有可导出的记忆", "yellow"))
+        return 0
+
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<mindforge>
+    <version>{version}</version>
+    <export_time>{export_time}</export_time>
+    <total>{total}</total>
+    <memories>
+{memories}
+    </memories>
+</mindforge>"""
+
+    memories_xml = ""
+    for entry in entries:
+        tags_xml = "".join(f"<tag>{t}</tag>" for t in entry.tags) if entry.tags else ""
+        memories_xml += f"""        <memory>
+            <id>{entry.id}</id>
+            <content>{entry.content}</content>
+            <category>{entry.category}</category>
+            <tags>{tags_xml}</tags>
+            <privacy>{entry.privacy.value}</privacy>
+            <importance>{entry.importance.value}</importance>
+            <memory_type>{entry.memory_type.value}</memory_type>
+            <layer>{entry.layer.value}</layer>
+            <access_count>{entry.access_count}</access_count>
+            <created_at>{entry.created_at}</created_at>
+            <updated_at>{entry.updated_at}</updated_at>
+            <starred>{'true' if entry.starred else 'false'}</starred>
+        </memory>
+"""
+
+    export_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    final_xml = xml_content.format(version="5.1.4", export_time=export_time, total=len(entries), memories=memories_xml)
+
+    output_path.write_text(final_xml, encoding='utf-8')
+
+    print(c(f"\n✅ XML 导出完成！", "green"))
+    print(f"   文件：{output_path}")
+    print(f"   记忆数：{len(entries)}")
+    cm.close()
+    return 0
+
+
+def cmd_import_xml(args):
+    """从 XML 导入记忆（v5.1.4 新增）"""
+    cm = _get_memory(args)
+    input_path = Path(args.input)
+
+    if not input_path.exists():
+        print(c(f"\n❌ 文件不存在: {input_path}", "red"))
+        return 1
+
+    try:
+        content = input_path.read_text(encoding='utf-8')
+    except Exception as e:
+        print(c(f"\n❌ 读取文件失败: {e}", "red"))
+        return 1
+
+    try:
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(content)
+    except Exception as e:
+        print(c(f"\n❌ XML 解析失败: {e}", "red"))
+        return 1
+
+    memories = root.findall('memories/memory')
+    if not memories:
+        print(c("⚠️  未找到可导入的记忆", "yellow"))
+        cm.close()
+        return 0
+
+    if not args.force:
+        print(c(f"\n🔍 将导入 {len(memories)} 条记忆：", "cyan"))
+        for mem in memories[:5]:
+            content_preview = mem.find('content').text[:60] if mem.find('content') is not None else ""
+            category = mem.find('category').text if mem.find('category') is not None else "general"
+            print(f"   - [{category}] {content_preview}...")
+        if len(memories) > 5:
+            print(f"   ... 还有 {len(memories) - 5} 条")
+        print(c("\n确认导入？加 --force 执行", "yellow"))
+        cm.close()
+        return 1
+
+    imported = 0
+    skipped = 0
+    for mem in memories:
+        try:
+            content_text = mem.find('content').text if mem.find('content') is not None else ""
+            category = mem.find('category').text if mem.find('category') is not None else "general"
+
+            tags = []
+            tag_elements = mem.findall('tags/tag')
+            for tag_elem in tag_elements:
+                if tag_elem.text:
+                    tags.append(tag_elem.text)
+
+            privacy_str = mem.find('privacy').text if mem.find('privacy') is not None else "internal"
+            importance_str = mem.find('importance').text if mem.find('importance') is not None else "medium"
+            layer_str = mem.find('layer').text if mem.find('layer') is not None else "short_term"
+
+            cm.add(
+                content=content_text,
+                category=category,
+                tags=tags,
+                privacy=PrivacyLevel.from_string(privacy_str),
+                importance=Importance.from_string(importance_str),
+                layer=MemoryLayer.from_string(layer_str),
+            )
+            imported += 1
+        except Exception:
+            skipped += 1
+
+    print(c(f"\n✅ XML 导入完成", "green"))
+    print(f"   成功导入：{c(str(imported), 'green')} 条")
+    print(f"   导入失败：{c(str(skipped), 'yellow')} 条")
     cm.close()
     return 0
 

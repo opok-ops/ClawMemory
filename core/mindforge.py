@@ -25,11 +25,11 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.1.3"
+    __version__ = "5.1.4"
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.1.3"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.1.4"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -153,7 +153,9 @@ class MindForge:
              created_after: Optional[float] = None,
              created_before: Optional[float] = None,
              limit: int = 50,
-             offset: int = 0) -> List[MemoryEntry]:
+             offset: int = 0,
+             sort_by: str = "created_at",
+             sort_order: str = "desc") -> List[MemoryEntry]:
         """列出记忆"""
         return self._storage.list_memories(
             category=category,
@@ -163,6 +165,8 @@ class MindForge:
             created_before=created_before,
             limit=limit,
             offset=offset,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
 
     def star(self, memory_id: str, actor: str = "", session_id: str = "") -> bool:
@@ -581,6 +585,10 @@ class MindForge:
             相似记忆列表
         """
         return self._storage.find_similar(content, limit, threshold)
+
+    def detailed_stats(self) -> Dict[str, Any]:
+        """获取详细统计信息（v5.1.4 新增）"""
+        return self._storage.get_detailed_stats()
 
     def close(self):
         if self._storage:

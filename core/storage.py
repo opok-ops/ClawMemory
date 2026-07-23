@@ -304,7 +304,9 @@ class StorageEngine:
                       created_after: Optional[float] = None,
                       created_before: Optional[float] = None,
                       limit: int = 50,
-                      offset: int = 0) -> List[MemoryEntry]:
+                      offset: int = 0,
+                      sort_by: str = "created_at",
+                      sort_order: str = "desc") -> List[MemoryEntry]:
         """列出记忆"""
         conn = self._get_conn()
         query = "SELECT * FROM memories WHERE 1=1"
@@ -329,7 +331,12 @@ class StorageEngine:
             query += " AND created_at <= ?"
             params.append(created_before)
 
-        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        valid_sort_columns = ["created_at", "updated_at", "last_accessed_at", "access_count", "strength", "forgetting_score"]
+        if sort_by not in valid_sort_columns:
+            sort_by = "created_at"
+        sort_order = "DESC" if sort_order.lower() == "desc" else "ASC"
+
+        query += f" ORDER BY {sort_by} {sort_order} LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
         rows = conn.execute(query, params).fetchall()
@@ -1470,3 +1477,73 @@ class StorageEngine:
             results.append(entry)
 
         return results
+
+    def get_detailed_stats(self) -> Dict[str, Any]:
+        """获取详细统计信息（v5.1.4 新增）"""
+        conn = self._get_conn()
+
+        stats = {}
+
+        row = conn.execute("SELECT COUNT(*) FROM memories WHERE category != 'trash'").fetchone()
+        stats["total"] = row[0] if row else 0
+
+        row = conn.execute("SELECT COUNT(*) FROM memories WHERE category = 'trash'").fetchone()
+        stats["trash"] = row[0] if row else 0
+
+        row = conn.execute("SELECT COUNT(*) FROM memories WHERE starred = 1 AND category != 'trash'").fetchone()
+        stats["starred"] = row[0] if row else 0
+
+        row = conn.execute("SELECT COUNT(*) FROM memories WHERE encrypted = 1 AND category != 'trash'").fetchone()
+        stats["encrypted"] = row[0] if row else 0
+
+        row = conn.execute("SELECT MIN(created_at), MAX(created_at) FROM memories WHERE category != 'trash'").fetchone()
+        if row and row[0]:
+            stats["first_created"] = row[0]
+            stats["last_created"] = row[1]
+        else:
+            stats["first_created"] = None
+            stats["last_created"] = None
+
+        row = conn.execute("SELECT AVG(access_count), AVG(strength), AVG(forgetting_score) FROM memories WHERE category != 'trash'").fetchone()
+        if row:
+            stats["avg_access_count"] = round(row[0], 2) if row[0] else 0
+            stats["avg_strength"] = round(row[1], 2) if row[1] else 0
+            stats["avg_forgetting_score"] = round(row[2], 2) if row[2] else 0
+
+        row = conn.execute("SELECT MAX(access_count), MIN(strength) FROM memories WHERE category != 'trash'").fetchone()
+        if row:
+            stats["max_access_count"] = row[0] if row[0] else 0
+            stats["min_strength"] = round(row[1], 2) if row[1] else 0
+
+        stats["by_category"] = {}
+        rows = conn.execute("""
+            SELECT category, COUNT(*) FROM memories WHERE category != 'trash' GROUP BY category ORDER BY COUNT(*) DESC
+        """).fetchall()
+        for cat, cnt in rows:
+            stats["by_category"][cat] = cnt
+
+        stats["by_layer"] = {}
+        rows = conn.execute("""
+            SELECT layer, COUNT(*) FROM memories WHERE category != 'trash' GROUP BY layer ORDER BY COUNT(*) DESC
+        """).fetchall()
+        for lay, cnt in rows:
+            stats["by_layer"][lay] = cnt
+
+        stats["by_privacy"] = {}
+        rows = conn.execute("""
+            SELECT privacy, COUNT(*) FROM memories WHERE category != 'trash' GROUP BY privacy ORDER BY COUNT(*) DESC
+        """).fetchall()
+        for pri, cnt in rows:
+            stats["by_privacy"][pri] = cnt
+
+        stats["by_importance"] = {}
+        rows = conn.execute("""
+            SELECT importance, COUNT(*) FROM memories WHERE category != 'trash' GROUP BY importance ORDER BY COUNT(*) DESC
+        """).fetchall()
+        for imp, cnt in rows:
+            stats["by_importance"][imp] = cnt
+
+        row = conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()
+        stats["audit_records"] = row[0] if row else 0
+
+        return stats
