@@ -174,7 +174,7 @@ class TestMindForge(unittest.TestCase):
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def test_init(self):
-        from core.MindForge import MindForge
+        from core.mindforge import MindForge
 
         cm = MindForge(db_path=self.db_path, encrypted=False)
         self.assertIsNotNone(cm)
@@ -184,7 +184,7 @@ class TestMindForge(unittest.TestCase):
         cm.close()
 
     def test_add_and_search(self):
-        from core.MindForge import MindForge
+        from core.mindforge import MindForge
 
         cm = MindForge(db_path=self.db_path, encrypted=False)
 
@@ -205,7 +205,7 @@ class TestMindForge(unittest.TestCase):
         cm.close()
 
     def test_export_import_json(self):
-        from core.MindForge import MindForge
+        from core.mindforge import MindForge
         import json
 
         cm = MindForge(db_path=self.db_path, encrypted=False)
@@ -236,7 +236,7 @@ class TestMindForge(unittest.TestCase):
         cm2.close()
 
     def test_export_csv(self):
-        from core.MindForge import MindForge
+        from core.mindforge import MindForge
         import csv
 
         cm = MindForge(db_path=self.db_path, encrypted=False)
@@ -296,7 +296,7 @@ class TestPersonalityEngine(unittest.TestCase):
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def test_learn_and_profile(self):
-        from core.MindForge import MindForge
+        from core.mindforge import MindForge
         from modules.personality import PersonalityEngine
 
         cm = MindForge(db_path=self.db_path, encrypted=False)
