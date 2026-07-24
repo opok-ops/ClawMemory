@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.1.4 CLI - 命令行工具
+MindForge v5.1.5 CLI - 命令行工具
 =================================
 
 Usage:
@@ -117,7 +117,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}MindForge v5.1.4 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}MindForge v5.1.5 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -127,7 +127,7 @@ def print_banner():
 def cmd_init(args):
     """初始化 MindForge"""
     print_banner()
-    print(c("MindForge v5.1.4 初始化向导", "bold"))
+    print(c("MindForge v5.1.5 初始化向导", "bold"))
     print("=" * 50)
 
     password = getpass.getpass("请设置加密密码（用于保护记忆）：")
@@ -1364,10 +1364,10 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="mindforge",
-        description="MindForge v5.1.4 - AI Agent 终身记忆系统",
+        description="MindForge v5.1.5 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", "-v", action="version", version="MindForge v5.1.4")
+    parser.add_argument("--version", "-v", action="version", version="MindForge v5.1.5")
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")
@@ -1560,6 +1560,23 @@ def main():
     p_import_xml.add_argument("input", help="XML 文件路径")
     p_import_xml.add_argument("--force", action="store_true", help="强制导入（覆盖重复）")
 
+    p_export_json = sub.add_parser("export-json", help="导出记忆为 JSON（v5.1.5 新增）")
+    p_export_json.add_argument("--output", "-o", default="./data/memory_export.json",
+                               help="输出文件路径")
+    p_export_json.add_argument("--pretty", action="store_true", help="格式化输出")
+
+    p_import_json = sub.add_parser("import-json", help="从 JSON 导入记忆（v5.1.5 新增）")
+    p_import_json.add_argument("input", help="JSON 文件路径")
+    p_import_json.add_argument("--force", action="store_true", help="强制导入（覆盖重复）")
+
+    p_merge = sub.add_parser("merge", help="合并重复记忆（v5.1.5 新增）")
+    p_merge.add_argument("--threshold", type=float, default=0.8, help="相似度阈值")
+    p_merge.add_argument("--dry-run", action="store_true", help="仅预览，不执行")
+
+    p_remind = sub.add_parser("remind", help="遗忘提醒（v5.1.5 新增）")
+    p_remind.add_argument("--count", type=int, default=10, help="提醒数量")
+    p_remind.add_argument("--threshold", type=float, default=0.5, help="遗忘分数阈值")
+
     p_consolidate = sub.add_parser("consolidate", help="记忆巩固")
     p_consolidate.add_argument("--agent", default="cli", help="Agent ID")
     p_consolidate.add_argument("--session", default="cli", help="会话 ID")
@@ -1645,6 +1662,10 @@ def main():
         "export-html": cmd_export_html,
         "export-xml": cmd_export_xml,
         "import-xml": cmd_import_xml,
+        "export-json": cmd_export_json,
+        "import-json": cmd_import_json,
+        "merge": cmd_merge,
+        "remind": cmd_remind,
         "audit": cmd_audit,
         "recent": cmd_recent,
         "trash": cmd_trash,
@@ -1901,6 +1922,197 @@ def cmd_import_xml(args):
     print(c(f"\n✅ XML 导入完成", "green"))
     print(f"   成功导入：{c(str(imported), 'green')} 条")
     print(f"   导入失败：{c(str(skipped), 'yellow')} 条")
+    cm.close()
+    return 0
+
+
+def cmd_export_json(args):
+    """导出记忆为 JSON（v5.1.5 新增）"""
+    cm = _get_memory(args)
+    entries = cm.list(limit=99999)
+
+    if not entries:
+        print(c("⚠️  没有可导出的记忆", "yellow"))
+        return 0
+
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    export_data = {
+        "version": "5.1.5",
+        "export_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "total": len(entries),
+        "memories": []
+    }
+
+    for entry in entries:
+        mem_dict = {
+            "id": entry.id,
+            "content": entry.content,
+            "category": entry.category,
+            "tags": entry.tags,
+            "privacy": entry.privacy.value,
+            "importance": entry.importance.value,
+            "memory_type": entry.memory_type.value,
+            "layer": entry.layer.value,
+            "access_count": entry.access_count,
+            "created_at": entry.created_at,
+            "updated_at": entry.updated_at,
+            "starred": entry.starred,
+            "strength": entry.strength,
+            "forgetting_score": entry.forgetting_score,
+        }
+        export_data["memories"].append(mem_dict)
+
+    indent = 2 if args.pretty else None
+    output_path.write_text(json.dumps(export_data, ensure_ascii=False, indent=indent), encoding='utf-8')
+
+    print(c(f"\n✅ JSON 导出完成！", "green"))
+    print(f"   文件：{output_path}")
+    print(f"   记忆数：{len(entries)}")
+    cm.close()
+    return 0
+
+
+def cmd_import_json(args):
+    """从 JSON 导入记忆（v5.1.5 新增）"""
+    cm = _get_memory(args)
+    input_path = Path(args.input)
+
+    if not input_path.exists():
+        print(c(f"\n❌ 文件不存在: {input_path}", "red"))
+        return 1
+
+    try:
+        content = input_path.read_text(encoding='utf-8')
+        data = json.loads(content)
+    except Exception as e:
+        print(c(f"\n❌ JSON 解析失败: {e}", "red"))
+        return 1
+
+    memories = data.get("memories", [])
+    if not memories:
+        print(c("⚠️  未找到可导入的记忆", "yellow"))
+        cm.close()
+        return 0
+
+    if not args.force:
+        print(c(f"\n🔍 将导入 {len(memories)} 条记忆：", "cyan"))
+        for mem in memories[:5]:
+            content_preview = mem.get("content", "")[:60]
+            category = mem.get("category", "general")
+            print(f"   - [{category}] {content_preview}...")
+        if len(memories) > 5:
+            print(f"   ... 还有 {len(memories) - 5} 条")
+        print(c("\n确认导入？加 --force 执行", "yellow"))
+        cm.close()
+        return 1
+
+    imported = 0
+    skipped = 0
+    for mem in memories:
+        try:
+            cm.add(
+                content=mem.get("content", ""),
+                category=mem.get("category", "general"),
+                tags=mem.get("tags", []),
+                privacy=PrivacyLevel.from_string(mem.get("privacy", "internal")),
+                importance=Importance.from_string(mem.get("importance", "medium")),
+                layer=MemoryLayer.from_string(mem.get("layer", "short_term")),
+            )
+            imported += 1
+        except Exception:
+            skipped += 1
+
+    print(c(f"\n✅ JSON 导入完成", "green"))
+    print(f"   成功导入：{c(str(imported), 'green')} 条")
+    print(f"   导入失败：{c(str(skipped), 'yellow')} 条")
+    cm.close()
+    return 0
+
+
+def cmd_merge(args):
+    """合并重复记忆（v5.1.5 新增）"""
+    cm = _get_memory(args)
+    entries = cm.list(limit=99999)
+
+    if len(entries) < 2:
+        print(c("⚠️  记忆数量不足，无法合并", "yellow"))
+        cm.close()
+        return 0
+
+    from difflib import SequenceMatcher
+
+    duplicates = []
+    for i in range(len(entries)):
+        for j in range(i + 1, len(entries)):
+            ratio = SequenceMatcher(None, entries[i].content, entries[j].content).ratio()
+            if ratio >= args.threshold:
+                duplicates.append({
+                    "source": entries[i],
+                    "target": entries[j],
+                    "similarity": round(ratio, 2)
+                })
+
+    if not duplicates:
+        print(c("✅ 未找到重复记忆", "green"))
+        cm.close()
+        return 0
+
+    print(c(f"\n🔍 找到 {len(duplicates)} 组重复记忆（相似度 >= {args.threshold}）:", "cyan"))
+    for idx, dup in enumerate(duplicates, 1):
+        print(f"\n{idx}. 相似度: {dup['similarity']}")
+        print(f"   源记忆: {dup['source'].content[:80]}...")
+        print(f"   目标:   {dup['target'].content[:80]}...")
+
+    if args.dry_run:
+        print(c("\n⚠️  预览模式，未执行合并", "yellow"))
+        cm.close()
+        return 0
+
+    merged = 0
+    skipped = 0
+    for dup in duplicates:
+        try:
+            cm.delete(dup["target"].id)
+            merged += 1
+        except Exception:
+            skipped += 1
+
+    print(c(f"\n✅ 合并完成", "green"))
+    print(f"   已合并：{c(str(merged), 'green')} 组")
+    print(f"   合并失败：{c(str(skipped), 'yellow')} 组")
+    cm.close()
+    return 0
+
+
+def cmd_remind(args):
+    """遗忘提醒（v5.1.5 新增）"""
+    cm = _get_memory(args)
+    entries = cm.list(limit=99999)
+
+    if not entries:
+        print(c("⚠️  没有记忆", "yellow"))
+        cm.close()
+        return 0
+
+    need_remind = sorted(
+        [e for e in entries if e.forgetting_score >= args.threshold],
+        key=lambda x: x.forgetting_score,
+        reverse=True
+    )[:args.count]
+
+    if not need_remind:
+        print(c("✅ 所有记忆状态良好，无需提醒", "green"))
+        cm.close()
+        return 0
+
+    print(c(f"\n📢 需要复习的记忆（遗忘分数 >= {args.threshold}）:", "yellow"))
+    for idx, entry in enumerate(need_remind, 1):
+        print(f"\n{idx}. [{entry.category}] 遗忘分数: {c(f'{entry.forgetting_score:.2f}', 'red')}")
+        print(f"   访问次数: {entry.access_count} | 强度: {entry.strength:.2f}")
+        print(f"   内容: {entry.content[:120]}...")
+
     cm.close()
     return 0
 

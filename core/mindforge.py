@@ -25,11 +25,11 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.1.4"
+    __version__ = "5.1.5"
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.1.4"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.1.5"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
