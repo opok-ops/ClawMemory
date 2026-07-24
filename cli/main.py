@@ -1601,22 +1601,18 @@ def main():
     p_random = sub.add_parser("random", help="随机闪卡复习（v5.1.7 新增）")
     p_random.add_argument("--count", "-n", type=int, default=1, help="随机记忆数量")
     p_random.add_argument("--category", "-c", help="按分类筛选")
-    p_random.add_argument("--db", default="./data/memory.db", help="数据库路径")
 
     p_rename_tag = sub.add_parser("rename-tag", help="重命名标签（v5.1.7 新增）")
     p_rename_tag.add_argument("old", help="旧标签名")
     p_rename_tag.add_argument("new", help="新标签名")
     p_rename_tag.add_argument("--force", "-f", action="store_true", help="强制确认")
-    p_rename_tag.add_argument("--db", default="./data/memory.db", help="数据库路径")
 
     p_rename_cat = sub.add_parser("rename-cat", help="重命名分类（v5.1.7 新增）")
     p_rename_cat.add_argument("old", help="旧分类名")
     p_rename_cat.add_argument("new", help="新分类名")
     p_rename_cat.add_argument("--force", "-f", action="store_true", help="强制确认")
-    p_rename_cat.add_argument("--db", default="./data/memory.db", help="数据库路径")
 
     p_config = sub.add_parser("config", help="查看配置（v5.1.7 新增）")
-    p_config.add_argument("--db", default="./data/memory.db", help="数据库路径")
 
     p_consolidate = sub.add_parser("consolidate", help="记忆巩固")
     p_consolidate.add_argument("--agent", default="cli", help="Agent ID")
@@ -2387,7 +2383,8 @@ def cmd_config(args):
     stats = cm.stats()
     print(f"\n📊 记忆统计:")
     print(f"  总记忆数: {stats['total']}")
-    print(f"  分类数: {stats.get('categories', 0)}")
+    print(f"  分类数: {len(stats.get('top_categories', {}))}")
+    print(f"  收藏数: {stats.get('starred_count', 0)}")
 
     cm.close()
     return 0

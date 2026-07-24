@@ -1632,12 +1632,12 @@ class StorageEngine:
         conn = self._get_conn()
         now = time.time()
 
-        conn.execute("""
+        cursor = conn.execute("""
             UPDATE memories SET category = ?, updated_at = ?
             WHERE category = ? AND category != 'trash'
         """, (new_cat, now, old_cat))
 
-        count = conn.total_changes
+        count = cursor.rowcount
         conn.commit()
         return count
 
