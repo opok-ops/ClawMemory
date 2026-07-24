@@ -25,11 +25,11 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.1.6"
+    __version__ = "5.1.7"
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.1.6"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.1.7"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -589,6 +589,24 @@ class MindForge:
     def detailed_stats(self) -> Dict[str, Any]:
         """获取详细统计信息（v5.1.4 新增）"""
         return self._storage.get_detailed_stats()
+
+    def random(self, count: int = 1, category: Optional[str] = None,
+               layer: Optional[MemoryLayer] = None,
+               min_strength: Optional[float] = None) -> List[Any]:
+        """随机获取记忆（v5.1.7 新增）"""
+        return self._storage.get_random_memories(count, category, layer, min_strength)
+
+    def rename_tag(self, old_tag: str, new_tag: str) -> int:
+        """重命名标签（v5.1.7 新增）"""
+        return self._storage.rename_tag(old_tag, new_tag)
+
+    def rename_category(self, old_cat: str, new_cat: str) -> int:
+        """重命名分类（v5.1.7 新增）"""
+        return self._storage.rename_category(old_cat, new_cat)
+
+    def config_summary(self) -> Dict[str, Any]:
+        """获取配置摘要（v5.1.7 新增）"""
+        return self._storage.get_config_summary()
 
     def close(self):
         if self._storage:

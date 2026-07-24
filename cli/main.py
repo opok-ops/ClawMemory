@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.1.6 CLI - 命令行工具
+MindForge v5.1.7 CLI - 命令行工具
 =================================
 
 Usage:
@@ -50,6 +50,11 @@ from core import (
     MemoryType,
     MemoryLayer,
 )
+
+try:
+    from __init__ import __version__
+except ImportError:
+    __version__ = "5.1.7"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -117,7 +122,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}MindForge v5.1.6 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}MindForge v5.1.7 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -127,7 +132,7 @@ def print_banner():
 def cmd_init(args):
     """初始化 MindForge"""
     print_banner()
-    print(c("MindForge v5.1.6 初始化向导", "bold"))
+    print(c("MindForge v5.1.7 初始化向导", "bold"))
     print("=" * 50)
 
     password = getpass.getpass("请设置加密密码（用于保护记忆）：")
@@ -1364,10 +1369,10 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="mindforge",
-        description="MindForge v5.1.6 - AI Agent 终身记忆系统",
+        description="MindForge v5.1.7 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", "-v", action="version", version="MindForge v5.1.6")
+    parser.add_argument("--version", "-v", action="version", version="MindForge v5.1.7")
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")
@@ -1593,6 +1598,26 @@ def main():
     p_top.add_argument("--by", default="access_count", choices=["access_count", "strength", "created_at"],
                        help="排序依据")
 
+    p_random = sub.add_parser("random", help="随机闪卡复习（v5.1.7 新增）")
+    p_random.add_argument("--count", "-n", type=int, default=1, help="随机记忆数量")
+    p_random.add_argument("--category", "-c", help="按分类筛选")
+    p_random.add_argument("--db", default="./data/memory.db", help="数据库路径")
+
+    p_rename_tag = sub.add_parser("rename-tag", help="重命名标签（v5.1.7 新增）")
+    p_rename_tag.add_argument("old", help="旧标签名")
+    p_rename_tag.add_argument("new", help="新标签名")
+    p_rename_tag.add_argument("--force", "-f", action="store_true", help="强制确认")
+    p_rename_tag.add_argument("--db", default="./data/memory.db", help="数据库路径")
+
+    p_rename_cat = sub.add_parser("rename-cat", help="重命名分类（v5.1.7 新增）")
+    p_rename_cat.add_argument("old", help="旧分类名")
+    p_rename_cat.add_argument("new", help="新分类名")
+    p_rename_cat.add_argument("--force", "-f", action="store_true", help="强制确认")
+    p_rename_cat.add_argument("--db", default="./data/memory.db", help="数据库路径")
+
+    p_config = sub.add_parser("config", help="查看配置（v5.1.7 新增）")
+    p_config.add_argument("--db", default="./data/memory.db", help="数据库路径")
+
     p_consolidate = sub.add_parser("consolidate", help="记忆巩固")
     p_consolidate.add_argument("--agent", default="cli", help="Agent ID")
     p_consolidate.add_argument("--session", default="cli", help="会话 ID")
@@ -1686,6 +1711,10 @@ def main():
         "cats": cmd_cats,
         "timeline": cmd_timeline,
         "top": cmd_top,
+        "random": cmd_random,
+        "rename-tag": cmd_rename_tag,
+        "rename-cat": cmd_rename_cat,
+        "config": cmd_config,
         "audit": cmd_audit,
         "recent": cmd_recent,
         "trash": cmd_trash,
@@ -2272,6 +2301,93 @@ def cmd_top(args):
         prefix = "⭐" if entry.starred else "  "
         print(f"\n{idx}. {prefix} [{entry.category}] {label}: {c(val_str, 'yellow')}")
         print(f"   {entry.content[:100]}...")
+
+    cm.close()
+    return 0
+
+
+def cmd_random(args):
+    """随机闪卡复习（v5.1.7 新增）"""
+    cm = _get_memory(args)
+    entries = cm.random(count=args.count, category=getattr(args, 'category', None))
+
+    if not entries:
+        print(c("⚠️  没有找到记忆", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n🎲 随机记忆闪卡（共 {len(entries)} 张）:", "cyan"))
+    for idx, entry in enumerate(entries, 1):
+        from datetime import datetime
+        created = datetime.fromtimestamp(entry.created_at).strftime("%Y-%m-%d")
+        starred = "⭐" if entry.starred else "  "
+        print(f"\n{'='*50}")
+        print(f"  第 {idx} 张  {starred}  [{entry.category}] 强度: {entry.strength:.2f}")
+        print(f"  创建: {created}  访问: {entry.access_count}次")
+        print(f"{'='*50}")
+        print(f"\n  {entry.content}")
+        if entry.tags:
+            print(f"\n  🏷️  标签: {', '.join(entry.tags)}")
+
+    cm.close()
+    return 0
+
+
+def cmd_rename_tag(args):
+    """重命名标签（v5.1.7 新增）"""
+    cm = _get_memory(args)
+
+    if not args.force:
+        print(c(f"\n将标签 '{args.old}' 重命名为 '{args.new}'", "yellow"))
+        print(c("此操作将更新所有包含该标签的记忆。", "yellow"))
+        confirm = input("\n确认继续？(y/N): ").strip().lower()
+        if confirm != 'y':
+            print("已取消")
+            cm.close()
+            return 0
+
+    count = cm.rename_tag(args.old, args.new)
+    print(c(f"\n✅ 标签重命名成功，影响 {count} 条记忆", "green"))
+
+    cm.close()
+    return 0
+
+
+def cmd_rename_cat(args):
+    """重命名分类（v5.1.7 新增）"""
+    cm = _get_memory(args)
+
+    if not args.force:
+        print(c(f"\n将分类 '{args.old}' 重命名为 '{args.new}'", "yellow"))
+        print(c("此操作将移动所有该分类下的记忆。", "yellow"))
+        confirm = input("\n确认继续？(y/N): ").strip().lower()
+        if confirm != 'y':
+            print("已取消")
+            cm.close()
+            return 0
+
+    count = cm.rename_category(args.old, args.new)
+    print(c(f"\n✅ 分类重命名成功，影响 {count} 条记忆", "green"))
+
+    cm.close()
+    return 0
+
+
+def cmd_config(args):
+    """查看配置（v5.1.7 新增）"""
+    cm = _get_memory(args)
+    cfg = cm.config_summary()
+
+    print(c("\n⚙️  MindForge 配置信息:", "cyan"))
+    print(f"  数据库路径: {cfg['db_path']}")
+    print(f"  加密状态: {'开启 🔐' if cfg['encrypted'] else '未加密'}")
+    print(f"  数据库大小: {cfg['db_size_mb']} MB")
+    print(f"  版本: v{__version__}")
+
+    stats = cm.stats()
+    print(f"\n📊 记忆统计:")
+    print(f"  总记忆数: {stats['total']}")
+    print(f"  分类数: {stats.get('categories', 0)}")
 
     cm.close()
     return 0

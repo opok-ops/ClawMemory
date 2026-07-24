@@ -1547,3 +1547,104 @@ class StorageEngine:
         stats["audit_records"] = row[0] if row else 0
 
         return stats
+
+    def get_random_memories(self, count: int = 1,
+                            category: Optional[str] = None,
+                            layer: Optional[MemoryLayer] = None,
+                            min_strength: Optional[float] = None) -> List[MemoryEntry]:
+        """随机获取记忆（v5.1.7 新增）
+
+        Args:
+            count: 随机记忆数量
+            category: 分类筛选
+            layer: 记忆层级筛选
+            min_strength: 最低记忆强度筛选
+
+        Returns:
+            随机记忆列表
+        """
+        conn = self._get_conn()
+        query = "SELECT * FROM memories WHERE category != 'trash'"
+        params = []
+
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        if layer:
+            query += " AND layer = ?"
+            params.append(layer.value)
+        if min_strength is not None:
+            query += " AND strength >= ?"
+            params.append(min_strength)
+
+        query += " ORDER BY RANDOM() LIMIT ?"
+        params.append(count)
+
+        rows = conn.execute(query, params).fetchall()
+        results = [self._row_to_entry(row) for row in rows]
+
+        if self.encrypted and self.encryption:
+            for entry in results:
+                try:
+                    entry.content = self.encryption.decrypt(
+                        EncryptedBlob(ciphertext=entry.ciphertext, nonce=entry.nonce, salt=entry.salt)
+                    )
+                except Exception:
+                    pass
+
+        return results
+
+    def rename_tag(self, old_tag: str, new_tag: str) -> int:
+        """重命名标签（v5.1.7 新增）
+
+        Args:
+            old_tag: 旧标签名
+            new_tag: 新标签名
+
+        Returns:
+            受影响的记忆条数
+        """
+        conn = self._get_conn()
+        count = 0
+
+        rows = conn.execute("SELECT id, tags FROM memories WHERE category != 'trash'").fetchall()
+        for row in rows:
+            tags = json.loads(row["tags"]) if row["tags"] else []
+            if old_tag in tags:
+                new_tags = [new_tag if t == old_tag else t for t in tags]
+                conn.execute("UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
+                             (json.dumps(new_tags, ensure_ascii=False), time.time(), row["id"]))
+                count += 1
+
+        conn.commit()
+        return count
+
+    def rename_category(self, old_cat: str, new_cat: str) -> int:
+        """重命名分类（v5.1.7 新增）
+
+        Args:
+            old_cat: 旧分类名
+            new_cat: 新分类名
+
+        Returns:
+            受影响的记忆条数
+        """
+        conn = self._get_conn()
+        now = time.time()
+
+        conn.execute("""
+            UPDATE memories SET category = ?, updated_at = ?
+            WHERE category = ? AND category != 'trash'
+        """, (new_cat, now, old_cat))
+
+        count = conn.total_changes
+        conn.commit()
+        return count
+
+    def get_config_summary(self) -> Dict[str, Any]:
+        """获取配置摘要（v5.1.7 新增）"""
+        return {
+            "db_path": str(self.db_path),
+            "encrypted": self.encrypted,
+            "db_size_mb": round(Path(self.db_path).stat().st_size / (1024 * 1024), 2) if Path(self.db_path).exists() else 0,
+        }
