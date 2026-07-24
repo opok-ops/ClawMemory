@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.1.5 CLI - 命令行工具
+MindForge v5.1.6 CLI - 命令行工具
 =================================
 
 Usage:
@@ -117,7 +117,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}MindForge v5.1.5 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}MindForge v5.1.6 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -127,7 +127,7 @@ def print_banner():
 def cmd_init(args):
     """初始化 MindForge"""
     print_banner()
-    print(c("MindForge v5.1.5 初始化向导", "bold"))
+    print(c("MindForge v5.1.6 初始化向导", "bold"))
     print("=" * 50)
 
     password = getpass.getpass("请设置加密密码（用于保护记忆）：")
@@ -1364,10 +1364,10 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="mindforge",
-        description="MindForge v5.1.5 - AI Agent 终身记忆系统",
+        description="MindForge v5.1.6 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", "-v", action="version", version="MindForge v5.1.5")
+    parser.add_argument("--version", "-v", action="version", version="MindForge v5.1.6")
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")
@@ -1577,6 +1577,22 @@ def main():
     p_remind.add_argument("--count", type=int, default=10, help="提醒数量")
     p_remind.add_argument("--threshold", type=float, default=0.5, help="遗忘分数阈值")
 
+    p_tags = sub.add_parser("tags", help="标签管理（v5.1.6 新增）")
+    p_tags.add_argument("--list", action="store_true", help="列出所有标签")
+    p_tags.add_argument("--top", type=int, default=20, help="显示前 N 个标签")
+
+    p_cats = sub.add_parser("cats", help="分类统计（v5.1.6 新增）")
+    p_cats.add_argument("--top", type=int, default=20, help="显示前 N 个分类")
+
+    p_timeline = sub.add_parser("timeline", help="时间线视图（v5.1.6 新增）")
+    p_timeline.add_argument("--days", type=int, default=30, help="查看最近 N 天")
+    p_timeline.add_argument("--category", help="按分类筛选")
+
+    p_top = sub.add_parser("top", help="热门记忆（v5.1.6 新增）")
+    p_top.add_argument("--count", type=int, default=10, help="显示数量")
+    p_top.add_argument("--by", default="access_count", choices=["access_count", "strength", "created_at"],
+                       help="排序依据")
+
     p_consolidate = sub.add_parser("consolidate", help="记忆巩固")
     p_consolidate.add_argument("--agent", default="cli", help="Agent ID")
     p_consolidate.add_argument("--session", default="cli", help="会话 ID")
@@ -1666,6 +1682,10 @@ def main():
         "import-json": cmd_import_json,
         "merge": cmd_merge,
         "remind": cmd_remind,
+        "tags": cmd_tags,
+        "cats": cmd_cats,
+        "timeline": cmd_timeline,
+        "top": cmd_top,
         "audit": cmd_audit,
         "recent": cmd_recent,
         "trash": cmd_trash,
@@ -2112,6 +2132,146 @@ def cmd_remind(args):
         print(f"\n{idx}. [{entry.category}] 遗忘分数: {c(f'{entry.forgetting_score:.2f}', 'red')}")
         print(f"   访问次数: {entry.access_count} | 强度: {entry.strength:.2f}")
         print(f"   内容: {entry.content[:120]}...")
+
+    cm.close()
+    return 0
+
+
+def cmd_tags(args):
+    """标签管理（v5.1.6 新增）"""
+    cm = _get_memory(args)
+    entries = cm.list(limit=99999)
+
+    if not entries:
+        print(c("⚠️  没有记忆", "yellow"))
+        cm.close()
+        return 0
+
+    tag_counts = {}
+    for entry in entries:
+        for tag in entry.tags:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+    if not tag_counts:
+        print(c("⚠️  没有找到标签", "yellow"))
+        cm.close()
+        return 0
+
+    sorted_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:args.top]
+
+    print(c(f"\n🏷️  标签统计（共 {len(tag_counts)} 个，显示前 {len(sorted_tags)}）:", "cyan"))
+    max_len = max(len(t) for t, _ in sorted_tags) if sorted_tags else 0
+    for idx, (tag, count) in enumerate(sorted_tags, 1):
+        bar = "█" * min(count, 20)
+        print(f"{idx:2}. #{tag:<{max_len}} {c(str(count), 'yellow'):>4} {bar}")
+
+    cm.close()
+    return 0
+
+
+def cmd_cats(args):
+    """分类统计（v5.1.6 新增）"""
+    cm = _get_memory(args)
+    entries = cm.list(limit=99999)
+
+    if not entries:
+        print(c("⚠️  没有记忆", "yellow"))
+        cm.close()
+        return 0
+
+    cat_counts = {}
+    for entry in entries:
+        cat_counts[entry.category] = cat_counts.get(entry.category, 0) + 1
+
+    sorted_cats = sorted(cat_counts.items(), key=lambda x: x[1], reverse=True)[:args.top]
+
+    print(c(f"\n📂 分类统计（共 {len(cat_counts)} 个，显示前 {len(sorted_cats)}）:", "cyan"))
+    max_len = max(len(cn) for cn, _ in sorted_cats) if sorted_cats else 0
+    for idx, (cat, count) in enumerate(sorted_cats, 1):
+        bar = "█" * min(count, 20)
+        print(f"{idx:2}. {cat:<{max_len}} {c(str(count), 'yellow'):>4} {bar}")
+
+    cm.close()
+    return 0
+
+
+def cmd_timeline(args):
+    """时间线视图（v5.1.6 新增）"""
+    cm = _get_memory(args)
+    entries = cm.list(limit=99999)
+
+    if not entries:
+        print(c("⚠️  没有记忆", "yellow"))
+        cm.close()
+        return 0
+
+    from datetime import datetime, timedelta
+    cutoff = datetime.now() - timedelta(days=args.days)
+    cutoff_ts = cutoff.timestamp()
+
+    filtered = [e for e in entries if e.created_at >= cutoff_ts]
+    if args.category:
+        filtered = [e for e in filtered if e.category == args.category]
+
+    if not filtered:
+        print(c(f"⚠️  最近 {args.days} 天没有记忆", "yellow"))
+        cm.close()
+        return 0
+
+    by_date = {}
+    for entry in filtered:
+        date_str = datetime.fromtimestamp(entry.created_at).strftime("%Y-%m-%d")
+        if date_str not in by_date:
+            by_date[date_str] = []
+        by_date[date_str].append(entry)
+
+    print(c(f"\n📅 时间线视图（最近 {args.days} 天，共 {len(filtered)} 条）:", "cyan"))
+    if args.category:
+        print(f"   分类筛选: {args.category}")
+
+    for date_str in sorted(by_date.keys(), reverse=True):
+        entries_day = by_date[date_str]
+        print(f"\n{date_str} ({len(entries_day)} 条)")
+        for entry in entries_day:
+            prefix = "⭐" if entry.starred else "  "
+            print(f"  {prefix} [{entry.category}] {entry.content[:80]}...")
+
+    cm.close()
+    return 0
+
+
+def cmd_top(args):
+    """热门记忆（v5.1.6 新增）"""
+    cm = _get_memory(args)
+    entries = cm.list(limit=99999)
+
+    if not entries:
+        print(c("⚠️  没有记忆", "yellow"))
+        cm.close()
+        return 0
+
+    sort_key = {
+        "access_count": lambda x: x.access_count,
+        "strength": lambda x: x.strength,
+        "created_at": lambda x: x.created_at,
+    }.get(args.by, lambda x: x.access_count)
+
+    top_entries = sorted(entries, key=sort_key, reverse=True)[:args.count]
+
+    by_label = {"access_count": "访问次数", "strength": "记忆强度", "created_at": "创建时间"}
+    label = by_label.get(args.by, "访问次数")
+
+    print(c(f"\n🔥 热门记忆（按 {label} 排序，前 {args.count} 条）:", "cyan"))
+    for idx, entry in enumerate(top_entries, 1):
+        val = sort_key(entry)
+        if args.by == "created_at":
+            from datetime import datetime
+            val_str = datetime.fromtimestamp(val).strftime("%Y-%m-%d %H:%M")
+        else:
+            val_str = f"{val:.2f}" if isinstance(val, float) else str(val)
+        prefix = "⭐" if entry.starred else "  "
+        print(f"\n{idx}. {prefix} [{entry.category}] {label}: {c(val_str, 'yellow')}")
+        print(f"   {entry.content[:100]}...")
 
     cm.close()
     return 0
