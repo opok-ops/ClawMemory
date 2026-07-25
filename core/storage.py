@@ -1329,7 +1329,7 @@ class StorageEngine:
 
         rows = conn.execute("""
             SELECT id, category FROM memories
-            WHERE layer = ? AND deleted = 0 AND created_at < ?
+            WHERE layer = ? AND category != 'trash' AND created_at < ?
         """, (layer, cutoff_time)).fetchall()
 
         if not rows:
@@ -1343,7 +1343,6 @@ class StorageEngine:
             try:
                 conn.execute("""
                     UPDATE memories SET
-                        deleted = 1,
                         category = 'trash',
                         metadata = JSON_SET(metadata, '$.original_category', ?),
                         updated_at = ?
@@ -1446,7 +1445,7 @@ class StorageEngine:
 
         conn = self._get_conn()
         rows = conn.execute("""
-            SELECT * FROM memories WHERE deleted = 0 AND encrypted = 0
+            SELECT * FROM memories WHERE category != 'trash' AND encrypted = 0
         """).fetchall()
 
         def jaccard_similarity(s1: str, s2: str) -> float:
@@ -1647,4 +1646,57 @@ class StorageEngine:
             "db_path": str(self.db_path),
             "encrypted": self.encrypted,
             "db_size_mb": round(Path(self.db_path).stat().st_size / (1024 * 1024), 2) if Path(self.db_path).exists() else 0,
+        }
+
+    # ===== 数据库迁移（v5.1.8 新增）=====
+
+    _LATEST_DB_VERSION = 1
+
+    def get_db_version(self) -> int:
+        """获取当前数据库版本（v5.1.8 新增）"""
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT value FROM schema_version WHERE id = 1"
+            ).fetchone()
+            return int(row[0]) if row else 0
+        except Exception:
+            return 0
+
+    def get_latest_db_version(self) -> int:
+        """获取最新数据库版本（v5.1.8 新增）"""
+        return self._LATEST_DB_VERSION
+
+    def migrate_to_latest(self) -> Dict[str, Any]:
+        """迁移数据库到最新版本（v5.1.8 新增）"""
+        import time as _time
+        start = _time.time()
+        conn = self._get_conn()
+        current = self.get_db_version()
+        scripts_applied = 0
+
+        # 确保 schema_version 表存在
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS schema_version (
+                id INTEGER PRIMARY KEY,
+                value INTEGER NOT NULL
+            )
+        """)
+
+        # 迁移脚本（当前只有占位，未来版本可在此扩展）
+        # if current < 2:
+        #     ... 迁移逻辑 ...
+        #     scripts_applied += 1
+
+        # 更新版本号
+        conn.execute(
+            "INSERT OR REPLACE INTO schema_version (id, value) VALUES (1, ?)",
+            (self._LATEST_DB_VERSION,)
+        )
+        conn.commit()
+
+        return {
+            "scripts_applied": scripts_applied,
+            "duration_ms": round((_time.time() - start) * 1000, 2),
+            "final_version": self._LATEST_DB_VERSION,
         }

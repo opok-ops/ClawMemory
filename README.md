@@ -1,4 +1,4 @@
-# MindForge v5.1.7
+# MindForge v5.1.8
 
 **AI Agent 终身记忆系统 — 四层记忆架构 · 知识图谱 · 多模态 · 人格化 · 联邦网络**
 
@@ -23,7 +23,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    MindForge v5.1.7                        │
+│                    MindForge v5.1.8                        │
 ├─────────────────────────────────────────────────────────┤
 │  🎯 认知层 (Cognitive Layer)                              │
 │     人格引擎 · 知识图谱 · 记忆演化 · 联邦网络              │
@@ -342,6 +342,31 @@ context = adapter.get_context("数据库优化")
 ---
 
 ## 📝 更新日志
+
+### v5.1.8 (2026-07-25)
+
+**✨ CLI 新增命令**
+- `doctor` - 全面诊断数据库，5 项检查（完整性、FTS 一致性、索引、加密一致性、版本），支持 `--fix` 自动修复（v5.1.8 新增）
+- `find` - 高级查找记忆，支持分类/标签/层级/收藏/关键词/时间范围组合筛选（v5.1.8 新增）
+
+**🔧 CLI 修复**
+- 修复 `cleanup` 命令崩溃：SQL 查询引用不存在的 `deleted` 列，改为 `category != 'trash'`
+- 修复 `migrate` 命令崩溃：`StorageEngine` 缺少 `get_db_version`/`get_latest_db_version`/`migrate_to_latest` 方法
+- 修复 `import-md` 命令解析错误：内容归到错误的分类（先更新分类再追加内容的逻辑顺序错误）
+- 修复 `search` 命令 `--category` 过滤失效：创建的 `RecallConfig` 未传入 `search()` 调用
+- 修复 `export`/`import` 命令 `--layer` 参数大小写敏感：`MemoryLayer()` 改为 `MemoryLayer.from_string()`
+- 修复 `export-html` 命令 XSS 风险：添加 `html.escape()` 转义所有动态内容
+- 修复 `export-xml` 命令 XML 结构破坏：添加 `xml.sax.saxutils.escape()` 转义
+- 修复 `vacuum` 命令 VACUUM 在事务中执行失败：显式提交并切换 isolation_level
+- 修复 `import-url` 命令 SSRF 风险：限制 http/https 协议，禁止内网/元数据地址
+- 修复 `import-xml`/`import-json` 命令空元素 `.text` 为 None 时切片崩溃
+- 修复 `import-md` 标签正则误匹配（如 `C#` 被识别为标签）
+- 修复 `export-html`/`export-xml` 版本号硬编码为旧版本
+
+**📊 核心增强**
+- 新增 `get_db_version`/`get_latest_db_version`/`migrate_to_latest` 数据库迁移方法
+- 修复 `cleanup_expired` 方法引用不存在的 `deleted` 列
+- 修复 `find_similar` 方法引用不存在的 `deleted` 列
 
 ### v5.1.7 (2026-07-24)
 

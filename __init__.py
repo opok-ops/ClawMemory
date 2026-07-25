@@ -4,7 +4,7 @@ MindForge v5.1.3 - AI Agent 终身记忆系统
 四层记忆架构 · 知识图谱引擎 · 多模态支持 · 人格化记忆 · 联邦网络
 """
 
-__version__ = "5.1.7"
+__version__ = "5.1.8"
 __author__ = "MindForge Project"
 __license__ = "MIT + Privacy Addendum"
 
