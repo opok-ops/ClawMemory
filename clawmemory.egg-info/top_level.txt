@@ -1,0 +1,5 @@
+﻿adapters
+cli
+core
+docs
+modules

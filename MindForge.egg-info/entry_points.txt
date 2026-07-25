@@ -1,0 +1,2 @@
+[console_scripts]
+MindForge = cli.main:main
