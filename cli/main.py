@@ -1137,7 +1137,7 @@ def cmd_export_html(args):
 </div>"""
 
     export_time = format_time(time.time())
-    html_content = html_template.format(count=len(entries), export_time=export_time, cards=cards_html)
+    html_content = html_template.format(count=len(entries), export_time=export_time, cards=cards_html, __version__=__version__)
 
     output_path = Path(args.output) if args.output else Path("memory_export.html")
     output_path.write_text(html_content, encoding='utf-8')
