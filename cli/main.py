@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.1.8 CLI - 命令行工具
+MindForge v5.1.9 CLI - 命令行工具
 =================================
 
 Usage:
@@ -57,7 +57,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.1.8"
+    __version__ = "5.1.9"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -125,7 +125,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}MindForge v5.1.8 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}MindForge v5.1.9 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -135,7 +135,7 @@ def print_banner():
 def cmd_init(args):
     """初始化 MindForge"""
     print_banner()
-    print(c("MindForge v5.1.8 初始化向导", "bold"))
+    print(c("MindForge v5.1.9 初始化向导", "bold"))
     print("=" * 50)
 
     password = getpass.getpass("请设置加密密码（用于保护记忆）：")
@@ -1371,10 +1371,10 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="mindforge",
-        description="MindForge v5.1.8 - AI Agent 终身记忆系统",
+        description="MindForge v5.1.9 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", "-v", action="version", version="MindForge v5.1.8")
+    parser.add_argument("--version", "-v", action="version", version="MindForge v5.1.9")
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")
@@ -1629,6 +1629,33 @@ def main():
     p_find.add_argument("--before", type=float, help="截止时间戳")
     p_find.add_argument("--limit", "-n", type=int, help="结果数量限制")
 
+    p_export_excel = sub.add_parser("export-excel", help="导出记忆为 Excel（v5.1.9 新增）")
+    p_export_excel.add_argument("--output", "-o", default="./data/memory_export.xlsx",
+                                help="输出文件路径")
+    p_export_excel.add_argument("--category", "-c", help="按分类筛选")
+    p_export_excel.add_argument("--layer", "-l", help="按层级筛选")
+    p_export_excel.add_argument("--starred", action="store_true", help="仅导出收藏的记忆")
+
+    p_import_excel = sub.add_parser("import-excel", help="从 Excel 导入记忆（v5.1.9 新增）")
+    p_import_excel.add_argument("input", help="Excel 文件路径")
+    p_import_excel.add_argument("--category", "-c", help="目标分类（覆盖文件中的分类）")
+    p_import_excel.add_argument("--layer", "-l", default="short_term",
+                                choices=["sensory", "short_term", "long_term", "permanent"],
+                                help="目标记忆层级")
+    p_import_excel.add_argument("--force", action="store_true", help="强制导入（覆盖重复）")
+
+    p_copy = sub.add_parser("copy", help="复制记忆到新分类（v5.1.9 新增）")
+    p_copy.add_argument("id", help="记忆 ID")
+    p_copy.add_argument("category", help="目标分类")
+    p_copy.add_argument("--agent", default="cli", help="Agent ID")
+    p_copy.add_argument("--session", default="cli", help="会话 ID")
+
+    p_move = sub.add_parser("move", help="移动记忆到新分类（v5.1.9 新增）")
+    p_move.add_argument("id", help="记忆 ID")
+    p_move.add_argument("category", help="目标分类")
+    p_move.add_argument("--agent", default="cli", help="Agent ID")
+    p_move.add_argument("--session", default="cli", help="会话 ID")
+
     p_consolidate = sub.add_parser("consolidate", help="记忆巩固")
     p_consolidate.add_argument("--agent", default="cli", help="Agent ID")
     p_consolidate.add_argument("--session", default="cli", help="会话 ID")
@@ -1744,6 +1771,10 @@ def main():
         "batch-add": cmd_batch_add,
         "import-url": cmd_import_url,
         "similar": cmd_similar,
+        "export-excel": cmd_export_excel,
+        "import-excel": cmd_import_excel,
+        "copy": cmd_copy,
+        "move": cmd_move,
     }
 
     cmd = commands.get(args.command)
@@ -2559,6 +2590,112 @@ def cmd_find(args):
 
     cm.close()
     return 0
+
+
+def cmd_export_excel(args):
+    """导出记忆为 Excel（v5.1.9 新增）"""
+    cm = _get_memory(args)
+
+    layer = MemoryLayer.from_string(args.layer) if args.layer else None
+
+    path = cm.export_excel(
+        output_path=args.output,
+        category=args.category,
+        layer=layer,
+        starred_only=getattr(args, 'starred', False),
+    )
+
+    size = path.stat().st_size
+    print(c(f"\n✅ Excel 导出成功", "green"))
+    print(f"   文件路径: {path}")
+    print(f"   文件大小: {format_size(size)}")
+    cm.close()
+    return 0
+
+
+def cmd_import_excel(args):
+    """从 Excel 导入记忆（v5.1.9 新增）"""
+    cm = _get_memory(args)
+    input_path = Path(args.input)
+
+    if not input_path.exists():
+        print(c(f"\n❌ 文件不存在: {input_path}", "red"))
+        return 1
+
+    layer = MemoryLayer.from_string(args.layer) if args.layer else None
+
+    stats = cm.import_excel(
+        input_path=str(input_path),
+        target_category=args.category,
+        target_layer=layer,
+    )
+
+    print(c(f"\n✅ Excel 导入完成", "green"))
+    print(f"   成功导入：{c(str(stats['imported']), 'green')} 条")
+    print(f"   跳过重复：{c(str(stats['skipped']), 'yellow')} 条")
+    print(f"   导入失败：{c(str(stats['failed']), 'red')} 条")
+    cm.close()
+    return 0
+
+
+def cmd_copy(args):
+    """复制记忆到新分类（v5.1.9 新增）"""
+    cm = _get_memory(args)
+
+    entry = cm.get(args.id)
+    if not entry:
+        print(c("❌ 记忆不存在", "red"))
+        return 1
+
+    print(c(f"\n将记忆复制到新分类 '{args.category}'", "yellow"))
+    print(f"   原记忆: [{entry.category}] {entry.preview[:60]}...")
+
+    success = cm.copy(
+        memory_id=args.id,
+        new_category=args.category,
+        actor=args.agent,
+        session_id=args.session,
+    )
+
+    if success:
+        print(c("\n✅ 复制成功", "green"))
+    else:
+        print(c("\n❌ 复制失败", "red"))
+
+    cm.close()
+    return 0 if success else 1
+
+
+def cmd_move(args):
+    """移动记忆到新分类（v5.1.9 新增）"""
+    cm = _get_memory(args)
+
+    entry = cm.get(args.id)
+    if not entry:
+        print(c("❌ 记忆不存在", "red"))
+        return 1
+
+    if entry.category == "trash":
+        print(c("❌ 无法移动回收站中的记忆，请先恢复", "red"))
+        return 1
+
+    print(c(f"\n将记忆从 '{entry.category}' 移动到 '{args.category}'", "yellow"))
+    print(f"   记忆: {entry.preview[:60]}...")
+
+    success = cm.move(
+        memory_id=args.id,
+        new_category=args.category,
+        actor=args.agent,
+        session_id=args.session,
+    )
+
+    if success:
+        print(c("\n✅ 移动成功", "green"))
+    else:
+        print(c("\n❌ 移动失败", "red"))
+
+    cm.close()
+    return 0 if success else 1
 
 
 if __name__ == "__main__":

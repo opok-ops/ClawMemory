@@ -25,11 +25,11 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.1.8"
+    __version__ = "5.1.9"
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.1.8"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.1.9"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -666,3 +666,47 @@ class MindForge:
 
         with open(path, "w", encoding="utf-8") as f:
             json.dump(config_data, f, ensure_ascii=False, indent=2)
+
+    def export_excel(self,
+                     output_path: str,
+                     category: Optional[str] = None,
+                     layer: Optional[MemoryLayer] = None,
+                     starred_only: bool = False):
+        """导出记忆为 Excel 格式（v5.1.9 新增）"""
+        return self._storage.export_as_excel(
+            output_path=output_path,
+            category=category,
+            layer=layer,
+            starred_only=starred_only,
+        )
+
+    def import_excel(self,
+                     input_path: str,
+                     target_category: Optional[str] = None,
+                     target_layer: Optional[MemoryLayer] = None) -> Dict[str, int]:
+        """从 Excel 文件导入记忆（v5.1.9 新增）"""
+        return self._storage.import_from_excel(
+            input_path=input_path,
+            target_category=target_category,
+            target_layer=target_layer,
+        )
+
+    def copy(self, memory_id: str, new_category: str,
+             actor: str = "", session_id: str = "") -> bool:
+        """复制记忆到新分类（v5.1.9 新增）"""
+        return self._storage.copy_memory(
+            entry_id=memory_id,
+            new_category=new_category,
+            actor=actor,
+            session_id=session_id,
+        )
+
+    def move(self, memory_id: str, new_category: str,
+             actor: str = "", session_id: str = "") -> bool:
+        """移动记忆到新分类（v5.1.9 新增）"""
+        return self._storage.move_memory(
+            entry_id=memory_id,
+            new_category=new_category,
+            actor=actor,
+            session_id=session_id,
+        )

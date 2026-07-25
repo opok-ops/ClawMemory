@@ -1700,3 +1700,314 @@ class StorageEngine:
             "duration_ms": round((_time.time() - start) * 1000, 2),
             "final_version": self._LATEST_DB_VERSION,
         }
+
+    def export_as_excel(self,
+                        output_path: str,
+                        category: Optional[str] = None,
+                        layer: Optional[MemoryLayer] = None,
+                        starred_only: bool = False) -> Path:
+        """导出记忆为 Excel 格式（v5.1.9 新增）
+
+        Args:
+            output_path: 输出文件路径
+            category: 限定分类
+            layer: 限定层级
+            starred_only: 仅导出收藏的记忆
+
+        Returns:
+            导出文件的 Path 对象
+        """
+        entries = self.list_memories(
+            category=category,
+            layer=layer,
+            starred=starred_only if starred_only else None,
+            limit=100000,
+        )
+
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "记忆数据"
+
+            header_fill = PatternFill(start_color="4A90D9", end_color="4A90D9", fill_type="solid")
+            header_font = Font(bold=True, color="FFFFFF")
+            center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            thin_border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+
+            headers = [
+                "ID", "内容", "分类", "标签", "隐私等级", "重要性",
+                "类型", "层级", "访问次数", "创建时间", "更新时间", "收藏"
+            ]
+            ws.append(headers)
+
+            for col_num, header in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col_num)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = center_align
+                cell.border = thin_border
+
+            def _fmt_time(ts: float) -> str:
+                return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+            for row_num, entry in enumerate(entries, 2):
+                ws.append([
+                    entry.id[:20],
+                    entry.content[:500],
+                    entry.category,
+                    ", ".join(entry.tags) if entry.tags else "",
+                    entry.privacy.value,
+                    entry.importance.value,
+                    entry.memory_type.value,
+                    entry.layer.value,
+                    entry.access_count,
+                    _fmt_time(entry.created_at),
+                    _fmt_time(entry.updated_at),
+                    "⭐" if entry.starred else "",
+                ])
+
+                for col_num in range(1, len(headers) + 1):
+                    cell = ws.cell(row=row_num, column=col_num)
+                    cell.border = thin_border
+                    cell.alignment = center_align
+
+            ws.column_dimensions['A'].width = 22
+            ws.column_dimensions['B'].width = 50
+            ws.column_dimensions['C'].width = 15
+            ws.column_dimensions['D'].width = 25
+            ws.column_dimensions['E'].width = 12
+            ws.column_dimensions['F'].width = 10
+            ws.column_dimensions['G'].width = 12
+            ws.column_dimensions['H'].width = 14
+            ws.column_dimensions['I'].width = 10
+            ws.column_dimensions['J'].width = 18
+            ws.column_dimensions['K'].width = 18
+            ws.column_dimensions['L'].width = 6
+
+            wb.save(str(out))
+        except ImportError:
+            import csv
+            with open(str(out).replace('.xlsx', '.csv'), 'w', encoding='utf-8-sig', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["ID", "内容", "分类", "标签", "隐私等级", "重要性", "类型", "层级", "访问次数", "创建时间", "更新时间", "收藏"])
+                for entry in entries:
+                    writer.writerow([
+                        entry.id,
+                        entry.content,
+                        entry.category,
+                        ", ".join(entry.tags) if entry.tags else "",
+                        entry.privacy.value,
+                        entry.importance.value,
+                        entry.memory_type.value,
+                        entry.layer.value,
+                        entry.access_count,
+                        entry.created_at,
+                        entry.updated_at,
+                        entry.starred,
+                    ])
+                out = Path(str(out).replace('.xlsx', '.csv'))
+
+        return out
+
+    def import_from_excel(self,
+                          input_path: str,
+                          target_category: Optional[str] = None,
+                          target_layer: Optional[MemoryLayer] = None) -> Dict[str, int]:
+        """从 Excel 文件导入记忆（v5.1.9 新增）
+
+        Args:
+            input_path: Excel 文件路径
+            target_category: 目标分类（覆盖文件中的分类）
+            target_layer: 目标记忆层级
+
+        Returns:
+            {imported, skipped, failed}
+        """
+        path = Path(input_path)
+        if not path.exists():
+            return {"imported": 0, "skipped": 0, "failed": 0}
+
+        entries = []
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(str(path))
+            ws = wb.active
+
+            headers = {}
+            for col_num, cell in enumerate(next(ws.iter_rows(values_only=True)), 1):
+                headers[str(cell).strip().lower()] = col_num
+
+            content_col = headers.get("内容", 2)
+            category_col = headers.get("分类", 3)
+            tags_col = headers.get("标签", 4)
+            privacy_col = headers.get("隐私等级", 5)
+            importance_col = headers.get("重要性", 6)
+            layer_col = headers.get("层级", 8)
+
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if row[content_col - 1] and str(row[content_col - 1]).strip():
+                    content = str(row[content_col - 1]).strip()
+                    category = target_category or (str(row[category_col - 1]).strip() if row[category_col - 1] else "general")
+                    tags_str = str(row[tags_col - 1]).strip() if row[tags_col - 1] else ""
+                    tags = [t.strip() for t in tags_str.split(',') if t.strip()] if tags_str else []
+                    privacy_str = str(row[privacy_col - 1]).strip() if row[privacy_col - 1] else "internal"
+                    importance_str = str(row[importance_col - 1]).strip() if row[importance_col - 1] else "medium"
+                    layer_str = str(row[layer_col - 1]).strip() if row[layer_col - 1] else "short_term"
+
+                    entries.append({
+                        "content": content,
+                        "category": category,
+                        "tags": tags,
+                        "privacy": privacy_str,
+                        "importance": importance_str,
+                        "layer": layer_str,
+                    })
+        except ImportError:
+            import csv
+            with open(str(path), 'r', encoding='utf-8-sig') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row.get("内容") and row["内容"].strip():
+                        content = row["内容"].strip()
+                        category = target_category or (row.get("分类", "").strip() or "general")
+                        tags_str = row.get("标签", "")
+                        tags = [t.strip() for t in tags_str.split(',') if t.strip()] if tags_str else []
+                        privacy_str = row.get("隐私等级", "internal").strip()
+                        importance_str = row.get("重要性", "medium").strip()
+                        layer_str = row.get("层级", "short_term").strip()
+
+                        entries.append({
+                            "content": content,
+                            "category": category,
+                            "tags": tags,
+                            "privacy": privacy_str,
+                            "importance": importance_str,
+                            "layer": layer_str,
+                        })
+
+        imported = 0
+        skipped = 0
+        failed = 0
+
+        for entry_data in entries:
+            try:
+                existing = None
+                rows = self._get_conn().execute(
+                    "SELECT id FROM memories WHERE content = ? AND category = ?",
+                    (entry_data["content"], entry_data["category"])
+                ).fetchall()
+                if rows:
+                    existing = rows[0][0]
+
+                if existing:
+                    skipped += 1
+                    continue
+
+                self.add_memory(
+                    content=entry_data["content"],
+                    category=entry_data["category"],
+                    tags=entry_data["tags"],
+                    privacy=PrivacyLevel.from_string(entry_data["privacy"]),
+                    importance=Importance.from_string(entry_data["importance"]),
+                    layer=target_layer or MemoryLayer.from_string(entry_data["layer"]),
+                )
+                imported += 1
+            except Exception:
+                failed += 1
+
+        return {"imported": imported, "skipped": skipped, "failed": failed}
+
+    def copy_memory(self,
+                    entry_id: str,
+                    new_category: str,
+                    actor: str = "",
+                    session_id: str = "") -> bool:
+        """复制记忆到新分类（v5.1.9 新增）
+
+        创建一条新的记忆条目，内容与原条目相同，但分类为新分类。
+
+        Args:
+            entry_id: 原记忆 ID
+            new_category: 新分类名
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            是否复制成功
+        """
+        conn = self._get_conn()
+        row = conn.execute("SELECT * FROM memories WHERE id = ?", (entry_id,)).fetchone()
+        if not row:
+            return False
+
+        original = self._row_to_entry(row)
+
+        new_entry = self.add_memory(
+            content=original.content,
+            category=new_category,
+            tags=original.tags,
+            privacy=original.privacy,
+            importance=original.importance,
+            memory_type=original.memory_type,
+            layer=original.layer,
+            source_session=original.source_session,
+            source_agent=original.source_agent,
+            starred=original.starred,
+            metadata={"_copied_from": original.id, **original.metadata},
+        )
+
+        self._add_audit(
+            "copy", entry_id, actor, session_id, original.privacy.value,
+            details={"message": f"复制到 {new_category}", "new_id": new_entry.id}
+        )
+        return True
+
+    def move_memory(self,
+                    entry_id: str,
+                    new_category: str,
+                    actor: str = "",
+                    session_id: str = "") -> bool:
+        """移动记忆到新分类（v5.1.9 新增）
+
+        修改记忆的分类为新分类，同时同步更新 FTS 索引。
+
+        Args:
+            entry_id: 记忆 ID
+            new_category: 新分类名
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            是否移动成功
+        """
+        conn = self._get_conn()
+        row = conn.execute("SELECT category FROM memories WHERE id = ?", (entry_id,)).fetchone()
+        if not row or row["category"] == "trash":
+            return False
+
+        old_category = row["category"]
+        now = time.time()
+
+        self.update_memory(
+            entry_id=entry_id,
+            category=new_category,
+            actor=actor,
+            session_id=session_id,
+        )
+
+        self._add_audit(
+            "move", entry_id, actor, session_id, "",
+            details={"message": f"从 {old_category} 移动到 {new_category}"}
+        )
+        return True
