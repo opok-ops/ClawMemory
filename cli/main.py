@@ -57,7 +57,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.2.0"
+    __version__ = "5.2.1"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -125,7 +125,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}MindForge v5.2.0 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}MindForge v5.2.1 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -135,7 +135,7 @@ def print_banner():
 def cmd_init(args):
     """初始化 MindForge"""
     print_banner()
-    print(c("MindForge v5.2.0 初始化向导", "bold"))
+    print(c("MindForge v5.2.1 初始化向导", "bold"))
     print("=" * 50)
 
     password = getpass.getpass("请设置加密密码（用于保护记忆）：")
@@ -1371,10 +1371,10 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="mindforge",
-        description="MindForge v5.2.0 - AI Agent 终身记忆系统",
+        description="MindForge v5.2.1 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", "-v", action="version", version="MindForge v5.2.0")
+    parser.add_argument("--version", "-v", action="version", version="MindForge v5.2.1")
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")
@@ -1705,6 +1705,176 @@ def main():
     p_db_clean_backups.add_argument("--keep", type=int, default=10, help="保留数量")
     p_db_clean_backups.add_argument("--force", action="store_true", help="跳过确认")
 
+    # ===== AI 短剧记忆模块（v5.2.1 新增）=====
+
+    p_drama_add = sub.add_parser("drama-add", help="添加短剧（v5.2.1 新增）")
+    p_drama_add.add_argument("title", help="短剧标题")
+    p_drama_add.add_argument("--genre", "-g", default="other",
+                             choices=["romance", "suspense", "comedy", "action", "horror", "scifi", "fantasy", "drama", "other"],
+                             help="短剧类型")
+    p_drama_add.add_argument("--episodes", "-e", type=int, default=0, help="总集数")
+    p_drama_add.add_argument("--status", "-s", default="planned",
+                             choices=["watching", "completed", "planned", "dropped"],
+                             help="观看状态")
+    p_drama_add.add_argument("--platform", default="", help="播放平台")
+    p_drama_add.add_argument("--rating", type=float, default=0.0, help="评分 (0-10)")
+    p_drama_add.add_argument("--description", "-d", default="", help="简介")
+    p_drama_add.add_argument("--tags", "-t", nargs="+", help="标签")
+    p_drama_add.add_argument("--cover", default="", help="封面 URL")
+
+    p_drama_list = sub.add_parser("drama-list", help="列出短剧（v5.2.1 新增）")
+    p_drama_list.add_argument("--genre", "-g", help="按类型筛选")
+    p_drama_list.add_argument("--status", "-s", help="按状态筛选")
+    p_drama_list.add_argument("--platform", help="按平台筛选")
+    p_drama_list.add_argument("--min-rating", type=float, default=0.0, help="最低评分")
+    p_drama_list.add_argument("--limit", type=int, default=50, help="数量限制")
+    p_drama_list.add_argument("--offset", type=int, default=0, help="偏移量")
+    p_drama_list.add_argument("--sort", default="updated_at",
+                              choices=["created_at", "updated_at", "rating", "last_watched_at", "title"],
+                              help="排序字段")
+    p_drama_list.add_argument("--order", default="desc", choices=["asc", "desc"], help="排序顺序")
+
+    p_drama_get = sub.add_parser("drama-get", help="获取短剧详情（v5.2.1 新增）")
+    p_drama_get.add_argument("id", help="短剧 ID")
+
+    p_drama_update = sub.add_parser("drama-update", help="更新短剧（v5.2.1 新增）")
+    p_drama_update.add_argument("id", help="短剧 ID")
+    p_drama_update.add_argument("--title", help="新标题")
+    p_drama_update.add_argument("--genre", "-g",
+                                choices=["romance", "suspense", "comedy", "action", "horror", "scifi", "fantasy", "drama", "other"],
+                                help="新类型")
+    p_drama_update.add_argument("--episodes", "-e", type=int, help="总集数")
+    p_drama_update.add_argument("--current", type=int, help="当前看到第几集")
+    p_drama_update.add_argument("--status", "-s",
+                                choices=["watching", "completed", "planned", "dropped"],
+                                help="观看状态")
+    p_drama_update.add_argument("--platform", help="播放平台")
+    p_drama_update.add_argument("--rating", type=float, help="评分")
+    p_drama_update.add_argument("--description", "-d", help="简介")
+    p_drama_update.add_argument("--tags", "-t", nargs="+", help="标签")
+    p_drama_update.add_argument("--cover", help="封面 URL")
+    p_drama_update.add_argument("--watched", action="store_true", help="标记为刚看过（更新观看时间）")
+
+    p_drama_delete = sub.add_parser("drama-delete", help="删除短剧（v5.2.1 新增）")
+    p_drama_delete.add_argument("id", help="短剧 ID")
+    p_drama_delete.add_argument("--force", action="store_true", help="确认删除")
+
+    p_drama_stats = sub.add_parser("drama-stats", help="短剧统计（v5.2.1 新增）")
+
+    # 台词相关
+    p_line_add = sub.add_parser("line-add", help="添加短剧台词（v5.2.1 新增）")
+    p_line_add.add_argument("drama_id", help="短剧 ID")
+    p_line_add.add_argument("line", help="台词内容")
+    p_line_add.add_argument("--character", "-c", default="", help="角色名")
+    p_line_add.add_argument("--char-id", default="", help="角色 ID")
+    p_line_add.add_argument("--scene-id", default="", help="场次 ID")
+    p_line_add.add_argument("--context", default="", help="上下文")
+    p_line_add.add_argument("--episode", "-e", type=int, default=0, help="集数")
+    p_line_add.add_argument("--timestamp", default="", help="时间戳")
+    p_line_add.add_argument("--classic", action="store_true", help="标记为经典台词")
+    p_line_add.add_argument("--tags", "-t", nargs="+", help="标签")
+
+    p_line_list = sub.add_parser("line-list", help="列出短剧台词（v5.2.1 新增）")
+    p_line_list.add_argument("--drama-id", help="短剧 ID")
+    p_line_list.add_argument("--scene-id", help="场次 ID")
+    p_line_list.add_argument("--char-id", help="角色 ID")
+    p_line_list.add_argument("--classic", action="store_true", default=None, help="仅经典台词")
+    p_line_list.add_argument("--episode", type=int, help="集数")
+    p_line_list.add_argument("--limit", type=int, default=100, help="数量限制")
+    p_line_list.add_argument("--offset", type=int, default=0, help="偏移量")
+
+    p_line_search = sub.add_parser("line-search", help="搜索台词（v5.2.1 新增）")
+    p_line_search.add_argument("query", help="搜索关键词")
+    p_line_search.add_argument("--drama-id", help="限定短剧 ID")
+    p_line_search.add_argument("--classic-only", action="store_true", help="仅搜索经典台词")
+    p_line_search.add_argument("--limit", type=int, default=20, help="数量限制")
+
+    p_line_classic = sub.add_parser("line-classic", help="经典台词（v5.2.1 新增）")
+    p_line_classic.add_argument("--drama-id", help="限定短剧 ID")
+    p_line_classic.add_argument("--limit", type=int, default=20, help="数量限制")
+
+    p_line_update = sub.add_parser("line-update", help="更新台词（v5.2.1 新增）")
+    p_line_update.add_argument("id", help="台词 ID")
+    p_line_update.add_argument("--line", help="新台词内容")
+    p_line_update.add_argument("--character", help="新角色名")
+    p_line_update.add_argument("--context", help="新上下文")
+    p_line_update.add_argument("--classic", action="store_true", default=None, help="标记为经典")
+    p_line_update.add_argument("--tags", "-t", nargs="+", help="新标签")
+
+    p_line_delete = sub.add_parser("line-delete", help="删除台词（v5.2.1 新增）")
+    p_line_delete.add_argument("id", help="台词 ID")
+    p_line_delete.add_argument("--force", action="store_true", help="确认删除")
+
+    # 角色相关
+    p_char_add = sub.add_parser("char-add", help="添加短剧角色（v5.2.1 新增）")
+    p_char_add.add_argument("drama_id", help="短剧 ID")
+    p_char_add.add_argument("name", help="角色名")
+    p_char_add.add_argument("--role", default="supporting",
+                            choices=["lead", "supporting", "guest", "villain", "mentor"],
+                            help="角色定位")
+    p_char_add.add_argument("--actor", default="", help="演员名")
+    p_char_add.add_argument("--description", "-d", default="", help="角色描述")
+    p_char_add.add_argument("--personality", "-p", default="", help="性格特点")
+    p_char_add.add_argument("--avatar", default="", help="头像 URL")
+    p_char_add.add_argument("--tags", "-t", nargs="+", help="标签")
+
+    p_char_list = sub.add_parser("char-list", help="列出短剧角色（v5.2.1 新增）")
+    p_char_list.add_argument("--drama-id", help="短剧 ID")
+    p_char_list.add_argument("--role", help="按角色定位筛选")
+    p_char_list.add_argument("--limit", type=int, default=100, help="数量限制")
+    p_char_list.add_argument("--offset", type=int, default=0, help="偏移量")
+
+    p_char_get = sub.add_parser("char-get", help="获取角色详情（v5.2.1 新增）")
+    p_char_get.add_argument("id", help="角色 ID")
+
+    p_char_update = sub.add_parser("char-update", help="更新角色（v5.2.1 新增）")
+    p_char_update.add_argument("id", help="角色 ID")
+    p_char_update.add_argument("--name", help="新角色名")
+    p_char_update.add_argument("--role",
+                               choices=["lead", "supporting", "guest", "villain", "mentor"],
+                               help="新角色定位")
+    p_char_update.add_argument("--actor", help="新演员名")
+    p_char_update.add_argument("--description", "-d", help="新描述")
+    p_char_update.add_argument("--personality", "-p", help="新性格")
+    p_char_update.add_argument("--avatar", help="新头像 URL")
+    p_char_update.add_argument("--tags", "-t", nargs="+", help="新标签")
+
+    p_char_delete = sub.add_parser("char-delete", help="删除角色（v5.2.1 新增）")
+    p_char_delete.add_argument("id", help="角色 ID")
+    p_char_delete.add_argument("--force", action="store_true", help="确认删除")
+
+    # 场次相关
+    p_scene_add = sub.add_parser("scene-add", help="添加短剧场次（v5.2.1 新增）")
+    p_scene_add.add_argument("drama_id", help="短剧 ID")
+    p_scene_add.add_argument("episode", type=int, help="集数")
+    p_scene_add.add_argument("scene_number", type=int, help="场次号")
+    p_scene_add.add_argument("title", help="场次标题")
+    p_scene_add.add_argument("--content", "-c", default="", help="场次内容")
+    p_scene_add.add_argument("--location", "-l", default="", help="地点")
+    p_scene_add.add_argument("--time", default="", help="时间（日/夜）")
+    p_scene_add.add_argument("--tags", "-t", nargs="+", help="标签")
+
+    p_scene_list = sub.add_parser("scene-list", help="列出短剧场次（v5.2.1 新增）")
+    p_scene_list.add_argument("--drama-id", help="短剧 ID")
+    p_scene_list.add_argument("--episode", type=int, help="按集数筛选")
+    p_scene_list.add_argument("--limit", type=int, default=100, help="数量限制")
+    p_scene_list.add_argument("--offset", type=int, default=0, help="偏移量")
+
+    p_scene_get = sub.add_parser("scene-get", help="获取场次详情（v5.2.1 新增）")
+    p_scene_get.add_argument("id", help="场次 ID")
+
+    p_scene_update = sub.add_parser("scene-update", help="更新场次（v5.2.1 新增）")
+    p_scene_update.add_argument("id", help="场次 ID")
+    p_scene_update.add_argument("--title", help="新标题")
+    p_scene_update.add_argument("--content", "-c", help="新内容")
+    p_scene_update.add_argument("--location", "-l", help="新地点")
+    p_scene_update.add_argument("--time", help="新时间")
+    p_scene_update.add_argument("--tags", "-t", nargs="+", help="新标签")
+
+    p_scene_delete = sub.add_parser("scene-delete", help="删除场次（v5.2.1 新增）")
+    p_scene_delete.add_argument("id", help="场次 ID")
+    p_scene_delete.add_argument("--force", action="store_true", help="确认删除")
+
     p_consolidate = sub.add_parser("consolidate", help="记忆巩固")
     p_consolidate.add_argument("--agent", default="cli", help="Agent ID")
     p_consolidate.add_argument("--session", default="cli", help="会话 ID")
@@ -1833,6 +2003,29 @@ def main():
         "db-backups": cmd_db_backups,
         "db-restore": cmd_db_restore,
         "db-clean-backups": cmd_db_clean_backups,
+        # AI 短剧记忆模块（v5.2.1 新增）
+        "drama-add": cmd_drama_add,
+        "drama-list": cmd_drama_list,
+        "drama-get": cmd_drama_get,
+        "drama-update": cmd_drama_update,
+        "drama-delete": cmd_drama_delete,
+        "drama-stats": cmd_drama_stats,
+        "line-add": cmd_line_add,
+        "line-list": cmd_line_list,
+        "line-search": cmd_line_search,
+        "line-classic": cmd_line_classic,
+        "line-update": cmd_line_update,
+        "line-delete": cmd_line_delete,
+        "char-add": cmd_char_add,
+        "char-list": cmd_char_list,
+        "char-get": cmd_char_get,
+        "char-update": cmd_char_update,
+        "char-delete": cmd_char_delete,
+        "scene-add": cmd_scene_add,
+        "scene-list": cmd_scene_list,
+        "scene-get": cmd_scene_get,
+        "scene-update": cmd_scene_update,
+        "scene-delete": cmd_scene_delete,
     }
 
     cmd = commands.get(args.command)
@@ -3011,6 +3204,566 @@ def cmd_db_clean_backups(args):
     print(c(f"\n✅ 已删除 {deleted} 个旧备份", "green"))
     cm.close()
     return 0
+
+
+# ===== AI 短剧记忆模块（v5.2.1 新增）=====
+
+def cmd_drama_add(args):
+    """添加短剧（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    drama = cm.add_drama(
+        title=args.title,
+        genre=args.genre,
+        total_episodes=args.episodes,
+        status=args.status,
+        platform=args.platform,
+        rating=args.rating,
+        description=args.description,
+        tags=args.tags,
+        cover_url=args.cover,
+    )
+    print(c(f"\n✅ 短剧已添加", "green"))
+    print(f"   ID: {drama.id}")
+    print(f"   标题: {drama.title}")
+    print(f"   类型: {drama.genre.value}")
+    print(f"   集数: {drama.total_episodes}")
+    print(f"   状态: {drama.status.value}")
+    cm.close()
+    return 0
+
+
+def cmd_drama_list(args):
+    """列出短剧（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    dramas = cm.list_dramas(
+        genre=args.genre,
+        status=args.status,
+        platform=args.platform,
+        min_rating=args.min_rating,
+        limit=args.limit,
+        offset=args.offset,
+        sort_by=args.sort,
+        sort_order=args.order,
+    )
+    print(f"\n找到 {c(str(len(dramas)), 'cyan')} 部短剧")
+    for i, d in enumerate(dramas, 1):
+        status_color = {
+            "watching": "green", "completed": "cyan",
+            "planned": "yellow", "dropped": "red"
+        }.get(d.status.value, "reset")
+        progress = f"{d.current_episode}/{d.total_episodes}" if d.total_episodes else f"{d.current_episode}/?"
+        star = "⭐" if d.rating >= 8 else ""
+        print(f"\n{i}. {star} {c(d.title, 'bold')} [{c(d.status.value, status_color)}]")
+        print(f"   类型: {d.genre.value} | 进度: {progress} | 评分: {d.rating}")
+        if d.platform:
+            print(f"   平台: {d.platform}")
+        if d.description:
+            print(f"   简介: {d.description[:80]}...")
+    cm.close()
+    return 0
+
+
+def cmd_drama_get(args):
+    """获取短剧详情（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    drama = cm.get_drama(args.id)
+    if not drama:
+        print(c("❌ 短剧不存在", "red"))
+        cm.close()
+        return 1
+
+    print(c(f"\n📺 短剧详情", "bold"))
+    print("=" * 50)
+    print(f"标题:   {drama.title}")
+    print(f"ID:     {drama.id}")
+    print(f"类型:   {drama.genre.value}")
+    print(f"状态:   {drama.status.value}")
+    print(f"集数:   {drama.current_episode}/{drama.total_episodes}")
+    print(f"评分:   {drama.rating}")
+    if drama.platform:
+        print(f"平台:   {drama.platform}")
+    if drama.tags:
+        print(f"标签:   {', '.join(drama.tags)}")
+    if drama.description:
+        print(f"简介:   {drama.description}")
+    if drama.last_watched_at:
+        from datetime import datetime
+        print(f"上次观看: {datetime.fromtimestamp(drama.last_watched_at).strftime('%Y-%m-%d %H:%M')}")
+
+    scenes = cm.list_scenes(drama_id=drama.id, limit=5)
+    if scenes:
+        print(f"\n场次:   共 {len(scenes)} 场（显示前5场）")
+        for s in scenes[:5]:
+            print(f"   EP{s.episode}-{s.scene_number}: {s.title}")
+
+    chars = cm.list_characters(drama_id=drama.id, limit=5)
+    if chars:
+        print(f"\n角色:   共 {len(chars)} 个（显示前5个）")
+        for ch in chars[:5]:
+            print(f"   {ch.name} ({ch.role})")
+
+    lines = cm.classic_lines(drama_id=drama.id, limit=3)
+    if lines:
+        print(f"\n经典台词:")
+        for l in lines[:3]:
+            char = l.character_name or "未知"
+            print(f'   "{l.line_text[:80]}" — {char}')
+
+    cm.close()
+    return 0
+
+
+def cmd_drama_update(args):
+    """更新短剧（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    success = cm.update_drama(
+        drama_id=args.id,
+        title=args.title,
+        genre=args.genre,
+        total_episodes=args.episodes,
+        current_episode=args.current,
+        status=args.status,
+        platform=args.platform,
+        rating=args.rating,
+        description=args.description,
+        tags=args.tags,
+        cover_url=args.cover,
+        mark_watched=args.watched,
+    )
+    if success:
+        print(c("\n✅ 短剧已更新", "green"))
+    else:
+        print(c("\n❌ 更新失败", "red"))
+    cm.close()
+    return 0 if success else 1
+
+
+def cmd_drama_delete(args):
+    """删除短剧（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    drama = cm.get_drama(args.id)
+    if not drama:
+        print(c("❌ 短剧不存在", "red"))
+        cm.close()
+        return 1
+
+    if not args.force:
+        print(c(f"\n⚠️  将删除短剧：{drama.title}", "yellow"))
+        print(c("   同时删除所有场次、角色、台词", "yellow"))
+        answer = input("\n确认删除？(y/N): ").strip().lower()
+        if answer not in ("y", "yes"):
+            print(c("已取消", "yellow"))
+            cm.close()
+            return 0
+
+    success = cm.delete_drama(args.id)
+    if success:
+        print(c("\n🗑️  短剧已删除", "green"))
+    else:
+        print(c("\n❌ 删除失败", "red"))
+    cm.close()
+    return 0 if success else 1
+
+
+def cmd_drama_stats(args):
+    """短剧统计（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    stats = cm.drama_stats()
+    print(c(f"\n📊 短剧统计", "bold"))
+    print("=" * 40)
+    print(f"短剧总数:   {stats['total']}")
+    print(f"在看:       {stats['watching']}")
+    print(f"已看完:     {stats['completed']}")
+    print(f"台词总数:   {stats['total_lines']}")
+    print(f"经典台词:   {stats['classic_lines']}")
+    if stats['by_genre']:
+        print(f"\n按类型:")
+        for genre, cnt in stats['by_genre'].items():
+            print(f"  {genre}: {cnt}")
+    if stats['by_status']:
+        print(f"\n按状态:")
+        for status, cnt in stats['by_status'].items():
+            print(f"  {status}: {cnt}")
+    cm.close()
+    return 0
+
+
+def cmd_line_add(args):
+    """添加短剧台词（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    line = cm.add_line(
+        drama_id=args.drama_id,
+        line_text=args.line,
+        scene_id=args.scene_id,
+        character_id=args.char_id,
+        character_name=args.character,
+        context=args.context,
+        episode=args.episode,
+        timestamp=args.timestamp,
+        is_classic=args.classic,
+        tags=args.tags,
+    )
+    print(c(f"\n✅ 台词已添加", "green"))
+    print(f"   ID: {line.id}")
+    char = line.character_name or "未知"
+    print(f'   "{line.line_text}" — {char}')
+    if line.is_classic:
+        print(f"   ⭐ 经典台词")
+    cm.close()
+    return 0
+
+
+def cmd_line_list(args):
+    """列出短剧台词（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    lines = cm.list_lines(
+        drama_id=args.drama_id,
+        scene_id=args.scene_id,
+        character_id=args.char_id,
+        is_classic=args.classic,
+        episode=args.episode,
+        limit=args.limit,
+        offset=args.offset,
+    )
+    label = "经典台词" if args.classic else "台词"
+    print(f"\n找到 {c(str(len(lines)), 'cyan')} 条{label}")
+    for i, l in enumerate(lines, 1):
+        char = l.character_name or "未知"
+        classic = "⭐" if l.is_classic else "  "
+        ep = f"EP{l.episode}" if l.episode else ""
+        print(f"\n{i}. {classic} {ep} {char}:")
+        print(f'   "{l.line_text}"')
+        if l.context:
+            print(f"   背景: {l.context[:60]}")
+    cm.close()
+    return 0
+
+
+def cmd_line_search(args):
+    """搜索台词（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    lines = cm.search_lines(
+        query=args.query,
+        drama_id=args.drama_id,
+        is_classic_only=args.classic_only,
+        limit=args.limit,
+    )
+    print(f"\n找到 {c(str(len(lines)), 'cyan')} 条匹配台词")
+    for i, l in enumerate(lines, 1):
+        char = l.character_name or "未知"
+        classic = "⭐" if l.is_classic else "  "
+        highlighted = cm.highlight(l.line_text, args.query)
+        print(f"\n{i}. {classic} {char}:")
+        print(f'   "{highlighted}"')
+    cm.close()
+    return 0
+
+
+def cmd_line_classic(args):
+    """经典台词（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    lines = cm.classic_lines(
+        drama_id=args.drama_id,
+        limit=args.limit,
+    )
+    print(c(f"\n⭐ 经典台词（共 {len(lines)} 条）", "yellow"))
+    for i, l in enumerate(lines, 1):
+        char = l.character_name or "未知"
+        print(f'\n{i}. "{l.line_text}"')
+        print(f"   —— {char}")
+    cm.close()
+    return 0
+
+
+def cmd_line_update(args):
+    """更新台词（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    success = cm.update_line(
+        line_id=args.id,
+        line_text=args.line,
+        character_name=args.character,
+        context=args.context,
+        is_classic=args.classic,
+        tags=args.tags,
+    )
+    if success:
+        print(c("\n✅ 台词已更新", "green"))
+    else:
+        print(c("\n❌ 更新失败", "red"))
+    cm.close()
+    return 0 if success else 1
+
+
+def cmd_line_delete(args):
+    """删除台词（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    line = cm.get_line(args.id)
+    if not line:
+        print(c("❌ 台词不存在", "red"))
+        cm.close()
+        return 1
+
+    if not args.force:
+        print(c(f'\n⚠️  将删除台词："{line.line_text[:50]}..."', "yellow"))
+        answer = input("\n确认删除？(y/N): ").strip().lower()
+        if answer not in ("y", "yes"):
+            print(c("已取消", "yellow"))
+            cm.close()
+            return 0
+
+    success = cm.delete_line(args.id)
+    if success:
+        print(c("\n🗑️  台词已删除", "green"))
+    else:
+        print(c("\n❌ 删除失败", "red"))
+    cm.close()
+    return 0 if success else 1
+
+
+def cmd_char_add(args):
+    """添加短剧角色（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    char = cm.add_character(
+        drama_id=args.drama_id,
+        name=args.name,
+        role=args.role,
+        actor=args.actor,
+        description=args.description,
+        personality=args.personality,
+        avatar_url=args.avatar,
+        tags=args.tags,
+    )
+    print(c(f"\n✅ 角色已添加", "green"))
+    print(f"   ID: {char.id}")
+    print(f"   姓名: {char.name}")
+    print(f"   定位: {char.role}")
+    if char.actor:
+        print(f"   演员: {char.actor}")
+    cm.close()
+    return 0
+
+
+def cmd_char_list(args):
+    """列出短剧角色（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    chars = cm.list_characters(
+        drama_id=args.drama_id,
+        role=args.role,
+        limit=args.limit,
+        offset=args.offset,
+    )
+    print(f"\n找到 {c(str(len(chars)), 'cyan')} 个角色")
+    for i, ch in enumerate(chars, 1):
+        role_color = {"lead": "yellow", "supporting": "cyan", "villain": "red"}.get(ch.role, "reset")
+        actor = f" ({ch.actor})" if ch.actor else ""
+        print(f"\n{i}. {ch.name} [{c(ch.role, role_color)}]{actor}")
+        if ch.personality:
+            print(f"   性格: {ch.personality[:60]}")
+        if ch.description:
+            print(f"   描述: {ch.description[:60]}")
+    cm.close()
+    return 0
+
+
+def cmd_char_get(args):
+    """获取角色详情（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    char = cm.get_character(args.id)
+    if not char:
+        print(c("❌ 角色不存在", "red"))
+        cm.close()
+        return 1
+
+    print(c(f"\n👤 角色详情", "bold"))
+    print("=" * 40)
+    print(f"姓名:   {char.name}")
+    print(f"ID:     {char.id}")
+    print(f"定位:   {char.role}")
+    if char.actor:
+        print(f"演员:   {char.actor}")
+    if char.personality:
+        print(f"性格:   {char.personality}")
+    if char.description:
+        print(f"描述:   {char.description}")
+    if char.tags:
+        print(f"标签:   {', '.join(char.tags)}")
+
+    lines = cm.list_lines(character_id=char.id, limit=5)
+    if lines:
+        print(f"\n代表台词（最近5条）:")
+        for l in lines[:5]:
+            print(f'   "{l.line_text[:60]}"')
+
+    cm.close()
+    return 0
+
+
+def cmd_char_update(args):
+    """更新角色（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    success = cm.update_character(
+        char_id=args.id,
+        name=args.name,
+        role=args.role,
+        actor=args.actor,
+        description=args.description,
+        personality=args.personality,
+        avatar_url=args.avatar,
+        tags=args.tags,
+    )
+    if success:
+        print(c("\n✅ 角色已更新", "green"))
+    else:
+        print(c("\n❌ 更新失败", "red"))
+    cm.close()
+    return 0 if success else 1
+
+
+def cmd_char_delete(args):
+    """删除角色（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    char = cm.get_character(args.id)
+    if not char:
+        print(c("❌ 角色不存在", "red"))
+        cm.close()
+        return 1
+
+    if not args.force:
+        print(c(f"\n⚠️  将删除角色：{char.name}", "yellow"))
+        answer = input("\n确认删除？(y/N): ").strip().lower()
+        if answer not in ("y", "yes"):
+            print(c("已取消", "yellow"))
+            cm.close()
+            return 0
+
+    success = cm.delete_character(args.id)
+    if success:
+        print(c("\n🗑️  角色已删除", "green"))
+    else:
+        print(c("\n❌ 删除失败", "red"))
+    cm.close()
+    return 0 if success else 1
+
+
+def cmd_scene_add(args):
+    """添加短剧场次（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    scene = cm.add_scene(
+        drama_id=args.drama_id,
+        episode=args.episode,
+        scene_number=args.scene_number,
+        title=args.title,
+        content=args.content,
+        location=args.location,
+        time_of_day=args.time,
+        tags=args.tags,
+    )
+    print(c(f"\n✅ 场次已添加", "green"))
+    print(f"   ID: {scene.id}")
+    print(f"   EP{scene.episode} - 场{scene.scene_number}: {scene.title}")
+    if scene.location:
+        print(f"   地点: {scene.location}")
+    cm.close()
+    return 0
+
+
+def cmd_scene_list(args):
+    """列出短剧场次（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    scenes = cm.list_scenes(
+        drama_id=args.drama_id,
+        episode=args.episode,
+        limit=args.limit,
+        offset=args.offset,
+    )
+    print(f"\n找到 {c(str(len(scenes)), 'cyan')} 个场次")
+    for i, s in enumerate(scenes, 1):
+        location = f"[{s.location}]" if s.location else ""
+        time_str = f" ({s.time_of_day})" if s.time_of_day else ""
+        print(f"\n{i}. EP{s.episode}-{s.scene_number}: {s.title} {location}{time_str}")
+        if s.content:
+            print(f"   {s.content[:80]}...")
+    cm.close()
+    return 0
+
+
+def cmd_scene_get(args):
+    """获取场次详情（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    scene = cm.get_scene(args.id)
+    if not scene:
+        print(c("❌ 场次不存在", "red"))
+        cm.close()
+        return 1
+
+    print(c(f"\n🎬 场次详情", "bold"))
+    print("=" * 40)
+    print(f"标题:   EP{scene.episode} - 场{scene.scene_number}: {scene.title}")
+    print(f"ID:     {scene.id}")
+    if scene.location:
+        print(f"地点:   {scene.location}")
+    if scene.time_of_day:
+        print(f"时间:   {scene.time_of_day}")
+    if scene.tags:
+        print(f"标签:   {', '.join(scene.tags)}")
+    if scene.content:
+        print(f"\n内容:\n{scene.content}")
+
+    lines = cm.list_lines(scene_id=scene.id, limit=10)
+    if lines:
+        print(f"\n本场台词（{len(lines)} 条）:")
+        for l in lines:
+            char = l.character_name or "未知"
+            print(f'   {char}: "{l.line_text[:60]}"')
+
+    cm.close()
+    return 0
+
+
+def cmd_scene_update(args):
+    """更新场次（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    success = cm.update_scene(
+        scene_id=args.id,
+        title=args.title,
+        content=args.content,
+        location=args.location,
+        time_of_day=args.time,
+        tags=args.tags,
+    )
+    if success:
+        print(c("\n✅ 场次已更新", "green"))
+    else:
+        print(c("\n❌ 更新失败", "red"))
+    cm.close()
+    return 0 if success else 1
+
+
+def cmd_scene_delete(args):
+    """删除场次（v5.2.1 新增）"""
+    cm = _get_memory(args)
+    scene = cm.get_scene(args.id)
+    if not scene:
+        print(c("❌ 场次不存在", "red"))
+        cm.close()
+        return 1
+
+    if not args.force:
+        print(c(f"\n⚠️  将删除场次：{scene.title}", "yellow"))
+        print(c("   同时删除本场所有台词", "yellow"))
+        answer = input("\n确认删除？(y/N): ").strip().lower()
+        if answer not in ("y", "yes"):
+            print(c("已取消", "yellow"))
+            cm.close()
+            return 0
+
+    success = cm.delete_scene(args.id)
+    if success:
+        print(c("\n🗑️  场次已删除", "green"))
+    else:
+        print(c("\n❌ 删除失败", "red"))
+    cm.close()
+    return 0 if success else 1
 
 
 if __name__ == "__main__":

@@ -15,6 +15,12 @@ from .types import (
     MemoryType,
     MemoryLayer,
     MemoryConfig,
+    DramaGenre,
+    DramaStatus,
+    DramaSeries,
+    DramaScene,
+    DramaCharacter,
+    DramaLine,
 )
 from .storage import StorageEngine, MemoryEntry
 from .encryption import EncryptionEngine, init_engine as _init_engine
@@ -782,3 +788,319 @@ class MindForge:
                            keep_count: int = 10) -> int:
         """删除旧备份，保留最新的 N 个（v5.2.0 新增）"""
         return self._storage.delete_old_backups(backup_dir, keep_count)
+
+    # ===== AI 短剧记忆模块（v5.2.1 新增）=====
+
+    # --- 短剧系列 ---
+
+    def add_drama(self,
+                  title: str,
+                  genre: str = "other",
+                  total_episodes: int = 0,
+                  status: str = "planned",
+                  platform: str = "",
+                  rating: float = 0.0,
+                  description: str = "",
+                  tags: Optional[List[str]] = None,
+                  cover_url: str = "",
+                  metadata: Optional[Dict[str, Any]] = None):
+        """添加短剧（v5.2.1 新增）"""
+        return self._storage.add_drama(
+            title=title,
+            genre=DramaGenre.from_string(genre),
+            total_episodes=total_episodes,
+            status=DramaStatus.from_string(status),
+            platform=platform,
+            rating=rating,
+            description=description,
+            tags=tags,
+            cover_url=cover_url,
+            metadata=metadata,
+        )
+
+    def get_drama(self, drama_id: str):
+        """获取短剧详情（v5.2.1 新增）"""
+        return self._storage.get_drama(drama_id)
+
+    def list_dramas(self,
+                    genre: Optional[str] = None,
+                    status: Optional[str] = None,
+                    platform: Optional[str] = None,
+                    min_rating: float = 0.0,
+                    limit: int = 50,
+                    offset: int = 0,
+                    sort_by: str = "updated_at",
+                    sort_order: str = "desc"):
+        """列出短剧（v5.2.1 新增）"""
+        return self._storage.list_dramas(
+            genre=DramaGenre.from_string(genre) if genre else None,
+            status=DramaStatus.from_string(status) if status else None,
+            platform=platform,
+            min_rating=min_rating,
+            limit=limit,
+            offset=offset,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+
+    def update_drama(self,
+                     drama_id: str,
+                     title: Optional[str] = None,
+                     genre: Optional[str] = None,
+                     total_episodes: Optional[int] = None,
+                     current_episode: Optional[int] = None,
+                     status: Optional[str] = None,
+                     platform: Optional[str] = None,
+                     rating: Optional[float] = None,
+                     description: Optional[str] = None,
+                     tags: Optional[List[str]] = None,
+                     cover_url: Optional[str] = None,
+                     metadata: Optional[Dict[str, Any]] = None,
+                     mark_watched: bool = False) -> bool:
+        """更新短剧信息（v5.2.1 新增）"""
+        return self._storage.update_drama(
+            drama_id=drama_id,
+            title=title,
+            genre=DramaGenre.from_string(genre) if genre else None,
+            total_episodes=total_episodes,
+            current_episode=current_episode,
+            status=DramaStatus.from_string(status) if status else None,
+            platform=platform,
+            rating=rating,
+            description=description,
+            tags=tags,
+            cover_url=cover_url,
+            metadata=metadata,
+            mark_watched=mark_watched,
+        )
+
+    def delete_drama(self, drama_id: str) -> bool:
+        """删除短剧（v5.2.1 新增）"""
+        return self._storage.delete_drama(drama_id)
+
+    def drama_stats(self) -> Dict[str, Any]:
+        """短剧统计（v5.2.1 新增）"""
+        return self._storage.drama_stats()
+
+    # --- 短剧场次 ---
+
+    def add_scene(self,
+                  drama_id: str,
+                  episode: int,
+                  scene_number: int,
+                  title: str,
+                  content: str = "",
+                  location: str = "",
+                  time_of_day: str = "",
+                  tags: Optional[List[str]] = None,
+                  metadata: Optional[Dict[str, Any]] = None):
+        """添加短剧场次（v5.2.1 新增）"""
+        return self._storage.add_scene(
+            drama_id=drama_id,
+            episode=episode,
+            scene_number=scene_number,
+            title=title,
+            content=content,
+            location=location,
+            time_of_day=time_of_day,
+            tags=tags,
+            metadata=metadata,
+        )
+
+    def get_scene(self, scene_id: str):
+        """获取场次详情（v5.2.1 新增）"""
+        return self._storage.get_scene(scene_id)
+
+    def list_scenes(self,
+                    drama_id: Optional[str] = None,
+                    episode: Optional[int] = None,
+                    limit: int = 100,
+                    offset: int = 0):
+        """列出短剧场次（v5.2.1 新增）"""
+        return self._storage.list_scenes(
+            drama_id=drama_id,
+            episode=episode,
+            limit=limit,
+            offset=offset,
+        )
+
+    def update_scene(self,
+                     scene_id: str,
+                     title: Optional[str] = None,
+                     content: Optional[str] = None,
+                     location: Optional[str] = None,
+                     time_of_day: Optional[str] = None,
+                     tags: Optional[List[str]] = None,
+                     metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """更新场次（v5.2.1 新增）"""
+        return self._storage.update_scene(
+            scene_id=scene_id,
+            title=title,
+            content=content,
+            location=location,
+            time_of_day=time_of_day,
+            tags=tags,
+            metadata=metadata,
+        )
+
+    def delete_scene(self, scene_id: str) -> bool:
+        """删除场次（v5.2.1 新增）"""
+        return self._storage.delete_scene(scene_id)
+
+    # --- 短剧角色 ---
+
+    def add_character(self,
+                      drama_id: str,
+                      name: str,
+                      role: str = "supporting",
+                      actor: str = "",
+                      description: str = "",
+                      personality: str = "",
+                      avatar_url: str = "",
+                      tags: Optional[List[str]] = None,
+                      metadata: Optional[Dict[str, Any]] = None):
+        """添加短剧角色（v5.2.1 新增）"""
+        return self._storage.add_character(
+            drama_id=drama_id,
+            name=name,
+            role=role,
+            actor=actor,
+            description=description,
+            personality=personality,
+            avatar_url=avatar_url,
+            tags=tags,
+            metadata=metadata,
+        )
+
+    def get_character(self, char_id: str):
+        """获取角色详情（v5.2.1 新增）"""
+        return self._storage.get_character(char_id)
+
+    def list_characters(self,
+                        drama_id: Optional[str] = None,
+                        role: Optional[str] = None,
+                        limit: int = 100,
+                        offset: int = 0):
+        """列出短剧角色（v5.2.1 新增）"""
+        return self._storage.list_characters(
+            drama_id=drama_id,
+            role=role,
+            limit=limit,
+            offset=offset,
+        )
+
+    def update_character(self,
+                         char_id: str,
+                         name: Optional[str] = None,
+                         role: Optional[str] = None,
+                         actor: Optional[str] = None,
+                         description: Optional[str] = None,
+                         personality: Optional[str] = None,
+                         avatar_url: Optional[str] = None,
+                         tags: Optional[List[str]] = None,
+                         metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """更新角色信息（v5.2.1 新增）"""
+        return self._storage.update_character(
+            char_id=char_id,
+            name=name,
+            role=role,
+            actor=actor,
+            description=description,
+            personality=personality,
+            avatar_url=avatar_url,
+            tags=tags,
+            metadata=metadata,
+        )
+
+    def delete_character(self, char_id: str) -> bool:
+        """删除角色（v5.2.1 新增）"""
+        return self._storage.delete_character(char_id)
+
+    # --- 短剧台词 ---
+
+    def add_line(self,
+                 drama_id: str,
+                 line_text: str,
+                 scene_id: str = "",
+                 character_id: str = "",
+                 character_name: str = "",
+                 context: str = "",
+                 episode: int = 0,
+                 timestamp: str = "",
+                 is_classic: bool = False,
+                 tags: Optional[List[str]] = None,
+                 metadata: Optional[Dict[str, Any]] = None):
+        """添加短剧台词（v5.2.1 新增）"""
+        return self._storage.add_line(
+            drama_id=drama_id,
+            line_text=line_text,
+            scene_id=scene_id,
+            character_id=character_id,
+            character_name=character_name,
+            context=context,
+            episode=episode,
+            timestamp=timestamp,
+            is_classic=is_classic,
+            tags=tags,
+            metadata=metadata,
+        )
+
+    def get_line(self, line_id: str):
+        """获取台词详情（v5.2.1 新增）"""
+        return self._storage.get_line(line_id)
+
+    def list_lines(self,
+                   drama_id: Optional[str] = None,
+                   scene_id: Optional[str] = None,
+                   character_id: Optional[str] = None,
+                   is_classic: Optional[bool] = None,
+                   episode: Optional[int] = None,
+                   limit: int = 100,
+                   offset: int = 0):
+        """列出台词（v5.2.1 新增）"""
+        return self._storage.list_lines(
+            drama_id=drama_id,
+            scene_id=scene_id,
+            character_id=character_id,
+            is_classic=is_classic,
+            episode=episode,
+            limit=limit,
+            offset=offset,
+        )
+
+    def update_line(self,
+                    line_id: str,
+                    line_text: Optional[str] = None,
+                    character_name: Optional[str] = None,
+                    context: Optional[str] = None,
+                    is_classic: Optional[bool] = None,
+                    tags: Optional[List[str]] = None,
+                    metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """更新台词（v5.2.1 新增）"""
+        return self._storage.update_line(
+            line_id=line_id,
+            line_text=line_text,
+            character_name=character_name,
+            context=context,
+            is_classic=is_classic,
+            tags=tags,
+            metadata=metadata,
+        )
+
+    def delete_line(self, line_id: str) -> bool:
+        """删除台词（v5.2.1 新增）"""
+        return self._storage.delete_line(line_id)
+
+    def search_lines(self,
+                     query: str,
+                     drama_id: Optional[str] = None,
+                     is_classic_only: bool = False,
+                     limit: int = 20):
+        """搜索台词（v5.2.1 新增）"""
+        return self._storage.search_lines(query, drama_id, is_classic_only, limit)
+
+    def classic_lines(self,
+                      drama_id: Optional[str] = None,
+                      limit: int = 20):
+        """获取经典台词（v5.2.1 新增）"""
+        return self._storage.classic_lines(drama_id, limit)

@@ -12,7 +12,11 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timezone
 
-from .types import PrivacyLevel, Importance, MemoryType, MemoryLayer
+from .types import (
+    PrivacyLevel, Importance, MemoryType, MemoryLayer,
+    DramaGenre, DramaStatus, DramaSeries, DramaScene,
+    DramaCharacter, DramaLine,
+)
 from .encryption import EncryptionEngine, EncryptedBlob
 
 
@@ -186,6 +190,80 @@ class StorageEngine:
             CREATE INDEX IF NOT EXISTS idx_kg_entity ON knowledge_graph(entity);
             CREATE INDEX IF NOT EXISTS idx_relation_from ON graph_relations(from_entity);
             CREATE INDEX IF NOT EXISTS idx_relation_to ON graph_relations(to_entity);
+
+            -- AI 短剧记忆模块（v5.2.1 新增）
+            CREATE TABLE IF NOT EXISTS drama_series (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                genre TEXT DEFAULT 'other',
+                total_episodes INTEGER DEFAULT 0,
+                current_episode INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'planned',
+                platform TEXT DEFAULT '',
+                rating REAL DEFAULT 0.0,
+                description TEXT DEFAULT '',
+                tags TEXT DEFAULT '[]',
+                cover_url TEXT DEFAULT '',
+                metadata TEXT DEFAULT '{}',
+                created_at REAL,
+                updated_at REAL,
+                last_watched_at REAL DEFAULT 0.0
+            );
+            CREATE INDEX IF NOT EXISTS idx_drama_genre ON drama_series(genre);
+            CREATE INDEX IF NOT EXISTS idx_drama_status ON drama_series(status);
+            CREATE INDEX IF NOT EXISTS idx_drama_rating ON drama_series(rating);
+
+            CREATE TABLE IF NOT EXISTS drama_scenes (
+                id TEXT PRIMARY KEY,
+                drama_id TEXT NOT NULL,
+                episode INTEGER DEFAULT 0,
+                scene_number INTEGER DEFAULT 0,
+                title TEXT DEFAULT '',
+                content TEXT DEFAULT '',
+                location TEXT DEFAULT '',
+                time_of_day TEXT DEFAULT '',
+                tags TEXT DEFAULT '[]',
+                metadata TEXT DEFAULT '{}',
+                created_at REAL
+            );
+            CREATE INDEX IF NOT EXISTS idx_scene_drama ON drama_scenes(drama_id);
+            CREATE INDEX IF NOT EXISTS idx_scene_episode ON drama_scenes(episode);
+
+            CREATE TABLE IF NOT EXISTS drama_characters (
+                id TEXT PRIMARY KEY,
+                drama_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                role TEXT DEFAULT 'supporting',
+                actor TEXT DEFAULT '',
+                description TEXT DEFAULT '',
+                personality TEXT DEFAULT '',
+                avatar_url TEXT DEFAULT '',
+                tags TEXT DEFAULT '[]',
+                metadata TEXT DEFAULT '{}',
+                created_at REAL
+            );
+            CREATE INDEX IF NOT EXISTS idx_char_drama ON drama_characters(drama_id);
+            CREATE INDEX IF NOT EXISTS idx_char_name ON drama_characters(name);
+
+            CREATE TABLE IF NOT EXISTS drama_lines (
+                id TEXT PRIMARY KEY,
+                drama_id TEXT NOT NULL,
+                scene_id TEXT DEFAULT '',
+                character_id TEXT DEFAULT '',
+                character_name TEXT DEFAULT '',
+                line_text TEXT NOT NULL,
+                context TEXT DEFAULT '',
+                episode INTEGER DEFAULT 0,
+                timestamp TEXT DEFAULT '',
+                is_classic INTEGER DEFAULT 0,
+                memory_id TEXT DEFAULT '',
+                tags TEXT DEFAULT '[]',
+                metadata TEXT DEFAULT '{}',
+                created_at REAL
+            );
+            CREATE INDEX IF NOT EXISTS idx_line_drama ON drama_lines(drama_id);
+            CREATE INDEX IF NOT EXISTS idx_line_character ON drama_lines(character_id);
+            CREATE INDEX IF NOT EXISTS idx_line_classic ON drama_lines(is_classic);
         """)
         conn.commit()
 
@@ -2426,3 +2504,818 @@ class StorageEngine:
             except Exception:
                 pass
         return deleted
+
+    # ===== AI 短剧记忆模块（v5.2.1 新增）=====
+
+    # --- 安全验证辅助方法（v5.2.1 新增）---
+
+    @staticmethod
+    def _validate_str(value: str, name: str, max_len: int = 1000) -> str:
+        """字符串输入验证（v5.2.1 新增）"""
+        if value is None:
+            return ""
+        value = str(value)
+        if len(value) > max_len:
+            value = value[:max_len]
+        return value
+
+    @staticmethod
+    def _validate_int(value: int, name: str, min_val: int = 0, max_val: int = 100000) -> int:
+        """整数输入验证（v5.2.1 新增）"""
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return min_val
+        if value < min_val:
+            return min_val
+        if value > max_val:
+            return max_val
+        return value
+
+    @staticmethod
+    def _validate_float(value: float, name: str, min_val: float = 0.0, max_val: float = 100.0) -> float:
+        """浮点数输入验证（v5.2.1 新增）"""
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return min_val
+        if value < min_val:
+            return min_val
+        if value > max_val:
+            return max_val
+        return value
+
+    # --- 短剧系列 ---
+
+    def add_drama(self,
+                  title: str,
+                  genre: DramaGenre = DramaGenre.OTHER,
+                  total_episodes: int = 0,
+                  status: DramaStatus = DramaStatus.PLANNED,
+                  platform: str = "",
+                  rating: float = 0.0,
+                  description: str = "",
+                  tags: Optional[List[str]] = None,
+                  cover_url: str = "",
+                  metadata: Optional[Dict[str, Any]] = None) -> DramaSeries:
+        """添加短剧（v5.2.1 新增）"""
+        now = time.time()
+        drama_id = str(uuid.uuid4())
+
+        title = self._validate_str(title, "title", max_len=200)
+        platform = self._validate_str(platform, "platform", max_len=100)
+        rating = self._validate_float(rating, "rating", min_val=0.0, max_val=10.0)
+        description = self._validate_str(description, "description", max_len=5000)
+        cover_url = self._validate_str(cover_url, "cover_url", max_len=500)
+        total_episodes = self._validate_int(total_episodes, "total_episodes", min_val=0, max_val=10000)
+
+        if not isinstance(genre, DramaGenre):
+            genre = DramaGenre.OTHER
+        if not isinstance(status, DramaStatus):
+            status = DramaStatus.PLANNED
+
+        drama = DramaSeries(
+            id=drama_id,
+            title=title,
+            genre=genre,
+            total_episodes=total_episodes,
+            current_episode=0,
+            status=status,
+            platform=platform,
+            rating=rating,
+            description=description,
+            tags=tags or [],
+            cover_url=cover_url,
+            metadata=metadata or {},
+            created_at=now,
+            updated_at=now,
+            last_watched_at=0.0,
+        )
+
+        conn = self._get_conn()
+        conn.execute("""
+            INSERT INTO drama_series (
+                id, title, genre, total_episodes, current_episode,
+                status, platform, rating, description, tags,
+                cover_url, metadata, created_at, updated_at, last_watched_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            drama.id, drama.title, drama.genre.value,
+            drama.total_episodes, drama.current_episode,
+            drama.status.value, drama.platform, drama.rating,
+            drama.description, json.dumps(drama.tags, ensure_ascii=False),
+            drama.cover_url, json.dumps(drama.metadata, ensure_ascii=False),
+            drama.created_at, drama.updated_at, drama.last_watched_at,
+        ))
+        conn.commit()
+        return drama
+
+    def get_drama(self, drama_id: str) -> Optional[DramaSeries]:
+        """获取短剧详情（v5.2.1 新增）"""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM drama_series WHERE id = ?",
+            (drama_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_drama(row)
+
+    def list_dramas(self,
+                    genre: Optional[DramaGenre] = None,
+                    status: Optional[DramaStatus] = None,
+                    platform: Optional[str] = None,
+                    min_rating: float = 0.0,
+                    limit: int = 50,
+                    offset: int = 0,
+                    sort_by: str = "updated_at",
+                    sort_order: str = "desc") -> List[DramaSeries]:
+        """列出短剧（v5.2.1 新增）"""
+        conn = self._get_conn()
+        query = "SELECT * FROM drama_series WHERE 1=1"
+        params = []
+
+        if genre:
+            query += " AND genre = ?"
+            params.append(genre.value)
+        if status:
+            query += " AND status = ?"
+            params.append(status.value)
+        if platform:
+            query += " AND platform = ?"
+            params.append(platform)
+        if min_rating > 0:
+            query += " AND rating >= ?"
+            params.append(min_rating)
+
+        valid_sorts = ["created_at", "updated_at", "rating", "last_watched_at", "title"]
+        if sort_by not in valid_sorts:
+            sort_by = "updated_at"
+        sort_order = "DESC" if sort_order.lower() == "desc" else "ASC"
+
+        query += f" ORDER BY {sort_by} {sort_order} LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        rows = conn.execute(query, params).fetchall()
+        return [self._row_to_drama(r) for r in rows]
+
+    def update_drama(self,
+                     drama_id: str,
+                     title: Optional[str] = None,
+                     genre: Optional[DramaGenre] = None,
+                     total_episodes: Optional[int] = None,
+                     current_episode: Optional[int] = None,
+                     status: Optional[DramaStatus] = None,
+                     platform: Optional[str] = None,
+                     rating: Optional[float] = None,
+                     description: Optional[str] = None,
+                     tags: Optional[List[str]] = None,
+                     cover_url: Optional[str] = None,
+                     metadata: Optional[Dict[str, Any]] = None,
+                     mark_watched: bool = False) -> bool:
+        """更新短剧信息（v5.2.1 新增）"""
+        conn = self._get_conn()
+        now = time.time()
+
+        updates = []
+        params = []
+
+        if title is not None:
+            updates.append("title = ?")
+            params.append(self._validate_str(title, "title", max_len=200))
+        if genre is not None:
+            if not isinstance(genre, DramaGenre):
+                genre = DramaGenre.OTHER
+            updates.append("genre = ?")
+            params.append(genre.value)
+        if total_episodes is not None:
+            updates.append("total_episodes = ?")
+            params.append(self._validate_int(total_episodes, "total_episodes", min_val=0, max_val=10000))
+        if current_episode is not None:
+            updates.append("current_episode = ?")
+            params.append(self._validate_int(current_episode, "current_episode", min_val=0, max_val=10000))
+        if status is not None:
+            if not isinstance(status, DramaStatus):
+                status = DramaStatus.PLANNED
+            updates.append("status = ?")
+            params.append(status.value)
+        if platform is not None:
+            updates.append("platform = ?")
+            params.append(self._validate_str(platform, "platform", max_len=100))
+        if rating is not None:
+            updates.append("rating = ?")
+            params.append(self._validate_float(rating, "rating", min_val=0.0, max_val=10.0))
+        if description is not None:
+            updates.append("description = ?")
+            params.append(self._validate_str(description, "description", max_len=5000))
+        if tags is not None:
+            updates.append("tags = ?")
+            params.append(json.dumps(tags, ensure_ascii=False))
+        if cover_url is not None:
+            updates.append("cover_url = ?")
+            params.append(self._validate_str(cover_url, "cover_url", max_len=500))
+        if metadata is not None:
+            updates.append("metadata = ?")
+            params.append(json.dumps(metadata, ensure_ascii=False))
+
+        if not updates and not mark_watched:
+            return False
+
+        updates.append("updated_at = ?")
+        params.append(now)
+
+        if mark_watched:
+            updates.append("last_watched_at = ?")
+            params.append(now)
+
+        params.append(drama_id)
+
+        cursor = conn.execute(
+            f"UPDATE drama_series SET {', '.join(updates)} WHERE id = ?",
+            params
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+    def delete_drama(self, drama_id: str) -> bool:
+        """删除短剧（v5.2.1 新增）
+        同时删除关联的场次、角色、台词
+        """
+        conn = self._get_conn()
+        conn.execute("DELETE FROM drama_lines WHERE drama_id = ?", (drama_id,))
+        conn.execute("DELETE FROM drama_characters WHERE drama_id = ?", (drama_id,))
+        conn.execute("DELETE FROM drama_scenes WHERE drama_id = ?", (drama_id,))
+        cursor = conn.execute("DELETE FROM drama_series WHERE id = ?", (drama_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+    def drama_stats(self) -> Dict[str, Any]:
+        """短剧统计（v5.2.1 新增）"""
+        conn = self._get_conn()
+        total = conn.execute("SELECT COUNT(*) as cnt FROM drama_series").fetchone()["cnt"]
+        by_genre = {}
+        by_status = {}
+
+        for row in conn.execute("SELECT genre, COUNT(*) as cnt FROM drama_series GROUP BY genre"):
+            by_genre[row["genre"]] = row["cnt"]
+        for row in conn.execute("SELECT status, COUNT(*) as cnt FROM drama_series GROUP BY status"):
+            by_status[row["status"]] = row["cnt"]
+
+        watching = conn.execute(
+            "SELECT COUNT(*) as cnt FROM drama_series WHERE status = 'watching'"
+        ).fetchone()["cnt"]
+        completed = conn.execute(
+            "SELECT COUNT(*) as cnt FROM drama_series WHERE status = 'completed'"
+        ).fetchone()["cnt"]
+        total_lines = conn.execute("SELECT COUNT(*) as cnt FROM drama_lines").fetchone()["cnt"]
+        classic_lines = conn.execute(
+            "SELECT COUNT(*) as cnt FROM drama_lines WHERE is_classic = 1"
+        ).fetchone()["cnt"]
+
+        return {
+            "total": total,
+            "by_genre": by_genre,
+            "by_status": by_status,
+            "watching": watching,
+            "completed": completed,
+            "total_lines": total_lines,
+            "classic_lines": classic_lines,
+        }
+
+    def _row_to_drama(self, row) -> DramaSeries:
+        return DramaSeries(
+            id=row["id"],
+            title=row["title"],
+            genre=DramaGenre(row["genre"]) if row["genre"] else DramaGenre.OTHER,
+            total_episodes=row["total_episodes"] or 0,
+            current_episode=row["current_episode"] or 0,
+            status=DramaStatus(row["status"]) if row["status"] else DramaStatus.PLANNED,
+            platform=row["platform"] or "",
+            rating=row["rating"] or 0.0,
+            description=row["description"] or "",
+            tags=json.loads(row["tags"]) if row["tags"] else [],
+            cover_url=row["cover_url"] or "",
+            metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+            created_at=row["created_at"] or 0.0,
+            updated_at=row["updated_at"] or 0.0,
+            last_watched_at=row["last_watched_at"] or 0.0,
+        )
+
+    # --- 短剧场次 ---
+
+    def add_scene(self,
+                  drama_id: str,
+                  episode: int,
+                  scene_number: int,
+                  title: str,
+                  content: str = "",
+                  location: str = "",
+                  time_of_day: str = "",
+                  tags: Optional[List[str]] = None,
+                  metadata: Optional[Dict[str, Any]] = None) -> DramaScene:
+        """添加短剧场次（v5.2.1 新增）"""
+        now = time.time()
+        scene_id = str(uuid.uuid4())
+
+        title = self._validate_str(title, "title", max_len=200)
+        content = self._validate_str(content, "content", max_len=10000)
+        location = self._validate_str(location, "location", max_len=200)
+        time_of_day = self._validate_str(time_of_day, "time_of_day", max_len=50)
+        episode = self._validate_int(episode, "episode", min_val=0, max_val=10000)
+        scene_number = self._validate_int(scene_number, "scene_number", min_val=0, max_val=10000)
+
+        scene = DramaScene(
+            id=scene_id,
+            drama_id=drama_id,
+            episode=episode,
+            scene_number=scene_number,
+            title=title,
+            content=content,
+            location=location,
+            time_of_day=time_of_day,
+            tags=tags or [],
+            metadata=metadata or {},
+            created_at=now,
+        )
+
+        conn = self._get_conn()
+        conn.execute("""
+            INSERT INTO drama_scenes (
+                id, drama_id, episode, scene_number, title,
+                content, location, time_of_day, tags, metadata, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            scene.id, scene.drama_id, scene.episode, scene.scene_number,
+            scene.title, scene.content, scene.location, scene.time_of_day,
+            json.dumps(scene.tags, ensure_ascii=False),
+            json.dumps(scene.metadata, ensure_ascii=False),
+            scene.created_at,
+        ))
+        conn.commit()
+        return scene
+
+    def get_scene(self, scene_id: str) -> Optional[DramaScene]:
+        """获取场次详情（v5.2.1 新增）"""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM drama_scenes WHERE id = ?",
+            (scene_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_scene(row)
+
+    def list_scenes(self,
+                    drama_id: Optional[str] = None,
+                    episode: Optional[int] = None,
+                    limit: int = 100,
+                    offset: int = 0) -> List[DramaScene]:
+        """列出短剧场次（v5.2.1 新增）"""
+        conn = self._get_conn()
+        query = "SELECT * FROM drama_scenes WHERE 1=1"
+        params = []
+
+        if drama_id:
+            query += " AND drama_id = ?"
+            params.append(drama_id)
+        if episode is not None:
+            query += " AND episode = ?"
+            params.append(episode)
+
+        query += " ORDER BY episode ASC, scene_number ASC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        rows = conn.execute(query, params).fetchall()
+        return [self._row_to_scene(r) for r in rows]
+
+    def update_scene(self,
+                     scene_id: str,
+                     title: Optional[str] = None,
+                     content: Optional[str] = None,
+                     location: Optional[str] = None,
+                     time_of_day: Optional[str] = None,
+                     tags: Optional[List[str]] = None,
+                     metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """更新场次（v5.2.1 新增）"""
+        conn = self._get_conn()
+        updates = []
+        params = []
+
+        if title is not None:
+            updates.append("title = ?")
+            params.append(self._validate_str(title, "title", max_len=200))
+        if content is not None:
+            updates.append("content = ?")
+            params.append(self._validate_str(content, "content", max_len=10000))
+        if location is not None:
+            updates.append("location = ?")
+            params.append(self._validate_str(location, "location", max_len=200))
+        if time_of_day is not None:
+            updates.append("time_of_day = ?")
+            params.append(self._validate_str(time_of_day, "time_of_day", max_len=50))
+        if tags is not None:
+            updates.append("tags = ?")
+            params.append(json.dumps(tags, ensure_ascii=False))
+        if metadata is not None:
+            updates.append("metadata = ?")
+            params.append(json.dumps(metadata, ensure_ascii=False))
+
+        if not updates:
+            return False
+
+        params.append(scene_id)
+        cursor = conn.execute(
+            f"UPDATE drama_scenes SET {', '.join(updates)} WHERE id = ?",
+            params
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+    def delete_scene(self, scene_id: str) -> bool:
+        """删除场次（v5.2.1 新增）"""
+        conn = self._get_conn()
+        conn.execute("DELETE FROM drama_lines WHERE scene_id = ?", (scene_id,))
+        cursor = conn.execute("DELETE FROM drama_scenes WHERE id = ?", (scene_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+    def _row_to_scene(self, row) -> DramaScene:
+        return DramaScene(
+            id=row["id"],
+            drama_id=row["drama_id"],
+            episode=row["episode"] or 0,
+            scene_number=row["scene_number"] or 0,
+            title=row["title"] or "",
+            content=row["content"] or "",
+            location=row["location"] or "",
+            time_of_day=row["time_of_day"] or "",
+            tags=json.loads(row["tags"]) if row["tags"] else [],
+            metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+            created_at=row["created_at"] or 0.0,
+        )
+
+    # --- 短剧角色 ---
+
+    def add_character(self,
+                      drama_id: str,
+                      name: str,
+                      role: str = "supporting",
+                      actor: str = "",
+                      description: str = "",
+                      personality: str = "",
+                      avatar_url: str = "",
+                      tags: Optional[List[str]] = None,
+                      metadata: Optional[Dict[str, Any]] = None) -> DramaCharacter:
+        """添加短剧角色（v5.2.1 新增）"""
+        now = time.time()
+        char_id = str(uuid.uuid4())
+
+        name = self._validate_str(name, "name", max_len=100)
+        role = self._validate_str(role, "role", max_len=50)
+        actor = self._validate_str(actor, "actor", max_len=100)
+        description = self._validate_str(description, "description", max_len=2000)
+        personality = self._validate_str(personality, "personality", max_len=1000)
+        avatar_url = self._validate_str(avatar_url, "avatar_url", max_len=500)
+
+        character = DramaCharacter(
+            id=char_id,
+            drama_id=drama_id,
+            name=name,
+            role=role,
+            actor=actor,
+            description=description,
+            personality=personality,
+            avatar_url=avatar_url,
+            tags=tags or [],
+            metadata=metadata or {},
+            created_at=now,
+        )
+
+        conn = self._get_conn()
+        conn.execute("""
+            INSERT INTO drama_characters (
+                id, drama_id, name, role, actor, description,
+                personality, avatar_url, tags, metadata, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            character.id, character.drama_id, character.name,
+            character.role, character.actor, character.description,
+            character.personality, character.avatar_url,
+            json.dumps(character.tags, ensure_ascii=False),
+            json.dumps(character.metadata, ensure_ascii=False),
+            character.created_at,
+        ))
+        conn.commit()
+        return character
+
+    def get_character(self, char_id: str) -> Optional[DramaCharacter]:
+        """获取角色详情（v5.2.1 新增）"""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM drama_characters WHERE id = ?",
+            (char_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_character(row)
+
+    def list_characters(self,
+                        drama_id: Optional[str] = None,
+                        role: Optional[str] = None,
+                        limit: int = 100,
+                        offset: int = 0) -> List[DramaCharacter]:
+        """列出短剧角色（v5.2.1 新增）"""
+        conn = self._get_conn()
+        query = "SELECT * FROM drama_characters WHERE 1=1"
+        params = []
+
+        if drama_id:
+            query += " AND drama_id = ?"
+            params.append(drama_id)
+        if role:
+            query += " AND role = ?"
+            params.append(role)
+
+        query += " ORDER BY created_at ASC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        rows = conn.execute(query, params).fetchall()
+        return [self._row_to_character(r) for r in rows]
+
+    def update_character(self,
+                         char_id: str,
+                         name: Optional[str] = None,
+                         role: Optional[str] = None,
+                         actor: Optional[str] = None,
+                         description: Optional[str] = None,
+                         personality: Optional[str] = None,
+                         avatar_url: Optional[str] = None,
+                         tags: Optional[List[str]] = None,
+                         metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """更新角色信息（v5.2.1 新增）"""
+        conn = self._get_conn()
+        updates = []
+        params = []
+
+        if name is not None:
+            updates.append("name = ?")
+            params.append(self._validate_str(name, "name", max_len=100))
+        if role is not None:
+            updates.append("role = ?")
+            params.append(self._validate_str(role, "role", max_len=50))
+        if actor is not None:
+            updates.append("actor = ?")
+            params.append(self._validate_str(actor, "actor", max_len=100))
+        if description is not None:
+            updates.append("description = ?")
+            params.append(self._validate_str(description, "description", max_len=2000))
+        if personality is not None:
+            updates.append("personality = ?")
+            params.append(self._validate_str(personality, "personality", max_len=1000))
+        if avatar_url is not None:
+            updates.append("avatar_url = ?")
+            params.append(self._validate_str(avatar_url, "avatar_url", max_len=500))
+        if tags is not None:
+            updates.append("tags = ?")
+            params.append(json.dumps(tags, ensure_ascii=False))
+        if metadata is not None:
+            updates.append("metadata = ?")
+            params.append(json.dumps(metadata, ensure_ascii=False))
+
+        if not updates:
+            return False
+
+        params.append(char_id)
+        cursor = conn.execute(
+            f"UPDATE drama_characters SET {', '.join(updates)} WHERE id = ?",
+            params
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+    def delete_character(self, char_id: str) -> bool:
+        """删除角色（v5.2.1 新增）"""
+        conn = self._get_conn()
+        cursor = conn.execute("DELETE FROM drama_characters WHERE id = ?", (char_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+    def _row_to_character(self, row) -> DramaCharacter:
+        return DramaCharacter(
+            id=row["id"],
+            drama_id=row["drama_id"],
+            name=row["name"],
+            role=row["role"] or "supporting",
+            actor=row["actor"] or "",
+            description=row["description"] or "",
+            personality=row["personality"] or "",
+            avatar_url=row["avatar_url"] or "",
+            tags=json.loads(row["tags"]) if row["tags"] else [],
+            metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+            created_at=row["created_at"] or 0.0,
+        )
+
+    # --- 短剧台词 ---
+
+    def add_line(self,
+                 drama_id: str,
+                 line_text: str,
+                 scene_id: str = "",
+                 character_id: str = "",
+                 character_name: str = "",
+                 context: str = "",
+                 episode: int = 0,
+                 timestamp: str = "",
+                 is_classic: bool = False,
+                 tags: Optional[List[str]] = None,
+                 metadata: Optional[Dict[str, Any]] = None) -> DramaLine:
+        """添加短剧台词（v5.2.1 新增）"""
+        now = time.time()
+        line_id = str(uuid.uuid4())
+
+        line_text = self._validate_str(line_text, "line_text", max_len=2000)
+        character_name = self._validate_str(character_name, "character_name", max_len=100)
+        context = self._validate_str(context, "context", max_len=2000)
+        episode = self._validate_int(episode, "episode", min_val=0, max_val=10000)
+        timestamp_float = self._validate_float(timestamp if timestamp else 0.0, "timestamp", min_val=0.0, max_val=100000.0)
+        timestamp = str(timestamp_float)
+
+        line = DramaLine(
+            id=line_id,
+            drama_id=drama_id,
+            scene_id=scene_id,
+            character_id=character_id,
+            character_name=character_name,
+            line_text=line_text,
+            context=context,
+            episode=episode,
+            timestamp=timestamp,
+            is_classic=is_classic,
+            memory_id="",
+            tags=tags or [],
+            metadata=metadata or {},
+            created_at=now,
+        )
+
+        conn = self._get_conn()
+        conn.execute("""
+            INSERT INTO drama_lines (
+                id, drama_id, scene_id, character_id, character_name,
+                line_text, context, episode, timestamp, is_classic,
+                memory_id, tags, metadata, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            line.id, line.drama_id, line.scene_id, line.character_id,
+            line.character_name, line.line_text, line.context,
+            line.episode, line.timestamp, int(line.is_classic),
+            line.memory_id, json.dumps(line.tags, ensure_ascii=False),
+            json.dumps(line.metadata, ensure_ascii=False), line.created_at,
+        ))
+        conn.commit()
+        return line
+
+    def get_line(self, line_id: str) -> Optional[DramaLine]:
+        """获取台词详情（v5.2.1 新增）"""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM drama_lines WHERE id = ?",
+            (line_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return self._row_to_line(row)
+
+    def list_lines(self,
+                   drama_id: Optional[str] = None,
+                   scene_id: Optional[str] = None,
+                   character_id: Optional[str] = None,
+                   is_classic: Optional[bool] = None,
+                   episode: Optional[int] = None,
+                   limit: int = 100,
+                   offset: int = 0) -> List[DramaLine]:
+        """列出台词（v5.2.1 新增）"""
+        conn = self._get_conn()
+        query = "SELECT * FROM drama_lines WHERE 1=1"
+        params = []
+
+        if drama_id:
+            query += " AND drama_id = ?"
+            params.append(drama_id)
+        if scene_id:
+            query += " AND scene_id = ?"
+            params.append(scene_id)
+        if character_id:
+            query += " AND character_id = ?"
+            params.append(character_id)
+        if is_classic is not None:
+            query += " AND is_classic = ?"
+            params.append(1 if is_classic else 0)
+        if episode is not None:
+            query += " AND episode = ?"
+            params.append(episode)
+
+        query += " ORDER BY episode ASC, created_at ASC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        rows = conn.execute(query, params).fetchall()
+        return [self._row_to_line(r) for r in rows]
+
+    def update_line(self,
+                    line_id: str,
+                    line_text: Optional[str] = None,
+                    character_name: Optional[str] = None,
+                    context: Optional[str] = None,
+                    is_classic: Optional[bool] = None,
+                    tags: Optional[List[str]] = None,
+                    metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """更新台词（v5.2.1 新增）"""
+        conn = self._get_conn()
+        updates = []
+        params = []
+
+        if line_text is not None:
+            updates.append("line_text = ?")
+            params.append(self._validate_str(line_text, "line_text", max_len=2000))
+        if character_name is not None:
+            updates.append("character_name = ?")
+            params.append(self._validate_str(character_name, "character_name", max_len=100))
+        if context is not None:
+            updates.append("context = ?")
+            params.append(self._validate_str(context, "context", max_len=2000))
+        if is_classic is not None:
+            updates.append("is_classic = ?")
+            params.append(1 if is_classic else 0)
+        if tags is not None:
+            updates.append("tags = ?")
+            params.append(json.dumps(tags, ensure_ascii=False))
+        if metadata is not None:
+            updates.append("metadata = ?")
+            params.append(json.dumps(metadata, ensure_ascii=False))
+
+        if not updates:
+            return False
+
+        params.append(line_id)
+        cursor = conn.execute(
+            f"UPDATE drama_lines SET {', '.join(updates)} WHERE id = ?",
+            params
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+    def delete_line(self, line_id: str) -> bool:
+        """删除台词（v5.2.1 新增）"""
+        conn = self._get_conn()
+        cursor = conn.execute("DELETE FROM drama_lines WHERE id = ?", (line_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+    def search_lines(self,
+                     query: str,
+                     drama_id: Optional[str] = None,
+                     is_classic_only: bool = False,
+                     limit: int = 20) -> List[DramaLine]:
+        """搜索台词（v5.2.1 新增）"""
+        conn = self._get_conn()
+        sql = "SELECT * FROM drama_lines WHERE line_text LIKE ?"
+        params = [f"%{query}%"]
+
+        if drama_id:
+            sql += " AND drama_id = ?"
+            params.append(drama_id)
+        if is_classic_only:
+            sql += " AND is_classic = 1"
+
+        sql += " LIMIT ?"
+        params.append(limit)
+
+        rows = conn.execute(sql, params).fetchall()
+        return [self._row_to_line(r) for r in rows]
+
+    def classic_lines(self,
+                      drama_id: Optional[str] = None,
+                      limit: int = 20) -> List[DramaLine]:
+        """获取经典台词（v5.2.1 新增）"""
+        return self.list_lines(
+            drama_id=drama_id,
+            is_classic=True,
+            limit=limit,
+        )
+
+    def _row_to_line(self, row) -> DramaLine:
+        return DramaLine(
+            id=row["id"],
+            drama_id=row["drama_id"],
+            scene_id=row["scene_id"] or "",
+            character_id=row["character_id"] or "",
+            character_name=row["character_name"] or "",
+            line_text=row["line_text"],
+            context=row["context"] or "",
+            episode=row["episode"] or 0,
+            timestamp=row["timestamp"] or "",
+            is_classic=bool(row["is_classic"]),
+            memory_id=row["memory_id"] or "",
+            tags=json.loads(row["tags"]) if row["tags"] else [],
+            metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+            created_at=row["created_at"] or 0.0,
+        )
