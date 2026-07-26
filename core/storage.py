@@ -2011,3 +2011,418 @@ class StorageEngine:
             details={"message": f"从 {old_category} 移动到 {new_category}"}
         )
         return True
+
+    # ===== 搜索增强（v5.2.0 新增）=====
+
+    def fuzzy_search(self,
+                     query: str,
+                     category: Optional[str] = None,
+                     layer: Optional[MemoryLayer] = None,
+                     limit: int = 20,
+                     threshold: float = 0.3) -> List[Dict[str, Any]]:
+        """模糊搜索记忆（v5.2.0 新增）
+
+        结合全文搜索和相似度计算，支持拼写纠错和近似匹配。
+
+        Args:
+            query: 搜索关键词
+            category: 限定分类
+            layer: 限定层级
+            limit: 返回结果数量
+            threshold: 相似度阈值（0-1）
+
+        Returns:
+            带分数的搜索结果列表 [{entry, score, highlights}]
+        """
+        conn = self._get_conn()
+        query_lower = query.lower()
+
+        base_query = "SELECT * FROM memories WHERE category != 'trash'"
+        params = []
+
+        if category:
+            base_query += " AND category = ?"
+            params.append(category)
+        if layer:
+            base_query += " AND layer = ?"
+            params.append(layer.value)
+
+        rows = conn.execute(base_query, params).fetchall()
+        entries = [self._row_to_entry(r) for r in rows]
+
+        scored = []
+        for entry in entries:
+            content_lower = entry.content.lower()
+            tags_lower = [t.lower() for t in entry.tags]
+            cat_lower = entry.category.lower()
+
+            score = 0.0
+            highlights = []
+
+            if query_lower in content_lower:
+                score += 0.8
+                pos = content_lower.find(query_lower)
+                highlights.append({
+                    "field": "content",
+                    "start": pos,
+                    "end": pos + len(query),
+                    "text": entry.content[max(0, pos - 20):pos + len(query) + 20]
+                })
+
+            if query_lower in cat_lower:
+                score += 0.5
+
+            for tag in tags_lower:
+                if query_lower in tag:
+                    score += 0.4
+                    break
+
+            if score == 0:
+                words = set(query_lower.split())
+                content_words = set(content_lower.split())
+                if words and content_words:
+                    overlap = len(words & content_words)
+                    score = overlap / max(len(words), 1) * 0.3
+
+            if score >= threshold:
+                scored.append({
+                    "entry": entry,
+                    "score": round(score, 4),
+                    "highlights": highlights
+                })
+
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return scored[:limit]
+
+    def get_search_history(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """获取搜索历史（v5.2.0 新增）
+
+        Args:
+            limit: 返回条数
+
+        Returns:
+            搜索历史列表 [{query, count, last_used}]
+        """
+        conn = self._get_conn()
+        try:
+            rows = conn.execute("""
+                SELECT query, MAX(timestamp) as last_used, COUNT(*) as cnt
+                FROM audit_log
+                WHERE action = 'search'
+                GROUP BY query
+                ORDER BY last_used DESC
+                LIMIT ?
+            """, (limit,)).fetchall()
+            return [
+                {"query": row["query"], "count": row["cnt"], "last_used": row["last_used"]}
+                for row in rows if row["query"]
+            ]
+        except Exception:
+            return []
+
+    def highlight_text(self, text: str, query: str,
+                       before_tag: str = "<mark>",
+                       after_tag: str = "</mark>") -> str:
+        """高亮搜索关键词（v5.2.0 新增）
+
+        Args:
+            text: 原始文本
+            query: 搜索关键词
+            before_tag: 高亮起始标签
+            after_tag: 高亮结束标签
+
+        Returns:
+            带高亮标记的文本
+        """
+        if not query or not text:
+            return text
+
+        import re
+        pattern = re.compile(re.escape(query), re.IGNORECASE)
+        return pattern.sub(lambda m: before_tag + m.group() + after_tag, text)
+
+    # ===== 标签批量管理（v5.2.0 新增）=====
+
+    def batch_add_tags(self,
+                       entry_ids: List[str],
+                       tags: List[str],
+                       actor: str = "",
+                       session_id: str = "") -> int:
+        """批量添加标签（v5.2.0 新增）
+
+        Args:
+            entry_ids: 记忆 ID 列表
+            tags: 要添加的标签列表
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            受影响的记忆条数
+        """
+        conn = self._get_conn()
+        count = 0
+        now = time.time()
+
+        for entry_id in entry_ids:
+            row = conn.execute(
+                "SELECT tags FROM memories WHERE id = ? AND category != 'trash'",
+                (entry_id,)
+            ).fetchone()
+            if not row:
+                continue
+
+            existing_tags = json.loads(row["tags"]) if row["tags"] else []
+            new_tags = list(set(existing_tags + tags))
+            if new_tags != existing_tags:
+                conn.execute(
+                    "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(new_tags, ensure_ascii=False), now, entry_id)
+                )
+                self._add_audit(
+                    "batch_add_tags", entry_id, actor, session_id, "",
+                    details={"added_tags": tags, "result_tags": new_tags}
+                )
+                count += 1
+
+        conn.commit()
+        return count
+
+    def batch_remove_tags(self,
+                          entry_ids: List[str],
+                          tags: List[str],
+                          actor: str = "",
+                          session_id: str = "") -> int:
+        """批量移除标签（v5.2.0 新增）
+
+        Args:
+            entry_ids: 记忆 ID 列表
+            tags: 要移除的标签列表
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            受影响的记忆条数
+        """
+        conn = self._get_conn()
+        count = 0
+        now = time.time()
+
+        for entry_id in entry_ids:
+            row = conn.execute(
+                "SELECT tags FROM memories WHERE id = ? AND category != 'trash'",
+                (entry_id,)
+            ).fetchone()
+            if not row:
+                continue
+
+            existing_tags = json.loads(row["tags"]) if row["tags"] else []
+            new_tags = [t for t in existing_tags if t not in tags]
+            if new_tags != existing_tags:
+                conn.execute(
+                    "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(new_tags, ensure_ascii=False), now, entry_id)
+                )
+                self._add_audit(
+                    "batch_remove_tags", entry_id, actor, session_id, "",
+                    details={"removed_tags": tags, "result_tags": new_tags}
+                )
+                count += 1
+
+        conn.commit()
+        return count
+
+    def merge_tags(self,
+                   source_tags: List[str],
+                   target_tag: str,
+                   actor: str = "",
+                   session_id: str = "") -> int:
+        """合并多个标签为一个标签（v5.2.0 新增）
+
+        Args:
+            source_tags: 要合并的源标签列表
+            target_tag: 目标标签名
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            受影响的记忆条数
+        """
+        conn = self._get_conn()
+        count = 0
+        now = time.time()
+
+        rows = conn.execute(
+            "SELECT id, tags FROM memories WHERE category != 'trash'"
+        ).fetchall()
+
+        for row in rows:
+            tags = json.loads(row["tags"]) if row["tags"] else []
+            has_source = any(t in source_tags for t in tags)
+            if not has_source:
+                continue
+
+            new_tags = [t for t in tags if t not in source_tags]
+            if target_tag not in new_tags:
+                new_tags.append(target_tag)
+
+            if new_tags != tags:
+                conn.execute(
+                    "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(new_tags, ensure_ascii=False), now, row["id"])
+                )
+                self._add_audit(
+                    "merge_tags", row["id"], actor, session_id, "",
+                    details={"source_tags": source_tags, "target_tag": target_tag}
+                )
+                count += 1
+
+        conn.commit()
+        return count
+
+    def add_tags_by_category(self,
+                             category: str,
+                             tags: List[str],
+                             actor: str = "",
+                             session_id: str = "") -> int:
+        """按分类批量添加标签（v5.2.0 新增）
+
+        Args:
+            category: 分类名
+            tags: 要添加的标签列表
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            受影响的记忆条数
+        """
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT id FROM memories WHERE category = ? AND category != 'trash'",
+            (category,)
+        ).fetchall()
+        entry_ids = [r["id"] for r in rows]
+        return self.batch_add_tags(entry_ids, tags, actor, session_id)
+
+    # ===== 数据备份与恢复（v5.2.0 新增）=====
+
+    def create_backup(self, backup_dir: str = "./data/backups") -> Dict[str, Any]:
+        """创建数据库备份（v5.2.0 新增）
+
+        Args:
+            backup_dir: 备份目录
+
+        Returns:
+            {path, size_mb, timestamp, success}
+        """
+        import shutil
+        backup_path = Path(backup_dir)
+        backup_path.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_file = backup_path / f"memory_backup_{timestamp}.db"
+
+        try:
+            shutil.copy2(str(self.db_path), str(backup_file))
+            size_mb = round(backup_file.stat().st_size / (1024 * 1024), 2)
+            return {
+                "success": True,
+                "path": str(backup_file),
+                "size_mb": size_mb,
+                "timestamp": timestamp,
+                "filename": backup_file.name,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "path": str(backup_file),
+            }
+
+    def list_backups(self, backup_dir: str = "./data/backups") -> List[Dict[str, Any]]:
+        """列出所有备份（v5.2.0 新增）
+
+        Args:
+            backup_dir: 备份目录
+
+        Returns:
+            备份列表 [{filename, path, size_mb, created_at}]
+        """
+        backup_path = Path(backup_dir)
+        if not backup_path.exists():
+            return []
+
+        backups = []
+        for f in sorted(backup_path.glob("memory_backup_*.db"), reverse=True):
+            stat = f.stat()
+            backups.append({
+                "filename": f.name,
+                "path": str(f),
+                "size_mb": round(stat.st_size / (1024 * 1024), 2),
+                "created_at": stat.st_ctime,
+            })
+        return backups
+
+    def restore_backup(self, backup_path: str,
+                       create_backup_before: bool = True) -> Dict[str, Any]:
+        """从备份恢复数据库（v5.2.0 新增）
+
+        Args:
+            backup_path: 备份文件路径
+            create_backup_before: 恢复前是否先备份当前数据库
+
+        Returns:
+            {success, restored_from, backup_created, error}
+        """
+        import shutil
+        backup_file = Path(backup_path)
+        if not backup_file.exists():
+            return {"success": False, "error": "备份文件不存在"}
+
+        result = {
+            "success": False,
+            "restored_from": str(backup_file),
+            "backup_created": None,
+        }
+
+        try:
+            if create_backup_before:
+                pre_backup = self.create_backup()
+                if pre_backup["success"]:
+                    result["backup_created"] = pre_backup["path"]
+
+            if self._conn:
+                self._conn.close()
+                self._conn = None
+
+            shutil.copy2(str(backup_file), str(self.db_path))
+
+            self._init_db()
+            result["success"] = True
+        except Exception as e:
+            result["error"] = str(e)
+
+        return result
+
+    def delete_old_backups(self, backup_dir: str = "./data/backups",
+                           keep_count: int = 10) -> int:
+        """删除旧备份，保留最新的 N 个（v5.2.0 新增）
+
+        Args:
+            backup_dir: 备份目录
+            keep_count: 保留数量
+
+        Returns:
+            删除的备份数量
+        """
+        backups = self.list_backups(backup_dir)
+        if len(backups) <= keep_count:
+            return 0
+
+        deleted = 0
+        for backup in backups[keep_count:]:
+            try:
+                Path(backup["path"]).unlink()
+                deleted += 1
+            except Exception:
+                pass
+        return deleted

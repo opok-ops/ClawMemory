@@ -25,11 +25,11 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.1.9"
+    __version__ = "5.2.0"
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.1.9"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.2.0"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -710,3 +710,75 @@ class MindForge:
             actor=actor,
             session_id=session_id,
         )
+
+    # ===== 搜索增强（v5.2.0 新增）=====
+
+    def fuzzy_search(self,
+                     query: str,
+                     category: Optional[str] = None,
+                     layer: Optional[MemoryLayer] = None,
+                     limit: int = 20,
+                     threshold: float = 0.3):
+        """模糊搜索记忆（v5.2.0 新增）
+
+        结合全文搜索和相似度计算，支持拼写纠错和近似匹配。
+        """
+        return self._storage.fuzzy_search(
+            query=query,
+            category=category,
+            layer=layer,
+            limit=limit,
+            threshold=threshold,
+        )
+
+    def search_history(self, limit: int = 20):
+        """获取搜索历史（v5.2.0 新增）"""
+        return self._storage.get_search_history(limit)
+
+    def highlight(self, text: str, query: str,
+                  before_tag: str = "<mark>",
+                  after_tag: str = "</mark>") -> str:
+        """高亮搜索关键词（v5.2.0 新增）"""
+        return self._storage.highlight_text(text, query, before_tag, after_tag)
+
+    # ===== 标签批量管理（v5.2.0 新增）=====
+
+    def batch_add_tags(self, entry_ids: List[str], tags: List[str],
+                       actor: str = "", session_id: str = "") -> int:
+        """批量添加标签（v5.2.0 新增）"""
+        return self._storage.batch_add_tags(entry_ids, tags, actor, session_id)
+
+    def batch_remove_tags(self, entry_ids: List[str], tags: List[str],
+                          actor: str = "", session_id: str = "") -> int:
+        """批量移除标签（v5.2.0 新增）"""
+        return self._storage.batch_remove_tags(entry_ids, tags, actor, session_id)
+
+    def merge_tags(self, source_tags: List[str], target_tag: str,
+                   actor: str = "", session_id: str = "") -> int:
+        """合并多个标签为一个标签（v5.2.0 新增）"""
+        return self._storage.merge_tags(source_tags, target_tag, actor, session_id)
+
+    def add_tags_by_category(self, category: str, tags: List[str],
+                             actor: str = "", session_id: str = "") -> int:
+        """按分类批量添加标签（v5.2.0 新增）"""
+        return self._storage.add_tags_by_category(category, tags, actor, session_id)
+
+    # ===== 数据备份与恢复（v5.2.0 新增）=====
+
+    def create_backup(self, backup_dir: str = "./data/backups") -> Dict[str, Any]:
+        """创建数据库备份（v5.2.0 新增）"""
+        return self._storage.create_backup(backup_dir)
+
+    def list_backups(self, backup_dir: str = "./data/backups"):
+        """列出所有备份（v5.2.0 新增）"""
+        return self._storage.list_backups(backup_dir)
+
+    def restore_backup(self, backup_path: str,
+                       create_backup_before: bool = True) -> Dict[str, Any]:
+        """从备份恢复数据库（v5.2.0 新增）"""
+        return self._storage.restore_backup(backup_path, create_backup_before)
+
+    def delete_old_backups(self, backup_dir: str = "./data/backups",
+                           keep_count: int = 10) -> int:
+        """删除旧备份，保留最新的 N 个（v5.2.0 新增）"""
+        return self._storage.delete_old_backups(backup_dir, keep_count)

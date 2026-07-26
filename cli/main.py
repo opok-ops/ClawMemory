@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.1.9 CLI - 命令行工具
+MindForge v5.2.0 CLI - 命令行工具
 =================================
 
 Usage:
@@ -57,7 +57,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.1.9"
+    __version__ = "5.2.0"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -125,7 +125,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}MindForge v5.1.9 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}MindForge v5.2.0 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -135,7 +135,7 @@ def print_banner():
 def cmd_init(args):
     """初始化 MindForge"""
     print_banner()
-    print(c("MindForge v5.1.9 初始化向导", "bold"))
+    print(c("MindForge v5.2.0 初始化向导", "bold"))
     print("=" * 50)
 
     password = getpass.getpass("请设置加密密码（用于保护记忆）：")
@@ -1371,10 +1371,10 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="mindforge",
-        description="MindForge v5.1.9 - AI Agent 终身记忆系统",
+        description="MindForge v5.2.0 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", "-v", action="version", version="MindForge v5.1.9")
+    parser.add_argument("--version", "-v", action="version", version="MindForge v5.2.0")
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")
@@ -1656,6 +1656,55 @@ def main():
     p_move.add_argument("--agent", default="cli", help="Agent ID")
     p_move.add_argument("--session", default="cli", help="会话 ID")
 
+    # ===== v5.2.0 新增命令 =====
+
+    p_fuzzy_search = sub.add_parser("fuzzy-search", help="模糊搜索记忆（v5.2.0 新增）")
+    p_fuzzy_search.add_argument("query", help="搜索关键词")
+    p_fuzzy_search.add_argument("--category", "-c", help="按分类筛选")
+    p_fuzzy_search.add_argument("--layer", "-l", help="按层级筛选")
+    p_fuzzy_search.add_argument("--limit", "-n", type=int, default=20, help="结果数量限制")
+    p_fuzzy_search.add_argument("--threshold", "-t", type=float, default=0.3, help="相似度阈值")
+    p_fuzzy_search.add_argument("--highlight", action="store_true", help="高亮显示匹配词")
+
+    p_search_history = sub.add_parser("search-history", help="查看搜索历史（v5.2.0 新增）")
+    p_search_history.add_argument("--limit", "-n", type=int, default=20, help="显示数量")
+
+    p_batch_add_tags = sub.add_parser("batch-add-tags", help="批量添加标签（v5.2.0 新增）")
+    p_batch_add_tags.add_argument("--ids", help="记忆 ID 列表，逗号分隔")
+    p_batch_add_tags.add_argument("--tags", required=True, help="标签列表，逗号分隔")
+    p_batch_add_tags.add_argument("--category", "-c", help="按分类批量添加（替代 --ids）")
+    p_batch_add_tags.add_argument("--agent", default="cli", help="Agent ID")
+    p_batch_add_tags.add_argument("--session", default="cli", help="会话 ID")
+
+    p_batch_remove_tags = sub.add_parser("batch-remove-tags", help="批量移除标签（v5.2.0 新增）")
+    p_batch_remove_tags.add_argument("--ids", help="记忆 ID 列表，逗号分隔")
+    p_batch_remove_tags.add_argument("--tags", required=True, help="标签列表，逗号分隔")
+    p_batch_remove_tags.add_argument("--agent", default="cli", help="Agent ID")
+    p_batch_remove_tags.add_argument("--session", default="cli", help="会话 ID")
+
+    p_merge_tags = sub.add_parser("merge-tags", help="合并标签（v5.2.0 新增）")
+    p_merge_tags.add_argument("--source", required=True, help="源标签列表，逗号分隔")
+    p_merge_tags.add_argument("--target", required=True, help="目标标签名")
+    p_merge_tags.add_argument("--force", action="store_true", help="跳过确认")
+    p_merge_tags.add_argument("--agent", default="cli", help="Agent ID")
+    p_merge_tags.add_argument("--session", default="cli", help="会话 ID")
+
+    p_db_backup = sub.add_parser("db-backup", help="创建数据库备份（v5.2.0 新增）")
+    p_db_backup.add_argument("--dir", default="./data/backups", help="备份目录")
+
+    p_db_backups = sub.add_parser("db-backups", help="列出备份文件（v5.2.0 新增）")
+    p_db_backups.add_argument("--dir", default="./data/backups", help="备份目录")
+
+    p_db_restore = sub.add_parser("db-restore", help="从备份恢复（v5.2.0 新增）")
+    p_db_restore.add_argument("backup", help="备份文件路径")
+    p_db_restore.add_argument("--no-pre-backup", action="store_true", help="恢复前不先备份当前数据")
+    p_db_restore.add_argument("--force", action="store_true", help="跳过确认")
+
+    p_db_clean_backups = sub.add_parser("db-clean-backups", help="清理旧备份（v5.2.0 新增）")
+    p_db_clean_backups.add_argument("--dir", default="./data/backups", help="备份目录")
+    p_db_clean_backups.add_argument("--keep", type=int, default=10, help="保留数量")
+    p_db_clean_backups.add_argument("--force", action="store_true", help="跳过确认")
+
     p_consolidate = sub.add_parser("consolidate", help="记忆巩固")
     p_consolidate.add_argument("--agent", default="cli", help="Agent ID")
     p_consolidate.add_argument("--session", default="cli", help="会话 ID")
@@ -1775,6 +1824,15 @@ def main():
         "import-excel": cmd_import_excel,
         "copy": cmd_copy,
         "move": cmd_move,
+        "fuzzy-search": cmd_fuzzy_search,
+        "search-history": cmd_search_history,
+        "batch-add-tags": cmd_batch_add_tags,
+        "batch-remove-tags": cmd_batch_remove_tags,
+        "merge-tags": cmd_merge_tags,
+        "db-backup": cmd_db_backup,
+        "db-backups": cmd_db_backups,
+        "db-restore": cmd_db_restore,
+        "db-clean-backups": cmd_db_clean_backups,
     }
 
     cmd = commands.get(args.command)
@@ -2696,6 +2754,263 @@ def cmd_move(args):
 
     cm.close()
     return 0 if success else 1
+
+
+def cmd_fuzzy_search(args):
+    """模糊搜索记忆（v5.2.0 新增）"""
+    cm = _get_memory(args)
+
+    layer = MemoryLayer.from_string(args.layer) if args.layer else None
+
+    results = cm.fuzzy_search(
+        query=args.query,
+        category=args.category,
+        layer=layer,
+        limit=args.limit,
+        threshold=args.threshold,
+    )
+
+    print(c(f"\n🔍 模糊搜索: \"{args.query}\"", "bold"))
+    print(c(f"   找到 {len(results)} 条结果（阈值 {args.threshold}）\n", "dim"))
+
+    if not results:
+        print(c("   没有找到匹配的记忆", "yellow"))
+        cm.close()
+        return 0
+
+    for i, result in enumerate(results, 1):
+        entry = result["entry"]
+        score = result["score"]
+
+        content = entry.preview
+        if args.highlight:
+            content = cm.highlight(content, args.query, c("", "yellow"), c("", "reset"))
+
+        print(f" {i}. [{entry.id[:12]}] {content[:80]}...")
+        print(f"    分类: {entry.category} | 标签: {', '.join(entry.tags) if entry.tags else '无'}")
+        print(f"    相关度: {score:.2f} | 访问: {entry.access_count}次 | 强度: {entry.strength:.2f}")
+        print()
+
+    cm.close()
+    return 0
+
+
+def cmd_search_history(args):
+    """查看搜索历史（v5.2.0 新增）"""
+    cm = _get_memory(args)
+
+    history = cm.search_history(limit=args.limit)
+
+    print(c(f"\n📜 搜索历史（最近 {len(history)} 条）\n", "bold"))
+
+    if not history:
+        print(c("   暂无搜索历史", "yellow"))
+        cm.close()
+        return 0
+
+    for i, item in enumerate(history, 1):
+        from datetime import datetime
+        last_used = datetime.fromtimestamp(item["last_used"]).strftime("%Y-%m-%d %H:%M")
+        print(f" {i}. \"{item['query']}\"  ({item['count']}次, 最近: {last_used})")
+
+    print()
+    cm.close()
+    return 0
+
+
+def cmd_batch_add_tags(args):
+    """批量添加标签（v5.2.0 新增）"""
+    cm = _get_memory(args)
+
+    tags = [t.strip() for t in args.tags.split(",") if t.strip()]
+
+    if args.category:
+        count = cm.add_tags_by_category(
+            category=args.category,
+            tags=tags,
+            actor=args.agent,
+            session_id=args.session,
+        )
+        print(c(f"\n✅ 已为分类 '{args.category}' 的 {count} 条记忆添加标签: {', '.join(tags)}", "green"))
+    elif args.ids:
+        entry_ids = [i.strip() for i in args.ids.split(",") if i.strip()]
+        count = cm.batch_add_tags(
+            entry_ids=entry_ids,
+            tags=tags,
+            actor=args.agent,
+            session_id=args.session,
+        )
+        print(c(f"\n✅ 已为 {count} 条记忆添加标签: {', '.join(tags)}", "green"))
+    else:
+        print(c("❌ 请指定 --ids 或 --category 参数", "red"))
+        cm.close()
+        return 1
+
+    cm.close()
+    return 0
+
+
+def cmd_batch_remove_tags(args):
+    """批量移除标签（v5.2.0 新增）"""
+    cm = _get_memory(args)
+
+    if not args.ids:
+        print(c("❌ 请指定 --ids 参数（记忆 ID 列表，逗号分隔）", "red"))
+        cm.close()
+        return 1
+
+    tags = [t.strip() for t in args.tags.split(",") if t.strip()]
+    entry_ids = [i.strip() for i in args.ids.split(",") if i.strip()]
+
+    count = cm.batch_remove_tags(
+        entry_ids=entry_ids,
+        tags=tags,
+        actor=args.agent,
+        session_id=args.session,
+    )
+
+    print(c(f"\n✅ 已从 {count} 条记忆中移除标签: {', '.join(tags)}", "green"))
+    cm.close()
+    return 0
+
+
+def cmd_merge_tags(args):
+    """合并标签（v5.2.0 新增）"""
+    cm = _get_memory(args)
+
+    source_tags = [t.strip() for t in args.source.split(",") if t.strip()]
+
+    print(c(f"\n合并标签确认:", "yellow"))
+    print(f"   源标签: {', '.join(source_tags)}")
+    print(f"   目标标签: {args.target}")
+
+    if not args.force:
+        answer = input("\n确认合并？(y/N): ").strip().lower()
+        if answer not in ("y", "yes"):
+            print(c("已取消", "yellow"))
+            cm.close()
+            return 0
+
+    count = cm.merge_tags(
+        source_tags=source_tags,
+        target_tag=args.target,
+        actor=args.agent,
+        session_id=args.session,
+    )
+
+    print(c(f"\n✅ 合并完成，{count} 条记忆受影响", "green"))
+    cm.close()
+    return 0
+
+
+def cmd_db_backup(args):
+    """创建数据库备份（v5.2.0 新增）"""
+    cm = _get_memory(args)
+
+    print(c("\n💾 创建数据库备份...", "yellow"))
+
+    result = cm.create_backup(backup_dir=args.dir)
+
+    if result["success"]:
+        print(c(f"\n✅ 备份成功", "green"))
+        print(f"   文件: {result['filename']}")
+        print(f"   路径: {result['path']}")
+        print(f"   大小: {result['size_mb']} MB")
+        print(f"   时间: {result['timestamp']}")
+    else:
+        print(c(f"\n❌ 备份失败: {result.get('error', '未知错误')}", "red"))
+        cm.close()
+        return 1
+
+    cm.close()
+    return 0
+
+
+def cmd_db_backups(args):
+    """列出备份文件（v5.2.0 新增）"""
+    cm = _get_memory(args)
+
+    backups = cm.list_backups(backup_dir=args.dir)
+
+    print(c(f"\n📦 备份列表（共 {len(backups)} 个）\n", "bold"))
+
+    if not backups:
+        print(c("   暂无备份", "yellow"))
+        cm.close()
+        return 0
+
+    for i, backup in enumerate(backups, 1):
+        from datetime import datetime
+        created = datetime.fromtimestamp(backup["created_at"]).strftime("%Y-%m-%d %H:%M:%S")
+        print(f" {i}. {backup['filename']}")
+        print(f"    大小: {backup['size_mb']} MB | 创建时间: {created}")
+
+    print()
+    cm.close()
+    return 0
+
+
+def cmd_db_restore(args):
+    """从备份恢复（v5.2.0 新增）"""
+    cm = _get_memory(args)
+
+    print(c(f"\n⚠️  恢复备份警告:", "yellow"))
+    print(f"   备份文件: {args.backup}")
+    print(f"   恢复前自动备份: {'否' if args.no_pre_backup else '是'}")
+    print(c("\n   此操作将覆盖当前数据库！", "red"))
+
+    if not args.force:
+        answer = input("\n确认恢复？(y/N): ").strip().lower()
+        if answer not in ("y", "yes"):
+            print(c("已取消", "yellow"))
+            cm.close()
+            return 0
+
+    result = cm.restore_backup(
+        backup_path=args.backup,
+        create_backup_before=not args.no_pre_backup,
+    )
+
+    if result["success"]:
+        print(c("\n✅ 恢复成功", "green"))
+        if result.get("backup_created"):
+            print(f"   恢复前备份: {result['backup_created']}")
+    else:
+        print(c(f"\n❌ 恢复失败: {result.get('error', '未知错误')}", "red"))
+        cm.close()
+        return 1
+
+    cm.close()
+    return 0
+
+
+def cmd_db_clean_backups(args):
+    """清理旧备份（v5.2.0 新增）"""
+    cm = _get_memory(args)
+
+    backups = cm.list_backups(backup_dir=args.dir)
+    will_delete = max(0, len(backups) - args.keep)
+
+    print(c(f"\n🧹 清理旧备份", "yellow"))
+    print(f"   当前备份数: {len(backups)}")
+    print(f"   保留数量: {args.keep}")
+    print(f"   将删除: {will_delete} 个")
+
+    if not args.force and will_delete > 0:
+        answer = input("\n确认删除？(y/N): ").strip().lower()
+        if answer not in ("y", "yes"):
+            print(c("已取消", "yellow"))
+            cm.close()
+            return 0
+
+    deleted = cm.delete_old_backups(
+        backup_dir=args.dir,
+        keep_count=args.keep,
+    )
+
+    print(c(f"\n✅ 已删除 {deleted} 个旧备份", "green"))
+    cm.close()
+    return 0
 
 
 if __name__ == "__main__":
