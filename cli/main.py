@@ -1922,6 +1922,15 @@ def main():
     p_personality.add_argument("--user-id", default="default", help="用户 ID")
     p_personality.add_argument("--limit", type=int, default=10, help="数量限制")
 
+    # Agent 记忆统计（v5.2.2 新增）
+    p_agent_stats = sub.add_parser("agent-stats", help="Agent 记忆统计（v5.2.2 新增）")
+    p_agent_stats.add_argument("--agent", "-a", help="指定 Agent ID（默认统计全部）")
+
+    p_agent_list = sub.add_parser("agent-list", help="列出 Agent 的记忆（v5.2.2 新增）")
+    p_agent_list.add_argument("agent", help="Agent ID")
+    p_agent_list.add_argument("--limit", "-n", type=int, default=50, help="数量限制")
+    p_agent_list.add_argument("--offset", type=int, default=0, help="偏移量")
+
     p_backup = sub.add_parser("backup", help="备份数据")
     p_backup.add_argument("--output", default="./data/backup", help="备份目录")
 
@@ -2013,6 +2022,8 @@ def main():
         "consolidate": cmd_consolidate,
         "graph": cmd_graph,
         "personality": cmd_personality,
+        "agent-stats": cmd_agent_stats,
+        "agent-list": cmd_agent_list,
         "backup": cmd_backup,
         "export": cmd_export,
         "import": cmd_import,
@@ -3871,6 +3882,57 @@ def cmd_scene_delete(args):
         print(c("\n❌ 删除失败", "red"))
     cm.close()
     return 0 if success else 1
+
+
+# ===== Agent 记忆优化（v5.2.2 新增）=====
+
+def cmd_agent_stats(args):
+    """Agent 记忆统计（v5.2.2 新增）"""
+    cm = _get_memory(args)
+    stats = cm.agent_stats(agent_id=args.agent)
+    print(c(f"\n🤖 Agent 记忆统计", "bold"))
+    print("=" * 50)
+
+    if args.agent:
+        # 单个 Agent 详情
+        print(f"Agent ID:   {stats['agent_id']}")
+        print(f"记忆总数:   {stats['total_memories']}")
+        if stats['last_active']:
+            from datetime import datetime
+            print(f"最后活跃:   {datetime.fromtimestamp(stats['last_active']).strftime('%Y-%m-%d %H:%M')}")
+        if stats['by_category']:
+            print(f"\n按分类:")
+            for cat, cnt in sorted(stats['by_category'].items(), key=lambda x: x[1], reverse=True)[:10]:
+                print(f"  {cat}: {cnt}")
+        if stats['by_layer']:
+            print(f"\n按层级:")
+            for layer, cnt in stats['by_layer'].items():
+                print(f"  {layer}: {cnt}")
+    else:
+        # 全部 Agent 概览
+        print(f"Agent 总数: {stats['total_agents']}")
+        if stats['by_agent']:
+            print(f"\n按 Agent 分布:")
+            for agent, data in sorted(stats['by_agent'].items(), key=lambda x: x[1]['count'], reverse=True)[:15]:
+                count = data['count']
+                cats = ', '.join(data['top_categories'][:3]) if data['top_categories'] else '无'
+                print(f"  {agent}: {count} 条 | 主要分类: {cats}")
+    cm.close()
+    return 0
+
+
+def cmd_agent_list(args):
+    """列出 Agent 的记忆（v5.2.2 新增）"""
+    cm = _get_memory(args)
+    entries = cm.list_by_agent(agent_id=args.agent, limit=args.limit, offset=args.offset)
+    print(f"\nAgent [{args.agent}] 的记忆: {len(entries)} 条")
+    for i, e in enumerate(entries, 1):
+        star = "⭐" if e.starred else "  "
+        preview = e.content[:60] + "..." if len(e.content) > 60 else e.content
+        print(f"\n{i}. {star} [{e.category}] {c(preview, 'cyan')}")
+        print(f"   ID: {e.id[:16]}... | 层级: {e.layer.value} | 隐私: {e.privacy.value}")
+    cm.close()
+    return 0
 
 
 if __name__ == "__main__":

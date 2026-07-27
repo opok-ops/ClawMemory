@@ -1265,3 +1265,34 @@ class MindForge:
             json.dump(export_data, f, ensure_ascii=False, indent=2)
 
         return len(dramas)
+
+    # ===== Agent 记忆优化（v5.2.2 新增）=====
+
+    def agent_stats(self, agent_id: Optional[str] = None) -> Dict[str, Any]:
+        """Agent 记忆统计（v5.2.2 新增）
+
+        统计按 Agent 来源分组的记忆数据。
+
+        Args:
+            agent_id: 指定 Agent ID（None 表示统计全部 Agent）
+
+        Returns:
+            Agent 统计数据
+        """
+        return self._storage.agent_stats(agent_id)
+
+    def list_by_agent(self,
+                      agent_id: str,
+                      limit: int = 100,
+                      offset: int = 0) -> List[Any]:
+        """列出特定 Agent 的记忆（v5.2.2 新增）
+
+        Args:
+            agent_id: Agent ID
+            limit: 返回数量限制
+            offset: 偏移量
+
+        Returns:
+            该 Agent 创建的记忆列表
+        """
+        return self._storage.list_by_agent(agent_id, limit, offset)

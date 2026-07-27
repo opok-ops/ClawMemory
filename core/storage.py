@@ -1291,6 +1291,95 @@ class StorageEngine:
             "top_tags": top_tags,
         }
 
+    def agent_stats(self, agent_id: Optional[str] = None) -> Dict[str, Any]:
+        """Agent 记忆统计（v5.2.2 新增）
+
+        统计按 Agent 来源分组的记忆数据，支持查询特定 Agent。
+
+        Args:
+            agent_id: 指定 Agent ID（None 表示统计全部 Agent）
+
+        Returns:
+            {
+                "total_agents": 总 Agent 数,
+                "by_agent": {agent_id: {count, last_active, top_categories}},
+                "agent_detail": 指定 Agent 的详情（如果提供了 agent_id）
+            }
+        """
+        conn = self._get_conn()
+
+        if agent_id:
+            # 查询特定 Agent
+            total = conn.execute(
+                "SELECT COUNT(*) FROM memories WHERE source_agent = ?",
+                (agent_id,)
+            ).fetchone()[0]
+
+            categories = conn.execute(
+                "SELECT category, COUNT(*) as cnt FROM memories WHERE source_agent = ? GROUP BY category ORDER BY cnt DESC LIMIT 10",
+                (agent_id,)
+            ).fetchall()
+
+            last_active = conn.execute(
+                "SELECT MAX(created_at) FROM memories WHERE source_agent = ?",
+                (agent_id,)
+            ).fetchone()[0] or 0
+
+            layers = conn.execute(
+                "SELECT layer, COUNT(*) as cnt FROM memories WHERE source_agent = ? GROUP BY layer",
+                (agent_id,)
+            ).fetchall()
+
+            return {
+                "agent_id": agent_id,
+                "total_memories": total,
+                "last_active": last_active,
+                "by_category": {r[0]: r[1] for r in categories},
+                "by_layer": {r[0]: r[1] for r in layers},
+            }
+
+        # 统计所有 Agent
+        agents = conn.execute(
+            "SELECT source_agent, COUNT(*) as cnt, MAX(created_at) as last_active "
+            "FROM memories WHERE source_agent != '' GROUP BY source_agent ORDER BY cnt DESC"
+        ).fetchall()
+
+        by_agent = {}
+        for row in agents:
+            agent = row[0]
+            count = row[1]
+            last_active = row[2]
+
+            # 获取每个 Agent 的 top 分类
+            top_cats = conn.execute(
+                "SELECT category, COUNT(*) as cnt FROM memories WHERE source_agent = ? "
+                "GROUP BY category ORDER BY cnt DESC LIMIT 5",
+                (agent,)
+            ).fetchall()
+
+            by_agent[agent] = {
+                "count": count,
+                "last_active": last_active,
+                "top_categories": [r[0] for r in top_cats[:5]],
+            }
+
+        return {
+            "total_agents": len(by_agent),
+            "by_agent": by_agent,
+        }
+
+    def list_by_agent(self,
+                      agent_id: str,
+                      limit: int = 100,
+                      offset: int = 0) -> List[MemoryEntry]:
+        """列出特定 Agent 的记忆（v5.2.2 新增）"""
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM memories WHERE source_agent = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (agent_id, limit, offset)
+        ).fetchall()
+        return [self._row_to_entry(r) for r in rows]
+
     def get_audit_log(self,
                       memory_id: Optional[str] = None,
                       actor: Optional[str] = None,
