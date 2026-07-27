@@ -155,26 +155,37 @@ _global_engine: Optional[EncryptionEngine] = None
 
 
 def init_engine(password: str, key_file: str = "./data/.key") -> EncryptionEngine:
-    """初始化全局加密引擎"""
+    """初始化全局加密引擎
+
+    v5.2.2 修复：显式指定文件 encoding='utf-8'，避免在中文/Windows 系统上
+    出现 UnicodeDecodeError 或编码不一致问题。
+    """
     global _global_engine
 
     key_path = Path(key_file)
     key_path.parent.mkdir(parents=True, exist_ok=True)
 
     if key_path.exists():
-        with open(key_path, "r") as f:
+        with open(key_path, "r", encoding="utf-8") as f:
             key_data = json.load(f)
         salt = base64.b64decode(key_data["salt"])
         engine, _ = EncryptionEngine.from_password(password, salt)
     else:
         engine, salt = EncryptionEngine.from_password(password)
-        with open(key_path, "w") as f:
+        with open(key_path, "w", encoding="utf-8") as f:
             json.dump({
                 "salt": base64.b64encode(salt).decode(),
                 "version": "5.0",
                 "kdf": "PBKDF2-SHA256",
                 "iterations": _PBKDF2_ITERATIONS,
             }, f, indent=2)
+        # 设置严格的文件权限（仅所有者可读写）- 防止密钥泄露
+        try:
+            import stat
+            key_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        except (OSError, AttributeError):
+            # Windows 或其他不支持 chmod 的系统跳过
+            pass
 
     _global_engine = engine
     return engine

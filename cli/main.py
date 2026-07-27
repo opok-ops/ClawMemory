@@ -57,7 +57,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.2.1"
+    __version__ = "5.2.2"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -125,7 +125,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}MindForge v5.2.1 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}MindForge v5.2.2 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -135,7 +135,7 @@ def print_banner():
 def cmd_init(args):
     """初始化 MindForge"""
     print_banner()
-    print(c("MindForge v5.2.1 初始化向导", "bold"))
+    print(c("MindForge v5.2.2 初始化向导", "bold"))
     print("=" * 50)
 
     password = getpass.getpass("请设置加密密码（用于保护记忆）：")
@@ -223,6 +223,7 @@ def cmd_add(args):
     print(f"   重要性: {args.importance}")
     if entry.starred:
         print(f"   ⭐ 已收藏")
+    cm.close()
     return 0
 
 
@@ -253,6 +254,7 @@ def cmd_search(args):
         if len(chunk.content) > 300:
             print("...")
 
+    cm.close()
     return 0
 
 
@@ -555,6 +557,7 @@ def cmd_list(args):
         print(f"\n... 还有 {total - args.limit - args.offset} 条"
               f"（使用 --offset {args.offset + args.limit} 查看更多）")
 
+    cm.close()
     return 0
 
 
@@ -686,6 +689,7 @@ def cmd_batch_delete(args):
 
     action = "彻底删除" if args.hard else "移到回收站"
     print(c(f"\n🗑️  已{action} {count} 条记忆", "green"))
+    cm.close()
     return 0
 
 
@@ -710,6 +714,7 @@ def cmd_tag_search(args):
         print(f"  层级: {entry.layer.value} | 重要性: {entry.importance.value}")
         print(f"  创建: {format_time(entry.created_at)}")
 
+    cm.close()
     return 0
 
 
@@ -755,6 +760,7 @@ def cmd_deduplicate(args):
     if not actually_delete and result["would_remove"] > 0:
         print(c("\n确认无误后，加 --execute 执行实际删除", "yellow"))
 
+    cm.close()
     return 0
 
 
@@ -773,6 +779,7 @@ def cmd_export_md(args):
     print(c("\n✅ Markdown 导出成功", "green"))
     print(f"   文件路径: {path}")
     print(f"   文件大小: {format_size(size)}")
+    cm.close()
     return 0
 
 
@@ -848,6 +855,7 @@ def cmd_summarize(args):
         for tag, count in result["top_tags"][:5]:
             print(f"   #{tag}: {count}")
 
+    cm.close()
     return 0
 
 
@@ -965,6 +973,7 @@ def cmd_analyze(args):
         for tag, count in tag_list:
             print(f"   #{tag}: {c(str(count), 'pink')}")
 
+    cm.close()
     return 0
 
 
@@ -1069,6 +1078,7 @@ def cmd_migrate(args):
         print(c(f"\n❌ 迁移失败：{e}", "red"))
         return 1
 
+    cm.close()
     return 0
 
 
@@ -1157,6 +1167,7 @@ def cmd_star(args):
         print(c("\n⭐ 已收藏", "green"))
     else:
         print(c("\n❌ 收藏失败：记忆不存在", "red"))
+    cm.close()
     return 0 if success else 1
 
 
@@ -1168,6 +1179,7 @@ def cmd_unstar(args):
         print(c("\n🗑️  已取消收藏", "yellow"))
     else:
         print(c("\n❌ 取消失败：记忆不存在", "red"))
+    cm.close()
     return 0 if success else 1
 
 
@@ -1192,6 +1204,7 @@ def cmd_consolidate(args):
     print(f"  永久记忆: {stats['permanent']}")
     print(f"  巩固率: {stats['consolidation_rate']:.1%}")
 
+    cm.close()
     return 0
 
 
@@ -1226,6 +1239,7 @@ def cmd_graph(args):
         for name, etype in entities:
             print(f"  - {name} ({etype})")
 
+    cm.close()
     return 0
 
 
@@ -1258,6 +1272,7 @@ def cmd_personality(args):
             bar = "█" * int(score * 20)
             print(f"  {topic:<20} {bar} {score:.2f}")
 
+    cm.close()
     return 0
 
 
@@ -1267,6 +1282,7 @@ def cmd_backup(args):
     backup_path = cm.backup(args.output)
     print(c(f"✅ 备份已创建：{backup_path}", "green"))
     print(f"   大小：{format_size(backup_path.stat().st_size)}")
+    cm.close()
     return 0
 
 
@@ -1337,6 +1353,7 @@ def cmd_compliance(args):
     for level, count in report["by_privacy"].items():
         print(f"  {level}: {count}")
 
+    cm.close()
     return 0
 
 
@@ -1371,10 +1388,10 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="mindforge",
-        description="MindForge v5.2.1 - AI Agent 终身记忆系统",
+        description="MindForge v5.2.2 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", "-v", action="version", version="MindForge v5.2.1")
+    parser.add_argument("--version", "-v", action="version", version="MindForge v5.2.2")
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")
@@ -1761,6 +1778,21 @@ def main():
 
     p_drama_stats = sub.add_parser("drama-stats", help="短剧统计（v5.2.1 新增）")
 
+    # v5.2.2 新增命令
+    p_drama_recommend = sub.add_parser("drama-recommend", help="AI 智能推荐短剧（v5.2.2 新增）")
+    p_drama_recommend.add_argument("--genre", "-g",
+                                    choices=["romance", "suspense", "comedy", "action", "horror", "scifi", "fantasy", "drama", "other"],
+                                    help="按类型筛选")
+    p_drama_recommend.add_argument("--min-rating", type=float, default=7.0, help="最低评分")
+    p_drama_recommend.add_argument("--limit", "-n", type=int, default=5, help="推荐数量")
+    p_drama_recommend.add_argument("--exclude", nargs="+", help="排除的短剧 ID")
+
+    p_drama_progress = sub.add_parser("drama-progress", help="观看进度统计（v5.2.2 新增）")
+
+    p_drama_export = sub.add_parser("drama-export", help="导出短剧数据（v5.2.2 新增）")
+    p_drama_export.add_argument("--output", "-o", default="./data/drama_export.json", help="输出文件")
+    p_drama_export.add_argument("--ids", nargs="+", help="指定导出的短剧 ID 列表（默认全部）")
+
     # 台词相关
     p_line_add = sub.add_parser("line-add", help="添加短剧台词（v5.2.1 新增）")
     p_line_add.add_argument("drama_id", help="短剧 ID")
@@ -2010,6 +2042,9 @@ def main():
         "drama-update": cmd_drama_update,
         "drama-delete": cmd_drama_delete,
         "drama-stats": cmd_drama_stats,
+        "drama-recommend": cmd_drama_recommend,
+        "drama-progress": cmd_drama_progress,
+        "drama-export": cmd_drama_export,
         "line-add": cmd_line_add,
         "line-list": cmd_line_list,
         "line-search": cmd_line_search,
@@ -3384,6 +3419,78 @@ def cmd_drama_stats(args):
         print(f"\n按状态:")
         for status, cnt in stats['by_status'].items():
             print(f"  {status}: {cnt}")
+    cm.close()
+    return 0
+
+
+def cmd_drama_recommend(args):
+    """AI 智能推荐短剧（v5.2.2 新增）"""
+    cm = _get_memory(args)
+    recs = cm.recommend_dramas(
+        genre=args.genre,
+        min_rating=args.min_rating,
+        exclude_ids=args.exclude,
+        limit=args.limit,
+    )
+    print(c(f"\n🤖 AI 智能推荐（{len(recs)} 部）", "cyan"))
+    print("=" * 50)
+    if not recs:
+        print(c("   没有符合条件的短剧", "yellow"))
+        print("   提示：可以降低评分阈值或添加更多短剧")
+    else:
+        for i, d in enumerate(recs, 1):
+            star = "⭐" if d.rating >= 8 else ""
+            print(f"\n{i}. {star} {c(d.title, 'bold')} [{d.genre.value}]")
+            print(f"   评分: {d.rating} | 类型: {d.genre.value}")
+            if d.platform:
+                print(f"   平台: {d.platform}")
+            if d.tags:
+                print(f"   标签: {', '.join(d.tags[:5])}")
+            if d.description:
+                print(f"   简介: {d.description[:60]}...")
+    cm.close()
+    return 0
+
+
+def cmd_drama_progress(args):
+    """观看进度统计（v5.2.2 新增）"""
+    cm = _get_memory(args)
+    progress = cm.drama_watching_progress()
+    print(c(f"\n📈 观看进度统计", "bold"))
+    print("=" * 50)
+    print(f"短剧总数:   {progress['total_dramas']}")
+    print(f"规划总集数: {progress['total_planned_episodes']}")
+    print(f"已看总集数: {progress['total_watched_episodes']}")
+    rate = progress['completion_rate']
+    rate_color = "green" if rate >= 80 else "yellow" if rate >= 50 else "red"
+    print(f"完成度:     {c(f'{rate}%', rate_color)}")
+
+    if progress['by_genre']:
+        print(f"\n按类型分布:")
+        for genre, data in progress['by_genre'].items():
+            genre_rate = 0.0
+            if data['total_planned'] > 0:
+                genre_rate = data['total_watched'] / data['total_planned'] * 100
+            print(f"  {genre}: {data['count']} 部 | 进度 {data['total_watched']}/{data['total_planned']} ({genre_rate:.1f}%)")
+    cm.close()
+    return 0
+
+
+def cmd_drama_export(args):
+    """导出短剧数据（v5.2.2 新增）"""
+    cm = _get_memory(args)
+    try:
+        count = cm.export_dramas(
+            output_path=args.output,
+            drama_ids=args.ids,
+        )
+        print(c(f"\n✅ 短剧数据已导出", "green"))
+        print(f"   文件: {args.output}")
+        print(f"   数量: {count} 部")
+    except Exception as e:
+        print(c(f"\n❌ 导出失败: {e}", "red"))
+        cm.close()
+        return 1
     cm.close()
     return 0
 

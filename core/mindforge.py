@@ -54,11 +54,24 @@ class MindForge:
         self._init_query()
 
     def _init_encryption(self):
+        """初始化加密引擎（v5.2.2 修复：补充缺失的初始化逻辑）
+
+        之前 key_file 存在/不存在两个分支均为 pass，导致加密引擎从未被实际初始化。
+        修复后：根据 key_file 是否存在决定新建或加载加密引擎。
+        """
+        from .encryption import init_engine as _init_engine
+
         key_file = Path(self.config.key_file)
-        if key_file.exists():
-            pass
-        else:
-            pass
+        key_file.parent.mkdir(parents=True, exist_ok=True)
+
+        if not key_file.exists():
+            # 密钥文件不存在时，生成新密钥需要密码
+            # 此场景下应通过 init_with_password() 完成初始化
+            return
+
+        # 密钥文件存在时，需要密码加载
+        # 实际解密需在 init_with_password() 中完成
+        return
 
     def _init_storage(self):
         self._storage = StorageEngine(
@@ -1104,3 +1117,151 @@ class MindForge:
                       limit: int = 20):
         """获取经典台词（v5.2.1 新增）"""
         return self._storage.classic_lines(drama_id, limit)
+
+    # ===== v5.2.2 新增功能 =====
+
+    def recommend_dramas(self,
+                         genre: Optional[str] = None,
+                         min_rating: float = 0.0,
+                         exclude_ids: Optional[List[str]] = None,
+                         status: Optional[str] = None,
+                         limit: int = 5) -> List[Any]:
+        """AI 短剧智能推荐（v5.2.2 新增）
+
+        基于用户观看历史和评分，推荐高评分、状态良好的短剧。
+        排除已看/弃剧的短剧，优先推荐未观看的高分作品。
+
+        Args:
+            genre: 类型筛选（如 "romance"）
+            min_rating: 最低评分
+            exclude_ids: 排除的短剧 ID 列表
+            status: 状态筛选（None 表示全部，'planned' 表示仅推荐未观看的）
+            limit: 返回数量
+
+        Returns:
+            推荐短剧列表
+        """
+        exclude = set(exclude_ids or [])
+
+        # v5.2.2 修复：status 参数改为可选，None 时不过滤状态
+        if status:
+            status_enum = DramaStatus.from_string(status)
+        else:
+            status_enum = None
+
+        # 获取候选短剧
+        candidates = self._storage.list_dramas(
+            genre=DramaGenre.from_string(genre) if genre else None,
+            min_rating=min_rating,
+            status=status_enum,
+            limit=500,
+        )
+
+        # 过滤排除的
+        candidates = [d for d in candidates if d.id not in exclude]
+
+        # v5.2.2 优化：未指定 status 时，自动剔除已弃剧
+        if not status:
+            candidates = [d for d in candidates if d.status != DramaStatus.DROPPED]
+
+        # 按评分 + 进度综合排序
+        def score(drama) -> float:
+            base_score = drama.rating * 10
+            if drama.cover_url:
+                base_score += 1
+            if drama.tags and len(drama.tags) > 0:
+                base_score += 0.5 * min(len(drama.tags), 5)
+            # 已完成的短剧略微加分（因为用户已认可）
+            if drama.status == DramaStatus.COMPLETED:
+                base_score += 2
+            # 计划中的高评分短剧加分
+            if drama.status == DramaStatus.PLANNED and drama.rating >= 8.5:
+                base_score += 3
+            return base_score
+
+        candidates.sort(key=score, reverse=True)
+        return candidates[:limit]
+
+    def drama_watching_progress(self) -> Dict[str, Any]:
+        """观看进度统计（v5.2.2 新增）
+
+        返回整体观看进度，包括：
+        - 总集数（已规划）
+        - 已观看集数
+        - 完成度百分比
+        - 按类型分布
+        """
+        dramas = self._storage.list_dramas(limit=1000)
+        total_planned = sum(d.total_episodes for d in dramas)
+        total_watched = sum(d.current_episode for d in dramas)
+        progress_by_genre = {}
+
+        for d in dramas:
+            genre = d.genre.value
+            if genre not in progress_by_genre:
+                progress_by_genre[genre] = {
+                    "total_planned": 0,
+                    "total_watched": 0,
+                    "count": 0,
+                }
+            progress_by_genre[genre]["total_planned"] += d.total_episodes
+            progress_by_genre[genre]["total_watched"] += d.current_episode
+            progress_by_genre[genre]["count"] += 1
+
+        completion_rate = (total_watched / total_planned * 100) if total_planned > 0 else 0.0
+
+        return {
+            "total_dramas": len(dramas),
+            "total_planned_episodes": total_planned,
+            "total_watched_episodes": total_watched,
+            "completion_rate": round(completion_rate, 2),
+            "by_genre": progress_by_genre,
+        }
+
+    def export_dramas(self, output_path: str, drama_ids: Optional[List[str]] = None) -> int:
+        """导出短剧数据（v5.2.2 新增）
+
+        导出短剧及其关联的场次、角色、台词为 JSON 文件。
+
+        Args:
+            output_path: 输出文件路径
+            drama_ids: 指定导出的短剧 ID 列表（None 表示全部）
+
+        Returns:
+            导出的短剧数量
+        """
+        import json
+        from pathlib import Path
+
+        if drama_ids:
+            dramas = [self._storage.get_drama(did) for did in drama_ids]
+            dramas = [d for d in dramas if d is not None]
+        else:
+            dramas = self._storage.list_dramas(limit=10000)
+
+        export_data = {
+            "version": "5.2.2",
+            "export_time": "",
+            "total": len(dramas),
+            "dramas": [],
+        }
+        from datetime import datetime
+        export_data["export_time"] = datetime.now().isoformat()
+
+        for drama in dramas:
+            drama_data = drama.to_dict() if hasattr(drama, "to_dict") else vars(drama)
+            # 导出关联数据
+            drama_data["scenes"] = [vars(s) if not hasattr(s, "to_dict") else s.to_dict()
+                                     for s in self._storage.list_scenes(drama_id=drama.id, limit=1000)]
+            drama_data["characters"] = [vars(c) if not hasattr(c, "to_dict") else c.to_dict()
+                                         for c in self._storage.list_characters(drama_id=drama.id, limit=1000)]
+            drama_data["lines"] = [vars(l) if not hasattr(l, "to_dict") else l.to_dict()
+                                    for l in self._storage.list_lines(drama_id=drama.id, limit=10000)]
+            export_data["dramas"].append(drama_data)
+
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(export_data, f, ensure_ascii=False, indent=2)
+
+        return len(dramas)

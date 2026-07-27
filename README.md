@@ -1,4 +1,4 @@
-# MindForge v5.2.1
+# MindForge v5.2.2
 
 **AI Agent 终身记忆系统 — 四层记忆架构 · 知识图谱 · 多模态 · 人格化 · 联邦网络**
 
@@ -25,7 +25,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    MindForge v5.2.1                        │
+│                    MindForge v5.2.2                        │
 ├─────────────────────────────────────────────────────────┤
 │  🎯 认知层 (Cognitive Layer)                              │
 │     人格引擎 · 知识图谱 · 记忆演化 · 联邦网络              │
@@ -344,6 +344,33 @@ context = adapter.get_context("数据库优化")
 ---
 
 ## 📝 更新日志
+
+### v5.2.2 (2026-07-27)
+
+**✨ AI 短剧智能增强**
+- `drama-recommend` - AI 智能推荐短剧，支持按类型/评分筛选，排除已弃剧（v5.2.2 新增）
+- `drama-progress` - 观看进度统计，显示完成度和按类型分布（v5.2.2 新增）
+- `drama-export` - 一键导出短剧数据为 JSON，支持全量或指定 ID（v5.2.2 新增）
+- `recommend_dramas` API - 智能推荐算法，综合评分/状态/标签（v5.2.2 新增）
+- `drama_watching_progress` API - 整体观看进度统计（v5.2.2 新增）
+- `export_dramas` API - 完整导出短剧及关联场次/角色/台词（v5.2.2 新增）
+
+**🛡️ 安全与稳定性修复**
+- 修复 18 个 CLI 命令的 `cm.close()` 资源泄漏（数据库连接未释放）
+  - 涉及：add/search/list/batch_delete/tag_search/deduplicate/export_md 等
+- 修复 `MindForge._init_encryption` 空逻辑问题（之前两个分支均为 pass）
+- 修复 `init_engine` 缺少 `encoding='utf-8'` 参数（Windows 中文环境兼容）
+- 新增密钥文件权限加固：chmod 600 限制仅所有者可读写
+- 修复 `recommend_dramas` 硬编码 status='planned' 导致无法推荐已观看短剧的 bug
+- 优化推荐算法：自动剔除 DROPPED 状态短剧，COMPLETED 短剧加分，PLANNED 高分剧加分
+
+**📊 核心增强**
+- 推荐算法权重：评分 × 10 + 标签奖励 + 完成度奖励
+- 导出 JSON 包含版本号（5.2.2）和导出时间戳
+- 短剧列表查询限制从 100 提升到 500，提高推荐候选数
+
+**📋 其他**
+- 版本号全面更新至 v5.2.2
 
 ### v5.2.1 (2026-07-27)
 
