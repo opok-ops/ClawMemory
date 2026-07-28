@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.2.0 CLI - 命令行工具
+MindForge v5.2.4 CLI - 命令行工具
 =================================
 
 Usage:
@@ -57,7 +57,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.2.3"
+    __version__ = "5.2.4"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -125,7 +125,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}MindForge v5.2.3 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}MindForge v5.2.4 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -135,7 +135,7 @@ def print_banner():
 def cmd_init(args):
     """初始化 MindForge"""
     print_banner()
-    print(c("MindForge v5.2.3 初始化向导", "bold"))
+    print(c("MindForge v5.2.4 初始化向导", "bold"))
     print("=" * 50)
 
     password = getpass.getpass("请设置加密密码（用于保护记忆）：")
@@ -1388,10 +1388,10 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="mindforge",
-        description="MindForge v5.2.2 - AI Agent 终身记忆系统",
+        description="MindForge v5.2.4 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", "-v", action="version", version="MindForge v5.2.2")
+    parser.add_argument("--version", "-v", action="version", version="MindForge v5.2.4")
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")
@@ -1955,6 +1955,69 @@ def main():
     p_similar.add_argument("--limit", "-n", type=int, default=10, help="返回数量")
     p_similar.add_argument("--min-similarity", "-m", type=float, default=0.3, help="最低相似度阈值（0-1）")
 
+    # ===== v5.2.4 新增命令 =====
+
+    p_note_add = sub.add_parser("note-add", help="添加记忆笔记（v5.2.4 新增）")
+    p_note_add.add_argument("memory_id", help="记忆 ID")
+    p_note_add.add_argument("content", help="笔记内容")
+    p_note_add.add_argument("--author", "-a", default="cli", help="作者")
+    p_note_add.add_argument("--tags", "-t", nargs="+", help="笔记标签")
+
+    p_note_list = sub.add_parser("note-list", help="列出记忆笔记（v5.2.4 新增）")
+    p_note_list.add_argument("memory_id", help="记忆 ID")
+    p_note_list.add_argument("--limit", "-n", type=int, default=50, help="数量限制")
+
+    p_note_delete = sub.add_parser("note-delete", help="删除笔记（v5.2.4 新增）")
+    p_note_delete.add_argument("note_id", help="笔记 ID")
+    p_note_delete.add_argument("--force", action="store_true", help="确认删除")
+
+    p_template_add = sub.add_parser("template-add", help="添加记忆模板（v5.2.4 新增）")
+    p_template_add.add_argument("name", help="模板名称")
+    p_template_add.add_argument("content", help="模板内容（支持 {变量} 占位符）")
+    p_template_add.add_argument("--category", "-c", default="general", help="默认分类")
+    p_template_add.add_argument("--tags", "-t", nargs="+", help="默认标签")
+    p_template_add.add_argument("--importance", "-i", default="MEDIUM",
+                                choices=["LOW", "MEDIUM", "HIGH", "CRITICAL"], help="默认重要性")
+    p_template_add.add_argument("--layer", "-l", default="short_term",
+                                choices=["sensory", "short_term", "long_term", "permanent"], help="默认层级")
+    p_template_add.add_argument("--description", "-d", default="", help="模板描述")
+
+    p_template_list = sub.add_parser("template-list", help="列出记忆模板（v5.2.4 新增）")
+    p_template_list.add_argument("--category", "-c", help="按分类筛选")
+    p_template_list.add_argument("--limit", "-n", type=int, default=50, help="数量限制")
+
+    p_template_use = sub.add_parser("template-use", help="使用模板创建记忆（v5.2.4 新增）")
+    p_template_use.add_argument("template_id", help="模板 ID")
+    p_template_use.add_argument("--var", nargs="+", help="变量替换（格式：key=value）")
+    p_template_use.add_argument("--agent", default="cli", help="Agent ID")
+    p_template_use.add_argument("--session", default="cli", help="会话 ID")
+
+    p_template_delete = sub.add_parser("template-delete", help="删除模板（v5.2.4 新增）")
+    p_template_delete.add_argument("template_id", help="模板 ID")
+    p_template_delete.add_argument("--force", action="store_true", help="确认删除")
+
+    p_batch_update = sub.add_parser("batch-update", help="批量更新记忆（v5.2.4 新增）")
+    p_batch_update.add_argument("--ids", required=True, help="记忆 ID 列表，逗号分隔")
+    p_batch_update.add_argument("--category", "-c", help="新分类")
+    p_batch_update.add_argument("--tags", "-t", nargs="+", help="新标签")
+    p_batch_update.add_argument("--importance", "-i",
+                                choices=["LOW", "MEDIUM", "HIGH", "CRITICAL"], help="新重要性")
+    p_batch_update.add_argument("--layer", "-l",
+                                choices=["sensory", "short_term", "long_term", "permanent"], help="新层级")
+    p_batch_update.add_argument("--star", action="store_true", default=None, help="设为收藏")
+    p_batch_update.add_argument("--unstar", action="store_true", default=None, help="取消收藏")
+    p_batch_update.add_argument("--force", action="store_true", help="跳过确认")
+    p_batch_update.add_argument("--agent", default="cli", help="Agent ID")
+    p_batch_update.add_argument("--session", default="cli", help="会话 ID")
+
+    p_schedule = sub.add_parser("schedule", help="复习计划管理（v5.2.4 新增）")
+    p_schedule.add_argument("schedule_action", choices=["create", "list", "review", "stats"],
+                            help="操作：create=创建计划, list=到期列表, review=完成复习, stats=统计")
+    p_schedule.add_argument("--memory-id", "-m", help="记忆 ID（create 时必填）")
+    p_schedule.add_argument("--schedule-id", "-s", help="复习计划 ID（review 时必填）")
+    p_schedule.add_argument("--interval", type=float, default=1.0, help="复习间隔天数（create 时使用）")
+    p_schedule.add_argument("--limit", "-n", type=int, default=20, help="数量限制")
+
     p_backup = sub.add_parser("backup", help="备份数据")
     p_backup.add_argument("--output", default="./data/backup", help="备份目录")
 
@@ -2061,7 +2124,6 @@ def main():
         "cleanup": cmd_cleanup,
         "batch-add": cmd_batch_add,
         "import-url": cmd_import_url,
-        "similar": cmd_similar,
         "export-excel": cmd_export_excel,
         "import-excel": cmd_import_excel,
         "copy": cmd_copy,
@@ -2101,6 +2163,16 @@ def main():
         "scene-get": cmd_scene_get,
         "scene-update": cmd_scene_update,
         "scene-delete": cmd_scene_delete,
+        # v5.2.4 新增
+        "note-add": cmd_note_add,
+        "note-list": cmd_note_list,
+        "note-delete": cmd_note_delete,
+        "template-add": cmd_template_add,
+        "template-list": cmd_template_list,
+        "template-use": cmd_template_use,
+        "template-delete": cmd_template_delete,
+        "batch-update": cmd_batch_update,
+        "schedule": cmd_schedule,
     }
 
     cmd = commands.get(args.command)
@@ -4124,6 +4196,277 @@ def cmd_similar(args):
 
     cm.close()
     return 0
+
+
+# ===== v5.2.4 新增命令处理函数 =====
+
+
+def cmd_note_add(args):
+    """添加记忆笔记（v5.2.4 新增）"""
+    cm = _get_memory(args)
+    result = cm.add_note(args.memory_id, args.content, author=args.author, tags=args.tags)
+    if result.get("success"):
+        print(c(f"\n✅ 笔记已添加", "green"))
+        print(f"   笔记 ID: {result['note_id']}")
+        print(f"   记忆 ID: {result['memory_id']}")
+    else:
+        print(c(f"\n❌ {result.get('error', '添加失败')}", "red"))
+    cm.close()
+    return 0 if result.get("success") else 1
+
+
+def cmd_note_list(args):
+    """列出记忆笔记（v5.2.4 新增）"""
+    cm = _get_memory(args)
+    notes = cm.list_notes(args.memory_id, limit=args.limit)
+    if not notes:
+        print(c("\n📝 暂无笔记", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n📝 记忆笔记（共 {len(notes)} 条）", "bold"))
+    print("=" * 60)
+    for note in notes:
+        print(f"  {c(note['id'][:8], 'cyan')} | {format_time(note['created_at'])}")
+        print(f"    {note['content'][:80]}")
+        if note.get("author"):
+            print(f"    作者: {note['author']}")
+        if note.get("tags"):
+            print(f"    标签: {', '.join(note['tags'])}")
+        print()
+    cm.close()
+    return 0
+
+
+def cmd_note_delete(args):
+    """删除笔记（v5.2.4 新增）"""
+    cm = _get_memory(args)
+    if not args.force:
+        print(c(f"\n⚠️  确认删除笔记 {args.note_id[:8]}...？", "yellow"))
+        print("   使用 --force 参数确认删除")
+        cm.close()
+        return 1
+
+    result = cm.delete_note(args.note_id)
+    if result.get("success"):
+        print(c(f"\n✅ 笔记已删除", "green"))
+    else:
+        print(c(f"\n❌ {result.get('error', '删除失败')}", "red"))
+    cm.close()
+    return 0 if result.get("success") else 1
+
+
+def cmd_template_add(args):
+    """添加记忆模板（v5.2.4 新增）"""
+    cm = _get_memory(args)
+    result = cm.add_template(
+        name=args.name,
+        content_template=args.content,
+        category=args.category,
+        tags=args.tags,
+        importance=args.importance,
+        layer=args.layer,
+        description=args.description,
+    )
+    if result.get("success"):
+        print(c(f"\n✅ 模板已创建", "green"))
+        print(f"   模板 ID: {result['template_id']}")
+        print(f"   名称: {result['name']}")
+    else:
+        print(c(f"\n❌ {result.get('error', '创建失败')}", "red"))
+    cm.close()
+    return 0 if result.get("success") else 1
+
+
+def cmd_template_list(args):
+    """列出记忆模板（v5.2.4 新增）"""
+    cm = _get_memory(args)
+    templates = cm.list_templates(category=args.category, limit=args.limit)
+    if not templates:
+        print(c("\n📋 暂无模板", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n📋 记忆模板（共 {len(templates)} 个）", "bold"))
+    print("=" * 60)
+    for t in templates:
+        print(f"  {c(t['id'][:8], 'cyan')} | {c(t['name'], 'bold')} | 使用 {t['use_count']} 次")
+        print(f"    分类: {t['category']} | 重要性: {t['importance']} | 层级: {t['layer']}")
+        print(f"    模板: {t['content_template'][:60]}...")
+        if t.get("description"):
+            print(f"    描述: {t['description']}")
+        print()
+    cm.close()
+    return 0
+
+
+def cmd_template_use(args):
+    """使用模板创建记忆（v5.2.4 新增）"""
+    cm = _get_memory(args)
+
+    # 解析变量
+    variables = {}
+    if args.var:
+        for v in args.var:
+            if "=" in v:
+                key, value = v.split("=", 1)
+                variables[key] = value
+
+    result = cm.use_template(args.template_id, variables=variables,
+                             actor=args.agent, session_id=args.session)
+    if result.get("success"):
+        print(c(f"\n✅ 记忆已创建", "green"))
+        print(f"   记忆 ID: {result['memory_id']}")
+        print(f"   使用模板: {result['template_name']}")
+        print(f"   内容: {result['content'][:80]}")
+    else:
+        print(c(f"\n❌ {result.get('error', '创建失败')}", "red"))
+    cm.close()
+    return 0 if result.get("success") else 1
+
+
+def cmd_template_delete(args):
+    """删除模板（v5.2.4 新增）"""
+    cm = _get_memory(args)
+    if not args.force:
+        print(c(f"\n⚠️  确认删除模板 {args.template_id[:8]}...？", "yellow"))
+        print("   使用 --force 参数确认删除")
+        cm.close()
+        return 1
+
+    result = cm.delete_template(args.template_id)
+    if result.get("success"):
+        print(c(f"\n✅ 模板已删除: {result.get('name', '')}", "green"))
+    else:
+        print(c(f"\n❌ {result.get('error', '删除失败')}", "red"))
+    cm.close()
+    return 0 if result.get("success") else 1
+
+
+def cmd_batch_update(args):
+    """批量更新记忆（v5.2.4 新增）"""
+    cm = _get_memory(args)
+
+    ids = [x.strip() for x in args.ids.split(",") if x.strip()]
+    if not ids:
+        print(c("\n❌ 未指定有效的记忆 ID", "red"))
+        cm.close()
+        return 1
+
+    starred = None
+    if args.star:
+        starred = True
+    elif args.unstar:
+        starred = False
+
+    if not args.force:
+        print(c(f"\n⚠️  即将批量更新 {len(ids)} 条记忆", "yellow"))
+        changes = []
+        if args.category:
+            changes.append(f"分类 → {args.category}")
+        if args.tags:
+            changes.append(f"标签 → {', '.join(args.tags)}")
+        if args.importance:
+            changes.append(f"重要性 → {args.importance}")
+        if args.layer:
+            changes.append(f"层级 → {args.layer}")
+        if starred is not None:
+            changes.append(f"收藏 → {'是' if starred else '否'}")
+        if changes:
+            print(f"   变更: {'; '.join(changes)}")
+        print("   使用 --force 参数确认执行")
+        cm.close()
+        return 1
+
+    result = cm.batch_update(
+        memory_ids=ids,
+        category=args.category,
+        tags=args.tags,
+        importance=args.importance,
+        layer=args.layer,
+        starred=starred,
+        actor=args.agent,
+        session_id=args.session,
+    )
+    if result.get("success"):
+        print(c(f"\n✅ 批量更新完成", "green"))
+        print(f"   成功更新: {result['updated']}/{result['total']} 条")
+        if result.get("errors"):
+            print(c(f"   失败: {len(result['errors'])} 条（ID 不存在）", "yellow"))
+    else:
+        print(c(f"\n❌ {result.get('error', '更新失败')}", "red"))
+    cm.close()
+    return 0 if result.get("success") else 1
+
+
+def cmd_schedule(args):
+    """复习计划管理（v5.2.4 新增）"""
+    cm = _get_memory(args)
+
+    if args.schedule_action == "create":
+        if not args.memory_id:
+            print(c("\n❌ 创建复习计划需要 --memory-id 参数", "red"))
+            cm.close()
+            return 1
+        result = cm.create_review_schedule(args.memory_id, interval_days=args.interval)
+        if result.get("success"):
+            print(c(f"\n✅ 复习计划已创建", "green"))
+            print(f"   计划 ID: {result['schedule_id']}")
+            print(f"   记忆 ID: {result['memory_id']}")
+            print(f"   间隔: {result['interval_days']} 天")
+            print(f"   下次复习: {format_time(result['scheduled_at'])}")
+        else:
+            print(c(f"\n❌ {result.get('error', '创建失败')}", "red"))
+        cm.close()
+        return 0 if result.get("success") else 1
+
+    elif args.schedule_action == "list":
+        reviews = cm.list_due_reviews(limit=args.limit)
+        if not reviews:
+            print(c("\n🎉 暂无到期复习", "green"))
+            cm.close()
+            return 0
+
+        print(c(f"\n📅 到期复习（共 {len(reviews)} 条）", "bold"))
+        print("=" * 60)
+        for r in reviews:
+            print(f"  {c(r['schedule_id'][:8], 'cyan')} | 已复习 {r['review_count']} 次 | 间隔 {r['interval_days']} 天")
+            print(f"    记忆: {r['content'][:60]}")
+            print(f"    分类: {r['category']} | 重要性: {r['importance']}")
+            print(f"    计划时间: {format_time(r['scheduled_at'])}")
+            print()
+        cm.close()
+        return 0
+
+    elif args.schedule_action == "review":
+        if not args.schedule_id:
+            print(c("\n❌ 完成复习需要 --schedule-id 参数", "red"))
+            cm.close()
+            return 1
+        result = cm.complete_review(args.schedule_id)
+        if result.get("success"):
+            print(c(f"\n✅ 复习完成！", "green"))
+            print(f"   累计复习: {result['review_count']} 次")
+            print(f"   下次间隔: {result['next_interval_days']} 天")
+            print(f"   下次复习: {format_time(result['next_scheduled_at'])}")
+        else:
+            print(c(f"\n❌ {result.get('error', '操作失败')}", "red"))
+        cm.close()
+        return 0 if result.get("success") else 1
+
+    elif args.schedule_action == "stats":
+        stats = cm.get_review_stats()
+        print(c(f"\n📊 复习计划统计", "bold"))
+        print("=" * 40)
+        print(f"   总计划数: {stats['total_schedules']}")
+        print(f"   待复习: {stats['pending']}")
+        print(c(f"   已到期: {stats['due_now']}", "yellow" if stats['due_now'] > 0 else "green"))
+        print(f"   累计完成复习: {stats['total_reviews_completed']} 次")
+        cm.close()
+        return 0
+
+    cm.close()
+    return 1
 
 
 if __name__ == "__main__":

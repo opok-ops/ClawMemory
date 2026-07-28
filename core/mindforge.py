@@ -1,5 +1,5 @@
 """
-MindForge v5.0 主入口类
+MindForge v5.2.4 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,11 +31,11 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.2.0"
+    __version__ = "5.2.4"
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.2.0"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.2.4"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -1408,3 +1408,204 @@ class MindForge:
         """
         limit = max(1, min(1000, int(limit)))
         return self._storage.batch_quality_score(category, limit)
+
+    # ===== v5.2.4 新增 API =====
+
+    def add_note(self, memory_id: str, content: str, author: str = "",
+                 tags: Optional[List[str]] = None) -> Dict[str, Any]:
+        """添加记忆笔记/批注（v5.2.4 新增）
+
+        Args:
+            memory_id: 记忆 ID
+            content: 笔记内容
+            author: 作者
+            tags: 笔记标签
+
+        Returns:
+            操作结果
+        """
+        if not content or not content.strip():
+            return {"success": False, "error": "笔记内容不能为空"}
+        if len(content) > 10000:
+            return {"success": False, "error": "笔记内容不能超过 10000 字符"}
+        return self._storage.add_note(memory_id, content.strip(), author, tags)
+
+    def list_notes(self, memory_id: str, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        """列出记忆的笔记（v5.2.4 新增）
+
+        Args:
+            memory_id: 记忆 ID
+            limit: 数量限制
+            offset: 偏移量
+
+        Returns:
+            笔记列表
+        """
+        limit = max(1, min(200, int(limit)))
+        return self._storage.list_notes(memory_id, limit, offset)
+
+    def delete_note(self, note_id: str) -> Dict[str, Any]:
+        """删除笔记（v5.2.4 新增）
+
+        Args:
+            note_id: 笔记 ID
+
+        Returns:
+            操作结果
+        """
+        return self._storage.delete_note(note_id)
+
+    def add_template(self, name: str, content_template: str, category: str = "general",
+                     tags: Optional[List[str]] = None, importance: str = "MEDIUM",
+                     layer: str = "short_term", description: str = "") -> Dict[str, Any]:
+        """添加记忆模板（v5.2.4 新增）
+
+        Args:
+            name: 模板名称
+            content_template: 模板内容（支持 {变量名} 占位符）
+            category: 默认分类
+            tags: 默认标签
+            importance: 默认重要性
+            layer: 默认层级
+            description: 模板描述
+
+        Returns:
+            操作结果
+        """
+        if not name or not name.strip():
+            return {"success": False, "error": "模板名称不能为空"}
+        if not content_template or not content_template.strip():
+            return {"success": False, "error": "模板内容不能为空"}
+        if len(name) > 100:
+            return {"success": False, "error": "模板名称不能超过 100 字符"}
+        return self._storage.add_template(name.strip(), content_template.strip(),
+                                          category, tags, importance, layer, description)
+
+    def list_templates(self, category: Optional[str] = None,
+                       limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        """列出记忆模板（v5.2.4 新增）
+
+        Args:
+            category: 按分类筛选
+            limit: 数量限制
+            offset: 偏移量
+
+        Returns:
+            模板列表
+        """
+        limit = max(1, min(200, int(limit)))
+        return self._storage.list_templates(category, limit, offset)
+
+    def use_template(self, template_id: str, variables: Optional[Dict[str, str]] = None,
+                     actor: str = "", session_id: str = "") -> Dict[str, Any]:
+        """使用模板创建记忆（v5.2.4 新增）
+
+        Args:
+            template_id: 模板 ID
+            variables: 模板变量替换字典
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            操作结果（包含新创建的记忆 ID）
+        """
+        return self._storage.use_template(template_id, variables, actor, session_id)
+
+    def delete_template(self, template_id: str) -> Dict[str, Any]:
+        """删除模板（v5.2.4 新增）
+
+        Args:
+            template_id: 模板 ID
+
+        Returns:
+            操作结果
+        """
+        return self._storage.delete_template(template_id)
+
+    def batch_update(self, memory_ids: List[str],
+                     category: Optional[str] = None,
+                     tags: Optional[List[str]] = None,
+                     importance: Optional[str] = None,
+                     layer: Optional[str] = None,
+                     starred: Optional[bool] = None,
+                     actor: str = "", session_id: str = "") -> Dict[str, Any]:
+        """批量更新记忆（v5.2.4 新增）
+
+        Args:
+            memory_ids: 记忆 ID 列表
+            category: 新分类
+            tags: 新标签
+            importance: 新重要性
+            layer: 新层级
+            starred: 新收藏状态
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            批量更新结果
+        """
+        if not memory_ids:
+            return {"success": False, "error": "未指定记忆 ID", "updated": 0}
+        if len(memory_ids) > 500:
+            return {"success": False, "error": "单次批量更新不能超过 500 条", "updated": 0}
+        # 验证 importance 和 layer 合法性
+        if importance:
+            try:
+                Importance.from_string(importance)
+            except (ValueError, KeyError):
+                return {"success": False, "error": f"无效的重要性级别: {importance}", "updated": 0}
+        if layer:
+            try:
+                MemoryLayer.from_string(layer)
+            except (ValueError, KeyError):
+                return {"success": False, "error": f"无效的记忆层级: {layer}", "updated": 0}
+        return self._storage.batch_update(memory_ids, category, tags, importance,
+                                          layer, starred, actor, session_id)
+
+    def create_review_schedule(self, memory_id: str, interval_days: float = 1.0,
+                               actor: str = "") -> Dict[str, Any]:
+        """创建复习计划（v5.2.4 新增）
+
+        Args:
+            memory_id: 记忆 ID
+            interval_days: 复习间隔天数
+            actor: 操作者
+
+        Returns:
+            操作结果
+        """
+        interval_days = max(0.1, min(365, float(interval_days)))
+        return self._storage.create_review_schedule(memory_id, interval_days, actor)
+
+    def list_due_reviews(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """列出到期复习（v5.2.4 新增）
+
+        Args:
+            limit: 数量限制
+
+        Returns:
+            到期复习列表
+        """
+        limit = max(1, min(100, int(limit)))
+        return self._storage.list_due_reviews(limit)
+
+    def complete_review(self, schedule_id: str) -> Dict[str, Any]:
+        """完成复习（v5.2.4 新增）
+
+        完成一次复习后自动安排下次复习（间隔重复算法）。
+
+        Args:
+            schedule_id: 复习计划 ID
+
+        Returns:
+            操作结果
+        """
+        return self._storage.complete_review(schedule_id)
+
+    def get_review_stats(self) -> Dict[str, Any]:
+        """复习计划统计（v5.2.4 新增）
+
+        Returns:
+            复习统计数据
+        """
+        return self._storage.get_review_stats()

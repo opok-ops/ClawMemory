@@ -1,4 +1,4 @@
-# MindForge v5.2.3
+# MindForge v5.2.4
 
 **AI Agent 终身记忆系统 — 四层记忆架构 · 知识图谱 · 多模态 · 人格化 · 联邦网络**
 
@@ -25,7 +25,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    MindForge v5.2.2                        │
+│                    MindForge v5.2.4                        │
 ├─────────────────────────────────────────────────────────┤
 │  🎯 认知层 (Cognitive Layer)                              │
 │     人格引擎 · 知识图谱 · 记忆演化 · 联邦网络              │
@@ -344,6 +344,43 @@ context = adapter.get_context("数据库优化")
 ---
 
 ## 📝 更新日志
+
+### v5.2.4 (2026-07-29)
+
+**✨ 记忆笔记/批注**
+- `note-add` - 为记忆添加笔记/批注，支持作者和标签（v5.2.4 新增）
+- `note-list` - 列出记忆的所有笔记，按时间倒序（v5.2.4 新增）
+- `note-delete` - 删除笔记，支持 --force 确认（v5.2.4 新增）
+- `add_note`/`list_notes`/`delete_note` API（v5.2.4 新增）
+
+**✨ 记忆模板**
+- `template-add` - 创建记忆模板，支持 {变量} 占位符、默认分类/标签/重要性/层级（v5.2.4 新增）
+- `template-list` - 列出模板，按使用次数排序，支持分类筛选（v5.2.4 新增）
+- `template-use` - 使用模板快速创建记忆，支持变量替换（v5.2.4 新增）
+- `template-delete` - 删除模板（v5.2.4 新增）
+- `add_template`/`list_templates`/`use_template`/`delete_template` API（v5.2.4 新增）
+
+**✨ 批量更新**
+- `batch-update` - 批量更新记忆的分类/标签/重要性/层级/收藏状态（v5.2.4 新增）
+- `batch_update` API - 支持最多 500 条记忆批量操作，带参数校验（v5.2.4 新增）
+
+**✨ 复习计划（间隔重复）**
+- `schedule create` - 为记忆创建复习计划，支持自定义间隔天数（v5.2.4 新增）
+- `schedule list` - 列出到期复习，显示记忆内容和复习进度（v5.2.4 新增）
+- `schedule review` - 完成复习，自动安排下次（间隔重复：1→2→4→7→15→30 天）（v5.2.4 新增）
+- `schedule stats` - 复习计划统计（总计划/待复习/已到期/累计完成）（v5.2.4 新增）
+- `create_review_schedule`/`list_due_reviews`/`complete_review`/`get_review_stats` API（v5.2.4 新增）
+
+**🔧 修复**
+- 修复 `pyproject.toml` 版本号滞后（5.2.0 → 5.2.4）
+- 修复 `cli/main.py` argparse description 和 --version 版本号不一致（5.2.2 → 5.2.4）
+- 修复 `core/mindforge.py` fallback 版本号滞后（5.2.0 → 5.2.4）
+- 修复 README 架构图版本号不一致（5.2.2 → 5.2.4）
+- 修复 CLI commands 字典中 `"similar"` 键重复注册问题（v5.1.3 与 v5.2.2 冲突）
+
+**📋 其他**
+- 版本号全面更新至 v5.2.4
+- 新增 3 张数据表：`memory_notes`/`memory_templates`/`review_schedules`
 
 ### v5.2.3 (2026-07-28)
 

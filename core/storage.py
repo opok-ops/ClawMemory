@@ -264,6 +264,51 @@ class StorageEngine:
             CREATE INDEX IF NOT EXISTS idx_line_drama ON drama_lines(drama_id);
             CREATE INDEX IF NOT EXISTS idx_line_character ON drama_lines(character_id);
             CREATE INDEX IF NOT EXISTS idx_line_classic ON drama_lines(is_classic);
+
+            -- 记忆笔记/批注（v5.2.4 新增）
+            CREATE TABLE IF NOT EXISTS memory_notes (
+                id TEXT PRIMARY KEY,
+                memory_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                author TEXT DEFAULT '',
+                tags TEXT DEFAULT '[]',
+                created_at REAL,
+                updated_at REAL
+            );
+            CREATE INDEX IF NOT EXISTS idx_note_memory ON memory_notes(memory_id);
+            CREATE INDEX IF NOT EXISTS idx_note_author ON memory_notes(author);
+
+            -- 记忆模板（v5.2.4 新增）
+            CREATE TABLE IF NOT EXISTS memory_templates (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                content_template TEXT NOT NULL,
+                category TEXT DEFAULT 'general',
+                tags TEXT DEFAULT '[]',
+                importance TEXT DEFAULT 'MEDIUM',
+                layer TEXT DEFAULT 'short_term',
+                description TEXT DEFAULT '',
+                use_count INTEGER DEFAULT 0,
+                created_at REAL,
+                updated_at REAL
+            );
+            CREATE INDEX IF NOT EXISTS idx_template_name ON memory_templates(name);
+            CREATE INDEX IF NOT EXISTS idx_template_category ON memory_templates(category);
+
+            -- 复习计划（v5.2.4 新增）
+            CREATE TABLE IF NOT EXISTS review_schedules (
+                id TEXT PRIMARY KEY,
+                memory_id TEXT NOT NULL,
+                scheduled_at REAL NOT NULL,
+                interval_days REAL DEFAULT 1.0,
+                review_count INTEGER DEFAULT 0,
+                last_reviewed_at REAL DEFAULT 0.0,
+                status TEXT DEFAULT 'pending',
+                created_at REAL
+            );
+            CREATE INDEX IF NOT EXISTS idx_schedule_memory ON review_schedules(memory_id);
+            CREATE INDEX IF NOT EXISTS idx_schedule_status ON review_schedules(status);
+            CREATE INDEX IF NOT EXISTS idx_schedule_due ON review_schedules(scheduled_at);
         """)
         conn.commit()
 
@@ -3912,3 +3957,306 @@ class StorageEngine:
             metadata=self._safe_json_loads(row["metadata"], {}),
             created_at=row["created_at"] or 0.0,
         )
+
+    # ===== v5.2.4 新增方法 =====
+
+    def add_note(self, memory_id: str, content: str, author: str = "",
+                 tags: Optional[List[str]] = None) -> Dict[str, Any]:
+        """添加记忆笔记/批注（v5.2.4 新增）"""
+        conn = self._get_conn()
+        # 验证记忆存在
+        row = conn.execute("SELECT id FROM memories WHERE id = ?", (memory_id,)).fetchone()
+        if not row:
+            return {"success": False, "error": f"记忆不存在: {memory_id}"}
+
+        now = time.time()
+        note_id = str(uuid.uuid4())
+        conn.execute("""
+            INSERT INTO memory_notes (id, memory_id, content, author, tags, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (note_id, memory_id, content, author,
+              json.dumps(tags or [], ensure_ascii=False), now, now))
+        conn.commit()
+        self._add_audit("add_note", memory_id, author, "", "INTERNAL")
+        return {"success": True, "note_id": note_id, "memory_id": memory_id}
+
+    def list_notes(self, memory_id: str, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        """列出记忆的笔记（v5.2.4 新增）"""
+        conn = self._get_conn()
+        rows = conn.execute("""
+            SELECT * FROM memory_notes WHERE memory_id = ?
+            ORDER BY created_at DESC LIMIT ? OFFSET ?
+        """, (memory_id, limit, offset)).fetchall()
+        results = []
+        for row in rows:
+            results.append({
+                "id": row["id"],
+                "memory_id": row["memory_id"],
+                "content": row["content"],
+                "author": row["author"],
+                "tags": self._safe_json_loads(row["tags"], []),
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            })
+        return results
+
+    def delete_note(self, note_id: str) -> Dict[str, Any]:
+        """删除笔记（v5.2.4 新增）"""
+        conn = self._get_conn()
+        row = conn.execute("SELECT * FROM memory_notes WHERE id = ?", (note_id,)).fetchone()
+        if not row:
+            return {"success": False, "error": f"笔记不存在: {note_id}"}
+        conn.execute("DELETE FROM memory_notes WHERE id = ?", (note_id,))
+        conn.commit()
+        self._add_audit("delete_note", row["memory_id"], "", "", "INTERNAL")
+        return {"success": True, "note_id": note_id}
+
+    def add_template(self, name: str, content_template: str, category: str = "general",
+                     tags: Optional[List[str]] = None, importance: str = "MEDIUM",
+                     layer: str = "short_term", description: str = "") -> Dict[str, Any]:
+        """添加记忆模板（v5.2.4 新增）"""
+        conn = self._get_conn()
+        # 检查名称重复
+        existing = conn.execute("SELECT id FROM memory_templates WHERE name = ?", (name,)).fetchone()
+        if existing:
+            return {"success": False, "error": f"模板名称已存在: {name}"}
+
+        now = time.time()
+        template_id = str(uuid.uuid4())
+        conn.execute("""
+            INSERT INTO memory_templates (id, name, content_template, category, tags,
+                                          importance, layer, description, use_count, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+        """, (template_id, name, content_template, category,
+              json.dumps(tags or [], ensure_ascii=False), importance, layer, description, now, now))
+        conn.commit()
+        return {"success": True, "template_id": template_id, "name": name}
+
+    def list_templates(self, category: Optional[str] = None,
+                       limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        """列出记忆模板（v5.2.4 新增）"""
+        conn = self._get_conn()
+        query = "SELECT * FROM memory_templates WHERE 1=1"
+        params = []
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        query += " ORDER BY use_count DESC, created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        rows = conn.execute(query, params).fetchall()
+        results = []
+        for row in rows:
+            results.append({
+                "id": row["id"],
+                "name": row["name"],
+                "content_template": row["content_template"],
+                "category": row["category"],
+                "tags": self._safe_json_loads(row["tags"], []),
+                "importance": row["importance"],
+                "layer": row["layer"],
+                "description": row["description"],
+                "use_count": row["use_count"],
+                "created_at": row["created_at"],
+            })
+        return results
+
+    def use_template(self, template_id: str, variables: Optional[Dict[str, str]] = None,
+                     actor: str = "", session_id: str = "") -> Dict[str, Any]:
+        """使用模板创建记忆（v5.2.4 新增）"""
+        conn = self._get_conn()
+        row = conn.execute("SELECT * FROM memory_templates WHERE id = ?", (template_id,)).fetchone()
+        if not row:
+            return {"success": False, "error": f"模板不存在: {template_id}"}
+
+        # 替换模板变量 {var_name}
+        content = row["content_template"]
+        if variables:
+            for key, value in variables.items():
+                content = content.replace("{" + key + "}", value)
+
+        # 创建记忆
+        entry = self.add_memory(
+            content=content,
+            category=row["category"],
+            tags=self._safe_json_loads(row["tags"], []),
+            importance=Importance.from_string(row["importance"]) if hasattr(Importance, 'from_string') else Importance.MEDIUM,
+            layer=MemoryLayer.from_string(row["layer"]) if hasattr(MemoryLayer, 'from_string') else MemoryLayer.SHORT_TERM,
+            source_session=session_id,
+            source_agent=actor,
+        )
+
+        # 更新使用次数
+        conn.execute("UPDATE memory_templates SET use_count = use_count + 1, updated_at = ? WHERE id = ?",
+                     (time.time(), template_id))
+        conn.commit()
+
+        return {"success": True, "memory_id": entry.id, "template_name": row["name"], "content": content}
+
+    def delete_template(self, template_id: str) -> Dict[str, Any]:
+        """删除模板（v5.2.4 新增）"""
+        conn = self._get_conn()
+        row = conn.execute("SELECT id, name FROM memory_templates WHERE id = ?", (template_id,)).fetchone()
+        if not row:
+            return {"success": False, "error": f"模板不存在: {template_id}"}
+        conn.execute("DELETE FROM memory_templates WHERE id = ?", (template_id,))
+        conn.commit()
+        return {"success": True, "template_id": template_id, "name": row["name"]}
+
+    def batch_update(self, memory_ids: Optional[List[str]] = None,
+                     category: Optional[str] = None,
+                     tags: Optional[List[str]] = None,
+                     importance: Optional[str] = None,
+                     layer: Optional[str] = None,
+                     starred: Optional[bool] = None,
+                     actor: str = "", session_id: str = "") -> Dict[str, Any]:
+        """批量更新记忆（v5.2.4 新增）
+
+        Args:
+            memory_ids: 要更新的记忆 ID 列表
+            category: 新分类（None 表示不修改）
+            tags: 新标签（None 表示不修改）
+            importance: 新重要性（None 表示不修改）
+            layer: 新层级（None 表示不修改）
+            starred: 新收藏状态（None 表示不修改）
+        """
+        if not memory_ids:
+            return {"success": False, "error": "未指定记忆 ID", "updated": 0}
+
+        conn = self._get_conn()
+        now = time.time()
+        updated = 0
+        errors = []
+
+        for mid in memory_ids:
+            row = conn.execute("SELECT id FROM memories WHERE id = ?", (mid,)).fetchone()
+            if not row:
+                errors.append(mid)
+                continue
+
+            updates = ["updated_at = ?"]
+            params = [now]
+
+            if category is not None:
+                updates.append("category = ?")
+                params.append(category)
+            if tags is not None:
+                updates.append("tags = ?")
+                params.append(json.dumps(tags, ensure_ascii=False))
+            if importance is not None:
+                updates.append("importance = ?")
+                params.append(importance)
+            if layer is not None:
+                updates.append("layer = ?")
+                params.append(layer)
+            if starred is not None:
+                updates.append("starred = ?")
+                params.append(1 if starred else 0)
+
+            params.append(mid)
+            conn.execute(f"UPDATE memories SET {', '.join(updates)} WHERE id = ?", params)
+            updated += 1
+
+        conn.commit()
+        self._add_audit("batch_update", ",".join(memory_ids[:5]), actor, session_id, "INTERNAL",
+                        {"updated": updated, "category": category, "importance": importance})
+        return {"success": True, "updated": updated, "errors": errors, "total": len(memory_ids)}
+
+    def create_review_schedule(self, memory_id: str, interval_days: float = 1.0,
+                               actor: str = "") -> Dict[str, Any]:
+        """创建复习计划（v5.2.4 新增）"""
+        conn = self._get_conn()
+        row = conn.execute("SELECT id FROM memories WHERE id = ?", (memory_id,)).fetchone()
+        if not row:
+            return {"success": False, "error": f"记忆不存在: {memory_id}"}
+
+        now = time.time()
+        schedule_id = str(uuid.uuid4())
+        scheduled_at = now + interval_days * 86400
+
+        conn.execute("""
+            INSERT INTO review_schedules (id, memory_id, scheduled_at, interval_days,
+                                          review_count, last_reviewed_at, status, created_at)
+            VALUES (?, ?, ?, ?, 0, 0.0, 'pending', ?)
+        """, (schedule_id, memory_id, scheduled_at, interval_days, now))
+        conn.commit()
+        return {"success": True, "schedule_id": schedule_id, "memory_id": memory_id,
+                "scheduled_at": scheduled_at, "interval_days": interval_days}
+
+    def list_due_reviews(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """列出到期复习（v5.2.4 新增）"""
+        conn = self._get_conn()
+        now = time.time()
+        rows = conn.execute("""
+            SELECT rs.*, m.content, m.category, m.importance, m.layer
+            FROM review_schedules rs
+            JOIN memories m ON rs.memory_id = m.id
+            WHERE rs.status = 'pending' AND rs.scheduled_at <= ?
+            ORDER BY rs.scheduled_at ASC
+            LIMIT ?
+        """, (now, limit)).fetchall()
+        results = []
+        for row in rows:
+            results.append({
+                "schedule_id": row["id"],
+                "memory_id": row["memory_id"],
+                "content": row["content"][:100] if row["content"] else "[已加密]",
+                "category": row["category"],
+                "importance": row["importance"],
+                "layer": row["layer"],
+                "scheduled_at": row["scheduled_at"],
+                "interval_days": row["interval_days"],
+                "review_count": row["review_count"],
+            })
+        return results
+
+    def complete_review(self, schedule_id: str) -> Dict[str, Any]:
+        """完成复习，自动安排下次（v5.2.4 新增）
+
+        使用间隔重复算法：每次复习后间隔翻倍（1天→2天→4天→7天→15天→30天）
+        """
+        conn = self._get_conn()
+        row = conn.execute("SELECT * FROM review_schedules WHERE id = ?", (schedule_id,)).fetchone()
+        if not row:
+            return {"success": False, "error": f"复习计划不存在: {schedule_id}"}
+
+        now = time.time()
+        new_count = row["review_count"] + 1
+        # 间隔重复：1, 2, 4, 7, 15, 30 天
+        intervals = [1, 2, 4, 7, 15, 30]
+        new_interval = intervals[min(new_count, len(intervals) - 1)]
+        next_scheduled = now + new_interval * 86400
+
+        conn.execute("""
+            UPDATE review_schedules
+            SET review_count = ?, last_reviewed_at = ?, interval_days = ?,
+                scheduled_at = ?, status = 'pending'
+            WHERE id = ?
+        """, (new_count, now, new_interval, next_scheduled, schedule_id))
+
+        # 更新记忆的巩固次数和强度
+        conn.execute("""
+            UPDATE memories SET consolidation_count = consolidation_count + 1,
+                   strength = MIN(strength + 0.1, 2.0), last_accessed_at = ?
+            WHERE id = ?
+        """, (now, row["memory_id"]))
+
+        conn.commit()
+        self._add_audit("complete_review", row["memory_id"], "", "", "INTERNAL")
+        return {"success": True, "schedule_id": schedule_id, "review_count": new_count,
+                "next_interval_days": new_interval, "next_scheduled_at": next_scheduled}
+
+    def get_review_stats(self) -> Dict[str, Any]:
+        """复习计划统计（v5.2.4 新增）"""
+        conn = self._get_conn()
+        now = time.time()
+        total = conn.execute("SELECT COUNT(*) as cnt FROM review_schedules").fetchone()["cnt"]
+        pending = conn.execute("SELECT COUNT(*) as cnt FROM review_schedules WHERE status = 'pending'").fetchone()["cnt"]
+        due = conn.execute("SELECT COUNT(*) as cnt FROM review_schedules WHERE status = 'pending' AND scheduled_at <= ?",
+                           (now,)).fetchone()["cnt"]
+        total_reviews = conn.execute("SELECT COALESCE(SUM(review_count), 0) as cnt FROM review_schedules").fetchone()["cnt"]
+        return {
+            "total_schedules": total,
+            "pending": pending,
+            "due_now": due,
+            "total_reviews_completed": total_reviews,
+        }

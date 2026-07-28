@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="MindForge v5.2.3 - AI Agent 终身记忆系统，多层记忆架构、知识图谱、多模态支持，100% 本地加密">
+<meta name="description" content="MindForge v5.2.4 - AI Agent 终身记忆系统，多层记忆架构、知识图谱、多模态支持，100% 本地加密">
 <meta name="keywords" content="MindForge, AI Memory, Agent Memory, 知识图谱, 终身记忆, AI Agent, 记忆系统, 本地加密">
 <meta name="author" content="MindForge Project">
 <meta name="robots" content="index, follow">
@@ -26,7 +26,7 @@
 <meta name="twitter:description" content="四层记忆架构模拟人类认知，知识图谱自动关联推理，100% 本地端侧加密">
 <meta name="twitter:image" content="https://opok-ops.github.io/MindForge/assets/og-image.png">
 
-<title>MindForge v5.2.3 — AI Agent 终身记忆系统</title>
+<title>MindForge v5.2.4 — AI Agent 终身记忆系统</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@500;600;700;800;900&display=swap" rel="stylesheet">
@@ -55,7 +55,7 @@
           </defs>
         </svg>
       </div>
-      <span class="logo-text">MindForge <em>v5.2.3</em></span>
+      <span class="logo-text">MindForge <em>v5.2.4</em></span>
     </a>
     <ul class="nav-links">
       <li><a href="#features">功能</a></li>
@@ -84,7 +84,7 @@
   <div class="hero-content">
     <div class="hero-badge">
       <span class="badge-dot"></span>
-      v5.2.3 全新发布 · 多层记忆架构 · 知识图谱引擎
+      v5.2.4 全新发布 · 多层记忆架构 · 知识图谱引擎
     </div>
     <h1 class="hero-title">
       让 AI Agent 拥有
@@ -661,6 +661,36 @@ openclaw restart</code></pre>
     </div>
 
     <div class="changelog-timeline reveal">
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.2.4</span>
+          <span class="cl-date">2026-07-29</span>
+        </div>
+        <div class="cl-content">
+          <h4>✨ 记忆笔记/批注</h4>
+          <ul>
+            <li><code>note-add</code> / <code>note-list</code> / <code>note-delete</code> - 为记忆添加、列出、删除笔记批注</li>
+          </ul>
+          <h4>✨ 记忆模板</h4>
+          <ul>
+            <li><code>template-add</code> / <code>template-list</code> / <code>template-use</code> / <code>template-delete</code> - 创建和使用记忆模板，支持变量占位符</li>
+          </ul>
+          <h4>✨ 批量更新</h4>
+          <ul>
+            <li><code>batch-update</code> - 批量更新记忆的分类/标签/重要性/层级/收藏状态</li>
+          </ul>
+          <h4>✨ 复习计划（间隔重复）</h4>
+          <ul>
+            <li><code>schedule create/list/review/stats</code> - 间隔重复复习系统（1→2→4→7→15→30 天）</li>
+          </ul>
+          <h4>🔧 修复</h4>
+          <ul>
+            <li>修复多处版本号不一致问题</li>
+            <li>修复 CLI commands 字典 "similar" 键重复注册</li>
+          </ul>
+        </div>
+      </div>
+
       <div class="changelog-item">
         <div class="cl-version">
           <span class="cl-num">v5.2.3</span>
