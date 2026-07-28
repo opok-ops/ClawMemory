@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="MindForge v5.2.0 - AI Agent 终身记忆系统，多层记忆架构、知识图谱、多模态支持，100% 本地加密">
+<meta name="description" content="MindForge v5.2.3 - AI Agent 终身记忆系统，多层记忆架构、知识图谱、多模态支持，100% 本地加密">
 <meta name="keywords" content="MindForge, AI Memory, Agent Memory, 知识图谱, 终身记忆, AI Agent, 记忆系统, 本地加密">
 <meta name="author" content="MindForge Project">
 <meta name="robots" content="index, follow">
@@ -26,7 +26,7 @@
 <meta name="twitter:description" content="四层记忆架构模拟人类认知，知识图谱自动关联推理，100% 本地端侧加密">
 <meta name="twitter:image" content="https://opok-ops.github.io/MindForge/assets/og-image.png">
 
-<title>MindForge v5.2.0 — AI Agent 终身记忆系统</title>
+<title>MindForge v5.2.3 — AI Agent 终身记忆系统</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@500;600;700;800;900&display=swap" rel="stylesheet">
@@ -55,13 +55,14 @@
           </defs>
         </svg>
       </div>
-      <span class="logo-text">MindForge <em>v5.2.0</em></span>
+      <span class="logo-text">MindForge <em>v5.2.3</em></span>
     </a>
     <ul class="nav-links">
       <li><a href="#features">功能</a></li>
       <li><a href="#architecture">架构</a></li>
       <li><a href="#playground">演示</a></li>
       <li><a href="#privacy">隐私</a></li>
+      <li><a href="#changelog">更新日志</a></li>
       <li><a href="#docs">文档</a></li>
     </ul>
     <div class="nav-actions">
@@ -83,7 +84,7 @@
   <div class="hero-content">
     <div class="hero-badge">
       <span class="badge-dot"></span>
-      v5.2.0 全新发布 · 多层记忆架构 · 知识图谱引擎
+      v5.2.3 全新发布 · 多层记忆架构 · 知识图谱引擎
     </div>
     <h1 class="hero-title">
       让 AI Agent 拥有
@@ -645,6 +646,83 @@ openclaw restart</code></pre>
           <div class="card-text">检索 156ms</div>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<section id="changelog" class="section changelog-section">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-tag">版本历史</span>
+      <h2 class="section-title"><span class="gradient-text">更新日志</span></h2>
+      <p class="section-desc">
+        MindForge 持续进化，每次更新都带来更多能力。
+      </p>
+    </div>
+
+    <div class="changelog-timeline reveal">
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.2.3</span>
+          <span class="cl-date">2026-07-28</span>
+        </div>
+        <div class="cl-content">
+          <h4>🛡️ 安全加固</h4>
+          <ul>
+            <li>新增 <code>_safe_json_loads()</code> 统一处理损坏 JSON 数据</li>
+            <li>修复数据转换方法中的 JSON 解析安全问题</li>
+            <li>修复批量标签操作和审计日志中的 JSON 解析安全问题</li>
+            <li>替换所有裸 <code>except Exception:</code> 为具体异常类型</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.2.2</span>
+          <span class="cl-date">2026-07-27</span>
+        </div>
+        <div class="cl-content">
+          <h4>✨ AI 短剧智能增强</h4>
+          <ul>
+            <li>智能推荐短剧、观看进度统计、一键导出功能</li>
+          </ul>
+          <h4>🤖 Agent 记忆优化</h4>
+          <ul>
+            <li>Agent 记忆统计、迁移、清理全生命周期管理</li>
+            <li>记忆演化（基于艾宾浩斯遗忘曲线）</li>
+          </ul>
+          <h4>📊 记忆质量与相似度分析</h4>
+          <ul>
+            <li>多维度记忆质量评分、相似度分析</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.2.1</span>
+          <span class="cl-date">2026-07-27</span>
+        </div>
+        <div class="cl-content">
+          <h4>✨ AI 短剧记忆模块</h4>
+          <ul>
+            <li>短剧系列、场次、角色、台词完整管理</li>
+            <li>经典台词标记、模糊搜索、关键词高亮</li>
+          </ul>
+          <h4>🛡️ 安全加固</h4>
+          <ul>
+            <li>输入验证机制、SQL 注入防护、枚举类型校验</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="changelog-more reveal">
+      <a href="https://github.com/opok-ops/MindForge/blob/master/README.md#-更新日志" class="btn btn-secondary" target="_blank">
+        查看完整更新日志
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      </a>
     </div>
   </div>
 </section>

@@ -1,4 +1,4 @@
-# MindForge v5.2.2
+# MindForge v5.2.3
 
 **AI Agent 终身记忆系统 — 四层记忆架构 · 知识图谱 · 多模态 · 人格化 · 联邦网络**
 
@@ -344,6 +344,19 @@ context = adapter.get_context("数据库优化")
 ---
 
 ## 📝 更新日志
+
+### v5.2.3 (2026-07-28)
+
+**🛡️ 安全加固**
+- 新增 `_safe_json_loads()` 静态方法，统一处理损坏的 JSON 数据，防止解析崩溃
+- 修复 `_row_to_entry`、`_row_to_drama`、`_row_to_scene`、`_row_to_character`、`_row_to_line` 等数据转换方法中的 JSON 解析安全问题
+- 修复批量标签操作（`batch_add_tags`、`batch_remove_tags`、`merge_tags`）和 `rename_tag` 中的 JSON 解析安全问题
+- 修复审计日志 `list_audit_logs` 中 `details` 字段的 JSON 解析安全问题
+- 修复 `adapters/generic_api.py`、`core/encryption.py`、`core/indexer.py`、`core/mindforge.py`、`modules/federated.py`、`modules/integrator.py`、`modules/knowledge_graph.py`、`modules/personality.py`、`modules/privacy.py` 中的裸 `except Exception:`，全部替换为具体异常类型
+
+**📋 其他**
+- 版本号更新至 v5.2.3
+- 代码推送到 GitHub
 
 ### v5.2.2 (2026-07-27)
 
