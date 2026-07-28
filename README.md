@@ -364,6 +364,12 @@ context = adapter.get_context("数据库优化")
 - `agent_stats`/`list_by_agent`/`transfer_agent_memories`/`clean_agent_memories`/`evolve_memories` API（v5.2.2 新增）
 - 支持 Agent 级别的记忆追踪、迁移、清理全生命周期管理
 
+**📊 记忆质量与相似度分析**
+- `quality` - 记忆质量评分，多维度评估记忆价值（v5.2.2 新增）
+- `similar` - 相似度分析，查找相似记忆（v5.2.2 新增）
+- `quality_score`/`batch_quality_score`/`analyze_similarity` API（v5.2.2 新增）
+- 支持内容长度、访问频率、收藏状态、重要性、标签丰富度、时间衰减等评分维度
+
 **🛡️ 安全与稳定性修复**
 - 修复 18 个 CLI 命令的 `cm.close()` 资源泄漏（数据库连接未释放）
   - 涉及：add/search/list/batch_delete/tag_search/deduplicate/export_md 等

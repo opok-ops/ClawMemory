@@ -1945,6 +1945,16 @@ def main():
     p_agent_clean.add_argument("--max-importance", "-m", default=None, help="最高清理的重要级别（LOW/MEDIUM/HIGH/CRITICAL）")
     p_agent_clean.add_argument("--dry-run", action="store_true", help="仅统计不执行")
 
+    p_quality = sub.add_parser("quality", help="记忆质量评分（v5.2.2 新增）")
+    p_quality.add_argument("memory_id", nargs="?", help="记忆 ID（不指定则批量评分）")
+    p_quality.add_argument("--category", "-c", help="批量评分时按分类过滤")
+    p_quality.add_argument("--limit", "-n", type=int, default=100, help="批量评分数量限制")
+
+    p_similar = sub.add_parser("similar", help="相似度分析（v5.2.2 新增）")
+    p_similar.add_argument("memory_id", help="目标记忆 ID")
+    p_similar.add_argument("--limit", "-n", type=int, default=10, help="返回数量")
+    p_similar.add_argument("--min-similarity", "-m", type=float, default=0.3, help="最低相似度阈值（0-1）")
+
     p_backup = sub.add_parser("backup", help="备份数据")
     p_backup.add_argument("--output", default="./data/backup", help="备份目录")
 
@@ -2041,6 +2051,8 @@ def main():
         "evolve": cmd_evolve,
         "agent-transfer": cmd_agent_transfer,
         "agent-clean": cmd_agent_clean,
+        "quality": cmd_quality,
+        "similar": cmd_similar,
         "backup": cmd_backup,
         "export": cmd_export,
         "import": cmd_import,
@@ -4027,6 +4039,89 @@ def cmd_agent_clean(args):
 
     if args.dry_run:
         print(f"\n💡 使用 agent-clean（不加 --dry-run）执行实际清理")
+    cm.close()
+    return 0
+
+
+def cmd_quality(args):
+    """记忆质量评分（v5.2.2 新增）"""
+    cm = _get_memory(args)
+
+    if args.memory_id:
+        # 单个记忆评分
+        result = cm.quality_score(args.memory_id)
+        if not result:
+            print(c(f"❌ 记忆不存在: {args.memory_id}", "red"))
+            cm.close()
+            return 1
+
+        print(c(f"\n📊 记忆质量评分", "bold"))
+        print("=" * 50)
+        print(f"记忆 ID:   {result['memory_id'][:16]}...")
+        print(f"总评分:     {c(str(result['total_score']) + '/100', 'green')}")
+        print(f"等  级:     {c(result['grade'], 'cyan')}")
+
+        print(f"\n各项得分:")
+        for item, score in result['breakdown'].items():
+            print(f"  {item}: {score}")
+
+    else:
+        # 批量评分
+        print(c(f"\n📊 批量质量评分", "bold"))
+        print("=" * 50)
+        if args.category:
+            print(f"分类过滤:   {args.category}")
+        print(f"数量限制:   {args.limit}")
+
+        result = cm.batch_quality_score(category=args.category, limit=args.limit)
+
+        print(f"\n统计结果:")
+        print(f"  总  数:   {result['total']}")
+        print(f"  平均分:   {c(str(result['average_score']), 'green')}")
+
+        print(f"\n等级分布:")
+        for grade, count in result['grades'].items():
+            if count > 0:
+                print(f"  {grade}: {count} 条")
+
+        if result.get('top_scores'):
+            print(f"\n🏆 高分记忆 Top 5:")
+            for i, s in enumerate(result['top_scores'][:5], 1):
+                print(f"  {i}. {s['memory_id'][:16]}... - {s['total_score']}分 ({s['grade']})")
+
+    cm.close()
+    return 0
+
+
+def cmd_similar(args):
+    """相似度分析（v5.2.2 新增）"""
+    cm = _get_memory(args)
+
+    entry = cm.get(args.memory_id)
+    if not entry:
+        print(c(f"❌ 记忆不存在: {args.memory_id}", "red"))
+        cm.close()
+        return 1
+
+    print(c(f"\n🔍 相似度分析", "bold"))
+    print("=" * 50)
+    print(f"目标记忆:   {args.memory_id[:16]}...")
+    print(f"内容预览:   {entry.content[:60]}...")
+
+    results = cm.analyze_similarity(
+        memory_id=args.memory_id,
+        limit=args.limit,
+        min_similarity=args.min_similarity
+    )
+
+    if not results:
+        print(f"\n未找到相似度 >= {args.min_similarity} 的记忆")
+    else:
+        print(f"\n找到 {len(results)} 条相似记忆:")
+        for i, r in enumerate(results, 1):
+            print(f"\n{i}. [{c(str(r['similarity']), 'cyan')}] {r['content_preview']}")
+            print(f"   ID: {r['memory_id'][:16]}... | 分类: {r['category']} | 层级: {r['layer']}")
+
     cm.close()
     return 0
 

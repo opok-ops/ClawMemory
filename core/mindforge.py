@@ -1358,3 +1358,53 @@ class MindForge:
             max_importance=max_importance,
             dry_run=dry_run,
         )
+
+    def quality_score(self, memory_id: str) -> Optional[Dict[str, Any]]:
+        """记忆质量评分（v5.2.2 新增）
+
+        基于多维度评估记忆质量。
+
+        Args:
+            memory_id: 记忆 ID
+
+        Returns:
+            质量评分详情
+        """
+        return self._storage.quality_score(memory_id)
+
+    def analyze_similarity(self,
+                           memory_id: str,
+                           limit: int = 10,
+                           min_similarity: float = 0.3) -> List[Dict[str, Any]]:
+        """相似度分析（v5.2.2 新增）
+
+        分析指定记忆与其他记忆的相似度。
+
+        Args:
+            memory_id: 目标记忆 ID
+            limit: 返回数量
+            min_similarity: 最低相似度阈值
+
+        Returns:
+            相似记忆列表
+        """
+        limit = max(1, min(100, int(limit)))
+        min_similarity = max(0.0, min(1.0, float(min_similarity)))
+        return self._storage.analyze_similarity(memory_id, limit, min_similarity)
+
+    def batch_quality_score(self,
+                            category: Optional[str] = None,
+                            limit: int = 100) -> Dict[str, Any]:
+        """批量质量评分（v5.2.2 新增）
+
+        对指定范围内的记忆进行批量质量评分。
+
+        Args:
+            category: 分类过滤
+            limit: 数量限制
+
+        Returns:
+            批量评分结果
+        """
+        limit = max(1, min(1000, int(limit)))
+        return self._storage.batch_quality_score(category, limit)

@@ -1619,6 +1619,261 @@ class StorageEngine:
         result["cleaned"] = total
         return result
 
+    def quality_score(self, memory_id: str) -> Optional[Dict[str, Any]]:
+        """记忆质量评分（v5.2.2 新增）
+
+        基于多维度评估记忆质量：
+        - 内容长度：合理长度加分
+        - 访问频率：高访问加分
+        - 收藏状态：收藏加分
+        - 重要性：高重要性加分
+        - 标签丰富度：有标签加分
+        - 时间衰减：新记忆加分
+
+        Args:
+            memory_id: 记忆 ID
+
+        Returns:
+            质量评分详情，包含总分和各项得分
+        """
+        entry = self.get_memory(memory_id)
+        if not entry:
+            return None
+
+        import time
+        now = time.time()
+
+        scores = {}
+        total = 0.0
+
+        # 1. 内容长度评分（0-20分）
+        content_len = len(entry.content)
+        if 50 <= content_len <= 500:
+            scores["content_length"] = 20
+        elif content_len < 50:
+            scores["content_length"] = max(5, content_len // 10)
+        elif content_len <= 1000:
+            scores["content_length"] = 15
+        else:
+            scores["content_length"] = 10
+        total += scores["content_length"]
+
+        # 2. 访问频率评分（0-25分）
+        access_count = entry.access_count
+        if access_count >= 10:
+            scores["access_frequency"] = 25
+        elif access_count >= 5:
+            scores["access_frequency"] = 20
+        elif access_count >= 2:
+            scores["access_frequency"] = 15
+        elif access_count >= 1:
+            scores["access_frequency"] = 10
+        else:
+            scores["access_frequency"] = 5
+        total += scores["access_frequency"]
+
+        # 3. 收藏状态（0-15分）
+        scores["starred"] = 15 if entry.starred else 0
+        total += scores["starred"]
+
+        # 4. 重要性评分（0-20分）
+        importance_scores = {
+            "CRITICAL": 20,
+            "HIGH": 15,
+            "MEDIUM": 10,
+            "LOW": 5,
+        }
+        scores["importance"] = importance_scores.get(entry.importance.value, 10)
+        total += scores["importance"]
+
+        # 5. 标签丰富度（0-10分）
+        tag_count = len(entry.tags)
+        if tag_count >= 5:
+            scores["tag_richness"] = 10
+        elif tag_count >= 3:
+            scores["tag_richness"] = 7
+        elif tag_count >= 1:
+            scores["tag_richness"] = 5
+        else:
+            scores["tag_richness"] = 0
+        total += scores["tag_richness"]
+
+        # 6. 时间衰减（0-10分）
+        age_days = (now - entry.created_at) / 86400
+        if age_days <= 1:
+            scores["freshness"] = 10
+        elif age_days <= 7:
+            scores["freshness"] = 8
+        elif age_days <= 30:
+            scores["freshness"] = 6
+        elif age_days <= 90:
+            scores["freshness"] = 4
+        else:
+            scores["freshness"] = 2
+        total += scores["freshness"]
+
+        # 7. 记忆层级加分（0-5分）
+        layer_scores = {
+            "permanent": 5,
+            "long_term": 3,
+            "short_term": 1,
+            "sensory": 0,
+        }
+        scores["layer_bonus"] = layer_scores.get(entry.layer.value, 0)
+        total += scores["layer_bonus"]
+
+        return {
+            "memory_id": memory_id,
+            "total_score": round(total, 1),
+            "max_score": 100,
+            "percentage": round(total, 1),
+            "grade": self._score_to_grade(total),
+            "breakdown": scores,
+        }
+
+    def _score_to_grade(self, score: float) -> str:
+        """分数转等级"""
+        if score >= 85:
+            return "优秀"
+        elif score >= 70:
+            return "良好"
+        elif score >= 55:
+            return "中等"
+        elif score >= 40:
+            return "及格"
+        else:
+            return "需改进"
+
+    def analyze_similarity(self,
+                           memory_id: str,
+                           limit: int = 10,
+                           min_similarity: float = 0.3) -> List[Dict[str, Any]]:
+        """相似度分析（v5.2.2 新增）
+
+        分析指定记忆与其他记忆的相似度。
+
+        Args:
+            memory_id: 目标记忆 ID
+            limit: 返回数量
+            min_similarity: 最低相似度阈值
+
+        Returns:
+            相似记忆列表，包含相似度分数
+        """
+        entry = self.get_memory(memory_id)
+        if not entry:
+            return []
+
+        conn = self._get_conn()
+
+        # 使用 FTS5 全文搜索找相似内容
+        try:
+            rows = conn.execute(
+                "SELECT id, content, category, layer, importance, starred, "
+                "bm25(memories_fts) as relevance "
+                "FROM memories_fts "
+                "WHERE memories_fts MATCH ? AND id != ? "
+                "ORDER BY relevance "
+                "LIMIT ?",
+                (entry.content[:200], memory_id, limit * 2)
+            ).fetchall()
+        except Exception:
+            # FTS 搜索失败，回退到 LIKE 搜索
+            keywords = entry.content.split()[:5]
+            if not keywords:
+                return []
+
+            query = "SELECT id, content, category, layer, importance, starred FROM memories WHERE id != ? AND ("
+            params = [memory_id]
+            conditions = []
+            for kw in keywords[:3]:
+                conditions.append("content LIKE ?")
+                params.append(f"%{kw}%")
+            query += " OR ".join(conditions) + ") LIMIT ?"
+            params.append(limit * 2)
+
+            rows = conn.execute(query, params).fetchall()
+
+        results = []
+        for row in rows:
+            other_id = row[0]
+            other_content = row[1]
+
+            # 计算相似度（基于内容重叠）
+            similarity = self._calculate_similarity(entry.content, other_content)
+
+            if similarity >= min_similarity:
+                results.append({
+                    "memory_id": other_id,
+                    "similarity": round(similarity, 3),
+                    "content_preview": other_content[:100] + "..." if len(other_content) > 100 else other_content,
+                    "category": row[2],
+                    "layer": row[3],
+                    "importance": row[4],
+                    "starred": bool(row[5]),
+                })
+
+        # 按相似度排序
+        results.sort(key=lambda x: x["similarity"], reverse=True)
+        return results[:limit]
+
+    def _calculate_similarity(self, text1: str, text2: str) -> float:
+        """计算文本相似度（简化版 Jaccard 相似度）"""
+        if not text1 or not text2:
+            return 0.0
+
+        # 简单的词集合相似度
+        words1 = set(text1.lower().split())
+        words2 = set(text2.lower().split())
+
+        if not words1 or not words2:
+            return 0.0
+
+        intersection = len(words1 & words2)
+        union = len(words1 | words2)
+
+        if union == 0:
+            return 0.0
+
+        return intersection / union
+
+    def batch_quality_score(self,
+                            category: Optional[str] = None,
+                            limit: int = 100) -> Dict[str, Any]:
+        """批量质量评分（v5.2.2 新增）
+
+        对指定范围内的记忆进行批量质量评分。
+
+        Args:
+            category: 分类过滤
+            limit: 数量限制
+
+        Returns:
+            批量评分结果，包含统计信息
+        """
+        entries = self.list_memories(category=category, limit=limit)
+        scores = []
+        grades = {"优秀": 0, "良好": 0, "中等": 0, "及格": 0, "需改进": 0}
+
+        for entry in entries:
+            score_data = self.quality_score(entry.id)
+            if score_data:
+                scores.append(score_data)
+                grades[score_data["grade"]] = grades.get(score_data["grade"], 0) + 1
+
+        if not scores:
+            return {"total": 0, "average_score": 0, "grades": grades, "scores": []}
+
+        avg_score = sum(s["total_score"] for s in scores) / len(scores)
+
+        return {
+            "total": len(scores),
+            "average_score": round(avg_score, 1),
+            "grades": grades,
+            "top_scores": sorted(scores, key=lambda x: x["total_score"], reverse=True)[:10],
+            "low_scores": sorted(scores, key=lambda x: x["total_score"])[:10],
+        }
+
     def get_audit_log(self,
                       memory_id: Optional[str] = None,
                       actor: Optional[str] = None,
