@@ -207,5 +207,5 @@ class IndexEngine:
                 LIMIT ?
             """, (query, top_k)).fetchall()
             return [(row[0], 1.0 / (1.0 + row[1])) for row in rows]
-        except Exception:
+        except sqlite3.OperationalError:
             return []

@@ -57,7 +57,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.2.2"
+    __version__ = "5.2.3"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -125,7 +125,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}MindForge v5.2.2 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}MindForge v5.2.3 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -135,7 +135,7 @@ def print_banner():
 def cmd_init(args):
     """初始化 MindForge"""
     print_banner()
-    print(c("MindForge v5.2.2 初始化向导", "bold"))
+    print(c("MindForge v5.2.3 初始化向导", "bold"))
     print("=" * 50)
 
     password = getpass.getpass("请设置加密密码（用于保护记忆）：")
@@ -167,7 +167,7 @@ def cmd_init(args):
         print(f"   密钥文件: {args.key_file}")
         print(c("\n   提示：请妥善保管密码，丢失后无法恢复记忆数据", "yellow"))
         return 0
-    except Exception as e:
+    except (ValueError, TypeError, OSError) as e:
         print(c(f"❌ 初始化失败：{e}", "red"))
         return 1
 
@@ -881,7 +881,7 @@ def cmd_vacuum(args):
         conn.execute("VACUUM")
         conn.isolation_level = ""
         vacuum_ok = True
-    except Exception:
+    except sqlite3.OperationalError:
         vacuum_ok = False
 
     # 重建后健康状态
@@ -988,7 +988,7 @@ def cmd_import_md(args):
 
     try:
         content = input_path.read_text(encoding='utf-8')
-    except Exception as e:
+    except (OSError, IOError) as e:
         print(c(f"❌ 读取文件失败：{e}", "red"))
         return 1
 
@@ -1036,7 +1036,7 @@ def cmd_import_md(args):
                 layer=MemoryLayer.from_string(args.layer) if args.layer else MemoryLayer.short_term,
             )
             imported += 1
-        except Exception:
+        except (ValueError, TypeError):
             skipped += 1
 
     print(c(f"\n✅ Markdown 导入完成", "green"))
@@ -1074,7 +1074,7 @@ def cmd_migrate(args):
         print(f"   迁移脚本：{result['scripts_applied']} 个")
         print(f"   耗时：{result['duration_ms']} ms")
         print(f"   当前版本：{result['final_version']}")
-    except Exception as e:
+    except (sqlite3.OperationalError, ValueError) as e:
         print(c(f"\n❌ 迁移失败：{e}", "red"))
         return 1
 
@@ -1378,7 +1378,7 @@ def cmd_serve(args):
             httpd.serve_forever()
     except KeyboardInterrupt:
         print("\n服务已停止")
-    except Exception as e:
+    except (OSError, ValueError) as e:
         print(c(f"启动失败：{e}", "red"))
         return 1
 
@@ -2197,7 +2197,7 @@ def cmd_import_url(args):
         print(f"   内容: {text_content[:100]}...")
         print(f"   ID: {entry.id[:16]}...")
 
-    except Exception as e:
+    except (ValueError, TypeError, OSError) as e:
         print(c(f"\n❌ 导入失败: {e}", "red"))
         cm.close()
         return 1
@@ -2295,14 +2295,14 @@ def cmd_import_xml(args):
 
     try:
         content = input_path.read_text(encoding='utf-8')
-    except Exception as e:
+    except (OSError, IOError) as e:
         print(c(f"\n❌ 读取文件失败: {e}", "red"))
         return 1
 
     try:
         import xml.etree.ElementTree as ET
         root = ET.fromstring(content)
-    except Exception as e:
+    except (ValueError, TypeError) as e:
         print(c(f"\n❌ XML 解析失败: {e}", "red"))
         return 1
 
@@ -2354,7 +2354,7 @@ def cmd_import_xml(args):
                 layer=MemoryLayer.from_string(layer_str),
             )
             imported += 1
-        except Exception:
+        except (ValueError, TypeError):
             skipped += 1
 
     print(c(f"\n✅ XML 导入完成", "green"))
@@ -2424,7 +2424,7 @@ def cmd_import_json(args):
     try:
         content = input_path.read_text(encoding='utf-8')
         data = json.loads(content)
-    except Exception as e:
+    except (json.JSONDecodeError, OSError, IOError) as e:
         print(c(f"\n❌ JSON 解析失败: {e}", "red"))
         return 1
 
@@ -2459,7 +2459,7 @@ def cmd_import_json(args):
                 layer=MemoryLayer.from_string(mem.get("layer", "short_term")),
             )
             imported += 1
-        except Exception:
+        except (ValueError, TypeError):
             skipped += 1
 
     print(c(f"\n✅ JSON 导入完成", "green"))
@@ -2514,7 +2514,7 @@ def cmd_merge(args):
         try:
             cm.delete(dup["target"].id)
             merged += 1
-        except Exception:
+        except (ValueError, TypeError):
             skipped += 1
 
     print(c(f"\n✅ 合并完成", "green"))
@@ -2849,7 +2849,7 @@ def cmd_doctor(args):
                 fixes_applied += 1
             else:
                 issues.append(f"数据库版本落后，建议运行 migrate --force")
-    except Exception as e:
+    except (sqlite3.OperationalError, ValueError) as e:
         print(f"  ⚠️  无法获取版本: {e}")
 
     # 汇总
@@ -3527,7 +3527,7 @@ def cmd_drama_export(args):
         print(c(f"\n✅ 短剧数据已导出", "green"))
         print(f"   文件: {args.output}")
         print(f"   数量: {count} 部")
-    except Exception as e:
+    except (OSError, ValueError) as e:
         print(c(f"\n❌ 导出失败: {e}", "red"))
         cm.close()
         return 1

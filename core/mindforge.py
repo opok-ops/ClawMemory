@@ -508,7 +508,7 @@ class MindForge:
                 )
 
                 stats["imported"] += 1
-            except Exception:
+            except (ValueError, TypeError, KeyError, AttributeError):
                 stats["failed"] += 1
 
         return stats

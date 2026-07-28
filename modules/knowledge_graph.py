@@ -153,7 +153,7 @@ class KnowledgeGraph:
                 """, (entity_id, name, entity_type, description,
                       json.dumps(metadata or {}, ensure_ascii=False), now))
                 conn.commit()
-            except Exception:
+            except sqlite3.OperationalError:
                 pass
 
         return entity
@@ -191,7 +191,7 @@ class KnowledgeGraph:
                       weight, json.dumps([memory_id] if memory_id else []),
                       json.dumps({}), now))
                 conn.commit()
-            except Exception:
+            except sqlite3.OperationalError:
                 pass
 
         return relation

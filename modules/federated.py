@@ -192,7 +192,7 @@ class FederatedMemory:
                     }
                 )
                 return entry.id
-            except Exception:
+            except (ValueError, TypeError):
                 return None
 
         return None
@@ -257,7 +257,7 @@ class FederatedMemory:
         try:
             entry = self.storage.get_memory(memory_id)
             return entry is not None
-        except Exception:
+        except sqlite3.OperationalError:
             return False
 
     def _verify_signature(self, data: Dict, signature: str, peer_id: str) -> bool:

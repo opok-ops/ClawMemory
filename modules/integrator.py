@@ -58,7 +58,7 @@ class MemoryIntegrator:
             if entry.encrypted:
                 try:
                     content = self.storage.decrypt_content(entry)
-                except Exception:
+                except (ValueError, TypeError):
                     pass
             preview = content[:80] + "..." if len(content) > 80 else content
             key_points.append(preview)
@@ -113,7 +113,7 @@ class MemoryIntegrator:
         if target.encrypted:
             try:
                 target_content = self.storage.decrypt_content(target)
-            except Exception:
+            except (ValueError, TypeError):
                 pass
 
         target_words = set(target_content.lower().split())
@@ -129,7 +129,7 @@ class MemoryIntegrator:
             if entry.encrypted:
                 try:
                     content = self.storage.decrypt_content(entry)
-                except Exception:
+                except (ValueError, TypeError):
                     pass
 
             entry_words = set(content.lower().split())

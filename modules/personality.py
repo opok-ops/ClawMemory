@@ -72,9 +72,9 @@ class PersonalityEngine:
                     data = json.loads(entry.content)
                     profile = UserProfile.from_dict(data)
                     self.profiles[profile.user_id] = profile
-                except Exception:
+                except (json.JSONDecodeError, TypeError):
                     pass
-        except Exception:
+        except sqlite3.OperationalError:
             pass
 
     def get_profile(self, user_id: str = "default") -> UserProfile:
@@ -243,7 +243,7 @@ class PersonalityEngine:
                     if data.get("user_id") == profile.user_id:
                         profile_entry = entry
                         break
-                except Exception:
+                except (json.JSONDecodeError, TypeError):
                     pass
 
             content = json.dumps(profile.to_dict(), ensure_ascii=False)
@@ -260,5 +260,5 @@ class PersonalityEngine:
                     tags=["profile", profile.user_id],
                     source_agent="personality_engine",
                 )
-        except Exception:
+        except (sqlite3.OperationalError, ValueError):
             pass

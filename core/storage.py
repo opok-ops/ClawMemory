@@ -503,7 +503,7 @@ class StorageEngine:
                         "VALUES('delete', ?, ?, ?, ?)",
                         (old_fts_row[0], old_fts_row[1] or "", old_fts_row[2] or "", old_fts_row[3] or "[]")
                     )
-                except Exception:
+                except sqlite3.OperationalError:
                     pass
 
         # 更新 memories 表
@@ -524,7 +524,7 @@ class StorageEngine:
                         "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
                         (new_row[0], new_row[1] or "", new_row[2] or "", new_row[3] or "[]")
                     )
-                except Exception:
+                except sqlite3.OperationalError:
                     pass
 
         conn.commit()
@@ -552,14 +552,14 @@ class StorageEngine:
                 "VALUES('delete', ?, ?, ?, ?)",
                 (row[0], row[1] or "", row[2] or "", row[3] or "[]")
             )
-        except Exception:
+        except sqlite3.OperationalError:
             pass
         try:
             conn.execute(
                 "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
                 (row[0], row[1] or "", row[2] or "", row[3] or "[]")
             )
-        except Exception:
+        except sqlite3.OperationalError:
             pass
 
     def rebuild_fts(self) -> dict:
@@ -603,7 +603,7 @@ class StorageEngine:
                     (row[0], row[1] or "", row[2] or "", row[3] or "[]")
                 )
                 indexed += 1
-            except Exception:
+            except sqlite3.OperationalError:
                 pass
 
         conn.commit()
@@ -650,7 +650,7 @@ class StorageEngine:
                     "VALUES('delete', ?, ?, ?, ?)",
                     (row[1], row[2] or "", row[3] or "", row[4] or "[]")
                 )
-            except Exception:
+            except sqlite3.OperationalError:
                 pass
 
         conn.commit()
@@ -685,7 +685,7 @@ class StorageEngine:
                         "VALUES('delete', ?, ?, ?, ?)",
                         (row[0], row[1] or "", row[2] or "", row[3] or "[]")
                     )
-                except Exception:
+                except sqlite3.OperationalError:
                     pass
         else:
             now = time.time()
@@ -697,7 +697,7 @@ class StorageEngine:
             if row:
                 try:
                     meta = json.loads(row["metadata"]) if row["metadata"] else {}
-                except Exception:
+                except (json.JSONDecodeError, TypeError):
                     meta = {}
                 meta["_original_category"] = row["category"]
                 conn.execute(
@@ -764,14 +764,14 @@ class StorageEngine:
                         "VALUES('delete', ?, ?, ?, ?)",
                         (row[1], row[2] or "", row[3] or "", row[4] or "[]")
                     )
-                except Exception:
+                except sqlite3.OperationalError:
                     pass
         else:
             # v5.1.1 修复：批量软删除时也保存原分类到 metadata
             for row in rows:
                 try:
                     meta = json.loads(row["metadata"]) if row.get("metadata") else {}
-                except Exception:
+                except (json.JSONDecodeError, TypeError):
                     meta = {}
                 meta["_original_category"] = row["category"]
                 conn.execute(
@@ -803,7 +803,7 @@ class StorageEngine:
 
         try:
             meta = json.loads(row["metadata"]) if row["metadata"] else {}
-        except Exception:
+        except (json.JSONDecodeError, TypeError):
             meta = {}
 
         original_category = meta.pop("_original_category", "default")
@@ -1777,7 +1777,7 @@ class StorageEngine:
                 "LIMIT ?",
                 (entry.content[:200], memory_id, limit * 2)
             ).fetchall()
-        except Exception:
+        except sqlite3.OperationalError:
             # FTS 搜索失败，回退到 LIKE 搜索
             keywords = entry.content.split()[:5]
             if not keywords:
@@ -1902,7 +1902,7 @@ class StorageEngine:
             session_id=row["session_id"],
             privacy_level=row["privacy_level"],
             timestamp=row["timestamp"],
-            details=json.loads(row["details"]),
+            details=self._safe_json_loads(row["details"], {}),
         ) for row in rows]
 
     def backup(self, backup_dir: str) -> Path:
@@ -1917,12 +1917,22 @@ class StorageEngine:
         shutil.copy2(self.db_path, dest)
         return dest
 
+    @staticmethod
+    def _safe_json_loads(data: Optional[str], default: Any = None) -> Any:
+        """安全解析 JSON，损坏时返回默认值（v5.2.3 安全加固）"""
+        if not data:
+            return default
+        try:
+            return json.loads(data)
+        except (json.JSONDecodeError, TypeError):
+            return default
+
     def _row_to_entry(self, row: sqlite3.Row) -> MemoryEntry:
         return MemoryEntry(
             id=row["id"],
             content=row["content"] or "",
             category=row["category"],
-            tags=json.loads(row["tags"]) if row["tags"] else [],
+            tags=self._safe_json_loads(row["tags"], []),
             privacy=PrivacyLevel(row["privacy"]),
             importance=Importance(row["importance"]),
             memory_type=MemoryType(row["memory_type"]),
@@ -1937,7 +1947,7 @@ class StorageEngine:
             forgetting_score=row["forgetting_score"],
             strength=row["strength"],
             starred=bool(row["starred"]) if "starred" in row.keys() else False,
-            metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+            metadata=self._safe_json_loads(row["metadata"], {}),
             encrypted=bool(row["encrypted"]),
             ciphertext=row["ciphertext"],
             nonce=row["nonce"],
@@ -2017,7 +2027,7 @@ class StorageEngine:
                     """, (entry_id,))
 
                 deleted_count += 1
-            except Exception:
+            except (sqlite3.OperationalError, sqlite3.IntegrityError):
                 pass
 
         conn.commit()
@@ -2083,7 +2093,7 @@ class StorageEngine:
                     """, (entry_id, content, category, json.dumps(tags, ensure_ascii=False)))
 
                 added_count += 1
-            except Exception:
+            except (sqlite3.OperationalError, sqlite3.IntegrityError):
                 pass
 
         conn.commit()
@@ -2249,7 +2259,7 @@ class StorageEngine:
                     entry.content = self.encryption.decrypt(
                         EncryptedBlob(ciphertext=entry.ciphertext, nonce=entry.nonce, salt=entry.salt)
                     )
-                except Exception:
+                except (ValueError, TypeError):
                     pass
 
         return results
@@ -2269,7 +2279,7 @@ class StorageEngine:
 
         rows = conn.execute("SELECT id, tags FROM memories WHERE category != 'trash'").fetchall()
         for row in rows:
-            tags = json.loads(row["tags"]) if row["tags"] else []
+            tags = self._safe_json_loads(row["tags"], [])
             if old_tag in tags:
                 new_tags = [new_tag if t == old_tag else t for t in tags]
                 conn.execute("UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
@@ -2321,7 +2331,7 @@ class StorageEngine:
                 "SELECT value FROM schema_version WHERE id = 1"
             ).fetchone()
             return int(row[0]) if row else 0
-        except Exception:
+        except sqlite3.OperationalError:
             return 0
 
     def get_latest_db_version(self) -> int:
@@ -2584,7 +2594,7 @@ class StorageEngine:
                     layer=target_layer or MemoryLayer.from_string(entry_data["layer"]),
                 )
                 imported += 1
-            except Exception:
+            except (ValueError, TypeError, KeyError):
                 failed += 1
 
         return {"imported": imported, "skipped": skipped, "failed": failed}
@@ -2778,7 +2788,7 @@ class StorageEngine:
                 {"query": row["query"], "count": row["cnt"], "last_used": row["last_used"]}
                 for row in rows if row["query"]
             ]
-        except Exception:
+        except sqlite3.OperationalError:
             return []
 
     def highlight_text(self, text: str, query: str,
@@ -2832,7 +2842,7 @@ class StorageEngine:
             if not row:
                 continue
 
-            existing_tags = json.loads(row["tags"]) if row["tags"] else []
+            existing_tags = self._safe_json_loads(row["tags"], [])
             new_tags = list(set(existing_tags + tags))
             if new_tags != existing_tags:
                 conn.execute(
@@ -2876,7 +2886,7 @@ class StorageEngine:
             if not row:
                 continue
 
-            existing_tags = json.loads(row["tags"]) if row["tags"] else []
+            existing_tags = self._safe_json_loads(row["tags"], [])
             new_tags = [t for t in existing_tags if t not in tags]
             if new_tags != existing_tags:
                 conn.execute(
@@ -2917,7 +2927,7 @@ class StorageEngine:
         ).fetchall()
 
         for row in rows:
-            tags = json.loads(row["tags"]) if row["tags"] else []
+            tags = self._safe_json_loads(row["tags"], [])
             has_source = any(t in source_tags for t in tags)
             if not has_source:
                 continue
@@ -2992,7 +3002,7 @@ class StorageEngine:
                 "timestamp": timestamp,
                 "filename": backup_file.name,
             }
-        except Exception as e:
+        except (OSError, IOError) as e:
             return {
                 "success": False,
                 "error": str(e),
@@ -3059,7 +3069,7 @@ class StorageEngine:
 
             self._init_db()
             result["success"] = True
-        except Exception as e:
+        except (OSError, IOError) as e:
             result["error"] = str(e)
 
         return result
@@ -3084,7 +3094,7 @@ class StorageEngine:
             try:
                 Path(backup["path"]).unlink()
                 deleted += 1
-            except Exception:
+            except (OSError, IOError):
                 pass
         return deleted
 
@@ -3376,9 +3386,9 @@ class StorageEngine:
             platform=row["platform"] or "",
             rating=row["rating"] or 0.0,
             description=row["description"] or "",
-            tags=json.loads(row["tags"]) if row["tags"] else [],
+            tags=self._safe_json_loads(row["tags"], []),
             cover_url=row["cover_url"] or "",
-            metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+            metadata=self._safe_json_loads(row["metadata"], {}),
             created_at=row["created_at"] or 0.0,
             updated_at=row["updated_at"] or 0.0,
             last_watched_at=row["last_watched_at"] or 0.0,
@@ -3532,8 +3542,8 @@ class StorageEngine:
             content=row["content"] or "",
             location=row["location"] or "",
             time_of_day=row["time_of_day"] or "",
-            tags=json.loads(row["tags"]) if row["tags"] else [],
-            metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+            tags=self._safe_json_loads(row["tags"], []),
+            metadata=self._safe_json_loads(row["metadata"], {}),
             created_at=row["created_at"] or 0.0,
         )
 
@@ -3693,8 +3703,8 @@ class StorageEngine:
             description=row["description"] or "",
             personality=row["personality"] or "",
             avatar_url=row["avatar_url"] or "",
-            tags=json.loads(row["tags"]) if row["tags"] else [],
-            metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+            tags=self._safe_json_loads(row["tags"], []),
+            metadata=self._safe_json_loads(row["metadata"], {}),
             created_at=row["created_at"] or 0.0,
         )
 
@@ -3898,7 +3908,7 @@ class StorageEngine:
             timestamp=row["timestamp"] or "",
             is_classic=bool(row["is_classic"]),
             memory_id=row["memory_id"] or "",
-            tags=json.loads(row["tags"]) if row["tags"] else [],
-            metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+            tags=self._safe_json_loads(row["tags"], []),
+            metadata=self._safe_json_loads(row["metadata"], {}),
             created_at=row["created_at"] or 0.0,
         )

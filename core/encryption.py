@@ -114,7 +114,7 @@ class EncryptionEngine:
             try:
                 plaintext = self._aesgcm.decrypt(blob.nonce, blob.ciphertext, None)
                 return plaintext.decode("utf-8")
-            except Exception as e:
+            except (ValueError, TypeError) as e:
                 raise SecurityError(f"解密失败：{e}")
         else:
             plaintext = self._simple_decrypt(blob.ciphertext, blob.nonce)

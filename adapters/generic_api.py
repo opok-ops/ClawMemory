@@ -49,7 +49,7 @@ class GenericAPIAdapter:
                 "success": True,
                 "data": result,
             }
-        except Exception as e:
+        except (ValueError, TypeError, KeyError, AttributeError) as e:
             return {
                 "success": False,
                 "error": str(e),

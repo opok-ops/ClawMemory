@@ -248,7 +248,7 @@ class PrivacyEngine:
             if entry.encrypted:
                 try:
                     content = self.storage.decrypt_content(entry)
-                except Exception:
+                except (ValueError, TypeError):
                     content = ""
 
             scan = self.scan(content)
