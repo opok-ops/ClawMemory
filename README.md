@@ -358,9 +358,11 @@ context = adapter.get_context("数据库优化")
 **🤖 Agent 记忆优化**
 - `agent-stats` - Agent 记忆统计，支持全部 Agent 概览或指定 Agent 详情（v5.2.2 新增）
 - `agent-list` - 列出特定 Agent 的记忆，支持分页和预览（v5.2.2 新增）
-- `agent_stats` API - 按 Agent 来源分组统计记忆数据，包含记忆数、活跃度、分类分布（v5.2.2 新增）
-- `list_by_agent` API - 列出指定 Agent 创建的所有记忆（v5.2.2 新增）
-- 支持 Agent 级别的记忆追踪和管理
+- `agent-transfer` - 迁移 Agent 记忆，将一个 Agent 的记忆转移给另一个（v5.2.2 新增）
+- `agent-clean` - 清理 Agent 旧记忆，按天数和重要级别筛选，移入回收站（v5.2.2 新增）
+- `evolve` - 记忆演化，基于艾宾浩斯遗忘曲线自动升级记忆层级（v5.2.2 新增）
+- `agent_stats`/`list_by_agent`/`transfer_agent_memories`/`clean_agent_memories`/`evolve_memories` API（v5.2.2 新增）
+- 支持 Agent 级别的记忆追踪、迁移、清理全生命周期管理
 
 **🛡️ 安全与稳定性修复**
 - 修复 18 个 CLI 命令的 `cm.close()` 资源泄漏（数据库连接未释放）

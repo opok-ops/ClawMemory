@@ -1380,6 +1380,245 @@ class StorageEngine:
         ).fetchall()
         return [self._row_to_entry(r) for r in rows]
 
+    def evolve_memories(self,
+                        dry_run: bool = False,
+                        actor: str = "system",
+                        session_id: str = "evolve") -> Dict[str, Any]:
+        """记忆演化 - 基于艾宾浩斯遗忘曲线自动升级记忆层级（v5.2.2 新增）
+
+        规则：
+        - 短期记忆创建超过 24 小时且被访问过 → 升级为长期记忆
+        - 长期记忆创建超过 7 天且收藏/重要 → 升级为永久记忆
+        - 超过 30 天未访问的短期记忆 → 标记为待清理
+
+        Args:
+            dry_run: 仅统计不执行
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            演化统计结果
+        """
+        conn = self._get_conn()
+        now = time.time()
+        day_seconds = 86400
+
+        short_to_long_days = 1
+        long_to_perm_days = 7
+        stale_days = 30
+
+        # 统计可升级的短期记忆
+        short_upgrade = conn.execute(
+            "SELECT COUNT(*) FROM memories "
+            "WHERE layer = ? AND category != 'trash' "
+            "AND created_at < ? AND access_count > 0",
+            (MemoryLayer.SHORT_TERM.value, now - short_upgrade_days * day_seconds)
+        ).fetchone()[0] if False else 0
+
+        short_to_long_candidates = conn.execute(
+            "SELECT id FROM memories "
+            "WHERE layer = ? AND category != 'trash' "
+            "AND created_at < ? AND access_count > 0 "
+            "LIMIT 100",
+            (MemoryLayer.SHORT_TERM.value, now - short_upgrade_days * day_seconds)
+        ).fetchall() if False else []
+
+        # 重新计算
+        short_to_long = conn.execute(
+            "SELECT COUNT(*) FROM memories "
+            "WHERE layer = ? AND category != 'trash' "
+            "AND (julianday('now') - julianday(created_at, 'unixepoch')) >= 1 "
+            "AND access_count > 0",
+            (MemoryLayer.SHORT_TERM.value,)
+        ).fetchone()[0]
+
+        long_to_perm = conn.execute(
+            "SELECT COUNT(*) FROM memories "
+            "WHERE layer = ? AND category != 'trash' "
+            "AND (julianday('now') - julianday(created_at, 'unixepoch')) >= 7 "
+            "AND (starred = 1 OR importance >= 4)",
+            (MemoryLayer.LONG_TERM.value,)
+        ).fetchone()[0]
+
+        stale_short = conn.execute(
+            "SELECT COUNT(*) FROM memories "
+            "WHERE layer = ? AND category != 'trash' "
+            "AND (julianday('now') - julianday(created_at, 'unixepoch')) >= 30 "
+            "AND access_count = 0",
+            (MemoryLayer.SHORT_TERM.value,)
+        ).fetchone()[0]
+
+        result = {
+            "short_to_long": short_to_long,
+            "long_to_permanent": long_to_perm,
+            "stale_short_term": stale_short,
+            "total_evolvable": short_to_long + long_to_perm,
+            "executed": not dry_run,
+        }
+
+        if dry_run:
+            return result
+
+        # 执行升级
+        upgraded_short = 0
+        rows = conn.execute(
+            "SELECT id FROM memories "
+            "WHERE layer = ? AND category != 'trash' "
+            "AND (julianday('now') - julianday(created_at, 'unixepoch')) >= 1 "
+            "AND access_count > 0 LIMIT 200",
+            (MemoryLayer.SHORT_TERM.value,)
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                "UPDATE memories SET layer = ?, updated_at = ? WHERE id = ?",
+                (MemoryLayer.LONG_TERM.value, now, row[0])
+            )
+            self._add_audit("evolve", row[0], actor, session_id, "short_term→long_term")
+            upgraded_short += 1
+
+        upgraded_long = 0
+        rows = conn.execute(
+            "SELECT id FROM memories "
+            "WHERE layer = ? AND category != 'trash' "
+            "AND (julianday('now') - julianday(created_at, 'unixepoch')) >= 7 "
+            "AND (starred = 1 OR importance >= 4) LIMIT 100",
+            (MemoryLayer.LONG_TERM.value,)
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                "UPDATE memories SET layer = ?, updated_at = ? WHERE id = ?",
+                (MemoryLayer.PERMANENT.value, now, row[0])
+            )
+            self._add_audit("evolve", row[0], actor, session_id, "long_term→permanent")
+            upgraded_long += 1
+
+        conn.commit()
+        result["upgraded_to_long"] = upgraded_short
+        result["upgraded_to_permanent"] = upgraded_long
+        return result
+
+    def transfer_agent_memories(self,
+                                from_agent: str,
+                                to_agent: str,
+                                category: Optional[str] = None,
+                                actor: str = "system",
+                                session_id: str = "transfer") -> Dict[str, Any]:
+        """Agent 记忆迁移 - 将一个 Agent 的记忆转移给另一个（v5.2.2 新增）
+
+        Args:
+            from_agent: 源 Agent ID
+            to_agent: 目标 Agent ID
+            category: 可选，仅迁移指定分类
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            迁移统计
+        """
+        conn = self._get_conn()
+        now = time.time()
+
+        query = "SELECT id FROM memories WHERE source_agent = ?"
+        params = [from_agent]
+
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+
+        rows = conn.execute(query, params).fetchall()
+        total = len(rows)
+
+        for row in rows:
+            conn.execute(
+                "UPDATE memories SET source_agent = ?, updated_at = ? WHERE id = ?",
+                (to_agent, now, row[0])
+            )
+            self._add_audit(
+                "agent_transfer", row[0], actor, session_id,
+                f"{from_agent}→{to_agent}"
+            )
+
+        conn.commit()
+        return {
+            "from_agent": from_agent,
+            "to_agent": to_agent,
+            "transferred": total,
+            "category_filter": category,
+        }
+
+    def clean_agent_memories(self,
+                             agent_id: str,
+                             older_than_days: int = 90,
+                             max_importance: Optional[str] = None,
+                             dry_run: bool = False,
+                             actor: str = "system",
+                             session_id: str = "clean") -> Dict[str, Any]:
+        """清理 Agent 的旧记忆（v5.2.2 新增）
+
+        清理指定 Agent 创建的、超过指定天数、重要度低于等于指定级别的记忆，移入回收站。
+
+        Args:
+            agent_id: Agent ID
+            older_than_days: 清理超过多少天的记忆
+            max_importance: 最高清理的重要级别（LOW/MEDIUM/HIGH/CRITICAL），None 表示清理所有
+            dry_run: 仅统计不执行
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            清理统计
+        """
+        conn = self._get_conn()
+        now = time.time()
+
+        importance_order = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+        clean_importances = []
+
+        if max_importance:
+            try:
+                max_imp = Importance.from_string(max_importance)
+                max_idx = importance_order.index(max_imp.value)
+                clean_importances = importance_order[:max_idx + 1]
+            except (ValueError, KeyError):
+                clean_importances = importance_order
+        else:
+            clean_importances = importance_order
+
+        query = (
+            "SELECT id, content FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' "
+            "AND (julianday('now') - julianday(created_at, 'unixepoch')) >= ? "
+            "AND importance IN ({}) AND starred = 0"
+        ).format(",".join(["?"] * len(clean_importances)))
+        params = [agent_id, older_than_days] + clean_importances
+
+        rows = conn.execute(query, params).fetchall()
+        total = len(rows)
+
+        result = {
+            "agent_id": agent_id,
+            "older_than_days": older_than_days,
+            "max_importance": max_importance,
+            "clean_importances": clean_importances,
+            "to_clean": total,
+            "cleaned": 0,
+            "executed": not dry_run,
+        }
+
+        if dry_run:
+            return result
+
+        for row in rows:
+            conn.execute(
+                "UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
+                (now, row[0])
+            )
+            self._add_audit("agent_clean", row[0], actor, session_id, "")
+
+        conn.commit()
+        result["cleaned"] = total
+        return result
+
     def get_audit_log(self,
                       memory_id: Optional[str] = None,
                       actor: Optional[str] = None,

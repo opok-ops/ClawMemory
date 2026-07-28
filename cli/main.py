@@ -1931,6 +1931,20 @@ def main():
     p_agent_list.add_argument("--limit", "-n", type=int, default=50, help="数量限制")
     p_agent_list.add_argument("--offset", type=int, default=0, help="偏移量")
 
+    p_evolve = sub.add_parser("evolve", help="记忆演化（v5.2.2 新增）")
+    p_evolve.add_argument("--dry-run", action="store_true", help="仅统计不执行")
+
+    p_agent_transfer = sub.add_parser("agent-transfer", help="迁移 Agent 记忆（v5.2.2 新增）")
+    p_agent_transfer.add_argument("from_agent", help="源 Agent ID")
+    p_agent_transfer.add_argument("to_agent", help="目标 Agent ID")
+    p_agent_transfer.add_argument("--category", "-c", help="仅迁移指定分类")
+
+    p_agent_clean = sub.add_parser("agent-clean", help="清理 Agent 旧记忆（v5.2.2 新增）")
+    p_agent_clean.add_argument("agent", help="Agent ID")
+    p_agent_clean.add_argument("--days", "-d", type=int, default=90, help="清理超过多少天的记忆（默认 90 天）")
+    p_agent_clean.add_argument("--max-importance", "-m", default=None, help="最高清理的重要级别（LOW/MEDIUM/HIGH/CRITICAL）")
+    p_agent_clean.add_argument("--dry-run", action="store_true", help="仅统计不执行")
+
     p_backup = sub.add_parser("backup", help="备份数据")
     p_backup.add_argument("--output", default="./data/backup", help="备份目录")
 
@@ -2024,6 +2038,9 @@ def main():
         "personality": cmd_personality,
         "agent-stats": cmd_agent_stats,
         "agent-list": cmd_agent_list,
+        "evolve": cmd_evolve,
+        "agent-transfer": cmd_agent_transfer,
+        "agent-clean": cmd_agent_clean,
         "backup": cmd_backup,
         "export": cmd_export,
         "import": cmd_import,
@@ -3931,6 +3948,85 @@ def cmd_agent_list(args):
         preview = e.content[:60] + "..." if len(e.content) > 60 else e.content
         print(f"\n{i}. {star} [{e.category}] {c(preview, 'cyan')}")
         print(f"   ID: {e.id[:16]}... | 层级: {e.layer.value} | 隐私: {e.privacy.value}")
+    cm.close()
+    return 0
+
+
+def cmd_evolve(args):
+    """记忆演化（v5.2.2 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🧠 记忆演化", "bold"))
+    print("=" * 50)
+
+    result = cm.evolve_memories(dry_run=args.dry_run)
+
+    if args.dry_run:
+        print(c("📊 模拟统计（未执行）", "yellow"))
+    else:
+        print(c("✅ 演化完成", "green"))
+
+    print(f"  短期→长期候选: {result.get('short_to_long', 0)} 条")
+    print(f"  长期→永久候选: {result.get('long_to_permanent', 0)} 条")
+    print(f"  过期短期记忆:   {result.get('stale_short_term', 0)} 条")
+
+    if not args.dry_run:
+        print(f"\n  实际升级到长期: {result.get('upgraded_to_long', 0)} 条")
+        print(f"  实际升级到永久: {result.get('upgraded_to_permanent', 0)} 条")
+
+    if args.dry_run:
+        print(f"\n💡 使用 evolve（不加 --dry-run）执行实际演化")
+    cm.close()
+    return 0
+
+
+def cmd_agent_transfer(args):
+    """迁移 Agent 记忆（v5.2.2 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🔄 Agent 记忆迁移", "bold"))
+    print("=" * 50)
+    print(f"  源 Agent:   {args.from_agent}")
+    print(f"  目标 Agent: {args.to_agent}")
+    if args.category:
+        print(f"  分类过滤:   {args.category}")
+
+    result = cm.transfer_agent_memories(
+        from_agent=args.from_agent,
+        to_agent=args.to_agent,
+        category=args.category,
+    )
+
+    print(f"\n  已迁移:     {c(str(result['transferred']) + ' 条', 'green')}")
+    cm.close()
+    return 0
+
+
+def cmd_agent_clean(args):
+    """清理 Agent 旧记忆（v5.2.2 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🧹 Agent 记忆清理", "bold"))
+    print("=" * 50)
+    print(f"  Agent ID:           {args.agent}")
+    print(f"  清理天数阈值:       {args.days} 天")
+    print(f"  最高清理重要级别:   {args.max_importance or '全部'}")
+
+    if args.dry_run:
+        print(c("\n📊 模拟统计（未执行）", "yellow"))
+    else:
+        print(c("\n⚠️  执行清理（移入回收站）", "yellow"))
+
+    result = cm.clean_agent_memories(
+        agent_id=args.agent,
+        older_than_days=args.days,
+        max_importance=args.max_importance,
+        dry_run=args.dry_run,
+    )
+
+    print(f"\n  待清理:       {result.get('to_clean', 0)} 条")
+    if not args.dry_run:
+        print(f"  已清理:       {c(str(result.get('cleaned', 0)) + ' 条', 'green')}")
+
+    if args.dry_run:
+        print(f"\n💡 使用 agent-clean（不加 --dry-run）执行实际清理")
     cm.close()
     return 0
 

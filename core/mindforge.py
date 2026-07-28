@@ -1296,3 +1296,65 @@ class MindForge:
             该 Agent 创建的记忆列表
         """
         return self._storage.list_by_agent(agent_id, limit, offset)
+
+    def evolve_memories(self, dry_run: bool = False) -> Dict[str, Any]:
+        """记忆演化 - 基于艾宾浩斯遗忘曲线自动升级记忆层级（v5.2.2 新增）
+
+        Args:
+            dry_run: 仅统计不执行
+
+        Returns:
+            演化统计结果
+        """
+        return self._storage.evolve_memories(dry_run=dry_run)
+
+    def transfer_agent_memories(self,
+                                from_agent: str,
+                                to_agent: str,
+                                category: Optional[str] = None) -> Dict[str, Any]:
+        """Agent 记忆迁移 - 将一个 Agent 的记忆转移给另一个（v5.2.2 新增）
+
+        Args:
+            from_agent: 源 Agent ID
+            to_agent: 目标 Agent ID
+            category: 可选，仅迁移指定分类
+
+        Returns:
+            迁移统计
+        """
+        return self._storage.transfer_agent_memories(
+            from_agent=from_agent,
+            to_agent=to_agent,
+            category=category,
+        )
+
+    def clean_agent_memories(self,
+                             agent_id: str,
+                             older_than_days: int = 90,
+                             max_importance: Optional[str] = None,
+                             dry_run: bool = False) -> Dict[str, Any]:
+        """清理 Agent 的旧记忆（v5.2.2 新增）
+
+        清理指定 Agent 创建的、超过指定天数、重要度低于等于指定级别的记忆，移入回收站。
+
+        Args:
+            agent_id: Agent ID
+            older_than_days: 清理超过多少天的记忆
+            max_importance: 最高清理的重要级别（LOW/MEDIUM/HIGH/CRITICAL），None 表示清理所有
+            dry_run: 仅统计不执行
+
+        Returns:
+            清理统计
+        """
+        older_than_days = max(0, min(3650, int(older_than_days)))
+        if max_importance:
+            try:
+                Importance.from_string(max_importance)
+            except (ValueError, KeyError):
+                max_importance = None
+        return self._storage.clean_agent_memories(
+            agent_id=agent_id,
+            older_than_days=older_than_days,
+            max_importance=max_importance,
+            dry_run=dry_run,
+        )
