@@ -1,4 +1,4 @@
-# MindForge v5.2.4
+# MindForge v5.2.5
 
 **AI Agent 终身记忆系统 — 四层记忆架构 · 知识图谱 · 多模态 · 人格化 · 联邦网络**
 
@@ -25,7 +25,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    MindForge v5.2.4                        │
+│                    MindForge v5.2.5                        │
 ├─────────────────────────────────────────────────────────┤
 │  🎯 认知层 (Cognitive Layer)                              │
 │     人格引擎 · 知识图谱 · 记忆演化 · 联邦网络              │
@@ -344,6 +344,33 @@ context = adapter.get_context("数据库优化")
 ---
 
 ## 📝 更新日志
+
+### v5.2.5 (2026-07-29)
+
+**🔗 记忆关联（Memory Links）**
+- `link` - 创建记忆间的双向关联，支持关联类型和备注（v5.2.5 新增）
+- `links` - 列出记忆的所有关联（双向），显示关联类型和对方内容预览（v5.2.5 新增）
+- `unlink` - 删除记忆关联（v5.2.5 新增）
+- 关联类型：`related`（默认）/ `depends_on` / `extends` / `contradicts`
+- 自动去重（任一方向已存在则拒绝）、禁止自关联、输入长度校验
+- `link_memories`/`list_links`/`unlink_memories` API（v5.2.5 新增）
+
+**📌 置顶/收藏增强（Pin）**
+- `pin` - 置顶记忆，在 list/search 时优先展示（v5.2.5 新增）
+- `unpin` - 取消置顶（v5.2.5 新增）
+- `pinned` - 列出所有置顶记忆（v5.2.5 新增）
+- `list` 命令支持置顶优先排序（`ORDER BY pinned DESC, ...`）
+- `pin`/`unpin`/`list_pinned` API（v5.2.5 新增）
+
+**🗄️ 数据库变更**
+- 新增 `memory_links` 表（id/source_id/target_id/link_type/note/created_at），含 3 个索引
+- `memories` 表新增 `pinned` 字段（INTEGER DEFAULT 0），含索引 `idx_pinned`
+- `MemoryEntry` 数据类新增 `pinned: bool = False` 字段
+
+**📋 其他**
+- 版本号全面更新至 v5.2.5
+- CLI description 和 --version 同步更新
+- 官网更新日志新增 v5.2.5 条目
 
 ### v5.2.4 (2026-07-29)
 

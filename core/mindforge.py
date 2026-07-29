@@ -1,5 +1,5 @@
 """
-MindForge v5.2.4 主入口类
+MindForge v5.2.5 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,11 +31,11 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.2.4"
+    __version__ = "5.2.5"
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.2.4"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.2.5"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -1609,3 +1609,42 @@ class MindForge:
             复习统计数据
         """
         return self._storage.get_review_stats()
+
+    # ===== 记忆关联（v5.2.5 新增）=====
+
+    def link_memories(self, source_id: str, target_id: str,
+                      link_type: str = "related", note: str = "") -> Dict[str, Any]:
+        """创建记忆关联（双向）
+
+        Args:
+            source_id: 源记忆 ID
+            target_id: 目标记忆 ID
+            link_type: 关联类型（related/depends_on/extends/contradicts/custom）
+            note: 关联备注
+
+        Returns:
+            操作结果
+        """
+        return self._storage.link_memories(source_id, target_id, link_type, note)
+
+    def list_links(self, memory_id: str) -> List[Dict[str, Any]]:
+        """列出记忆的所有关联（双向）"""
+        return self._storage.list_links(memory_id)
+
+    def unlink_memories(self, link_id: str) -> bool:
+        """删除记忆关联"""
+        return self._storage.unlink_memories(link_id)
+
+    # ===== 置顶功能（v5.2.5 新增）=====
+
+    def pin(self, memory_id: str) -> bool:
+        """置顶记忆"""
+        return self._storage.pin_memory(memory_id)
+
+    def unpin(self, memory_id: str) -> bool:
+        """取消置顶"""
+        return self._storage.unpin_memory(memory_id)
+
+    def list_pinned(self, limit: int = 50) -> list:
+        """列出所有置顶记忆"""
+        return self._storage.list_pinned(limit)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.2.4 CLI - 命令行工具
+MindForge v5.2.5 CLI - 命令行工具
 =================================
 
 Usage:
@@ -57,7 +57,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.2.4"
+    __version__ = "5.2.5"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -125,7 +125,7 @@ def format_size(bytes_val: int) -> str:
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}MindForge v5.2.4 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}MindForge v5.2.5 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
@@ -135,7 +135,7 @@ def print_banner():
 def cmd_init(args):
     """初始化 MindForge"""
     print_banner()
-    print(c("MindForge v5.2.4 初始化向导", "bold"))
+    print(c("MindForge v5.2.5 初始化向导", "bold"))
     print("=" * 50)
 
     password = getpass.getpass("请设置加密密码（用于保护记忆）：")
@@ -1385,13 +1385,158 @@ def cmd_serve(args):
     return 0
 
 
+# ===== 记忆关联命令（v5.2.5 新增）=====
+
+def cmd_link(args):
+    """创建记忆关联（双向）"""
+    cm = _get_memory(args)
+
+    # 输入校验
+    link_type = (args.type or "related").strip()
+    note = (args.note or "").strip()
+
+    result = cm.link_memories(
+        source_id=args.source_id,
+        target_id=args.target_id,
+        link_type=link_type,
+        note=note,
+    )
+
+    if result.get("success"):
+        print(c("\n🔗 记忆关联创建成功", "green"))
+        print(f"   关联 ID: {c(result['link_id'], 'cyan')}")
+        print(f"   源记忆: {result['source_id']}")
+        print(f"   目标记忆: {result['target_id']}")
+        print(f"   关联类型: {link_type}")
+        if note:
+            print(f"   备注: {note}")
+    else:
+        print(c(f"\n❌ 关联失败: {result.get('error', '未知错误')}", "red"))
+
+    cm.close()
+    return 0 if result.get("success") else 1
+
+
+def cmd_links(args):
+    """列出记忆的所有关联（双向）"""
+    cm = _get_memory(args)
+    links = cm.list_links(args.memory_id)
+
+    if not links:
+        print(c("\n📭 该记忆暂无关联", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n🔗 记忆 {args.memory_id} 的关联（共 {len(links)} 条）", "cyan"))
+    print("-" * 60)
+
+    for i, link in enumerate(links, 1):
+        type_color = {
+            "related": "cyan",
+            "depends_on": "yellow",
+            "extends": "green",
+            "contradicts": "red",
+        }.get(link["link_type"], "white")
+
+        content_preview = (link.get("linked_content") or "")[:60]
+        if len(link.get("linked_content") or "") > 60:
+            content_preview += "..."
+
+        print(f"{i}. {c('[' + link['link_type'] + ']', type_color)} "
+              f"→ {link['linked_id']}")
+        print(f"   内容: {content_preview}")
+        print(f"   分类: {link.get('linked_category', '-')}")
+        if link.get("note"):
+            print(f"   备注: {link['note']}")
+        print(f"   关联 ID: {c(link['link_id'], 'cyan')}")
+        print()
+
+    cm.close()
+    return 0
+
+
+def cmd_unlink(args):
+    """删除记忆关联"""
+    cm = _get_memory(args)
+    success = cm.unlink_memories(args.link_id)
+
+    if success:
+        print(c(f"\n✅ 已删除关联: {args.link_id}", "green"))
+    else:
+        print(c(f"\n❌ 删除失败: 关联不存在 {args.link_id}", "red"))
+
+    cm.close()
+    return 0 if success else 1
+
+
+# ===== 置顶命令（v5.2.5 新增）=====
+
+def cmd_pin(args):
+    """置顶记忆"""
+    cm = _get_memory(args)
+    success = cm.pin(args.memory_id)
+
+    if success:
+        print(c("\n📌 已置顶", "green"))
+        print(f"   记忆 ID: {args.memory_id}")
+        print(c("   该记忆将在 list/search 中优先展示", "cyan"))
+    else:
+        print(c("\n❌ 置顶失败: 记忆不存在", "red"))
+
+    cm.close()
+    return 0 if success else 1
+
+
+def cmd_unpin(args):
+    """取消置顶"""
+    cm = _get_memory(args)
+    success = cm.unpin(args.memory_id)
+
+    if success:
+        print(c("\n📍 已取消置顶", "yellow"))
+        print(f"   记忆 ID: {args.memory_id}")
+    else:
+        print(c("\n❌ 取消失败: 记忆不存在", "red"))
+
+    cm.close()
+    return 0 if success else 1
+
+
+def cmd_pinned(args):
+    """列出所有置顶记忆"""
+    cm = _get_memory(args)
+    entries = cm.list_pinned(limit=args.limit)
+
+    if not entries:
+        print(c("\n📭 暂无置顶记忆", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n📌 置顶记忆（共 {len(entries)} 条）", "cyan"))
+    print("=" * 70)
+
+    for i, entry in enumerate(entries, 1):
+        content_preview = entry.content[:80]
+        if len(entry.content) > 80:
+            content_preview += "..."
+
+        tags_str = ", ".join(entry.tags) if entry.tags else "-"
+        print(f"{i}. {c(entry.id, 'cyan')}  [{entry.category}]")
+        print(f"   {content_preview}")
+        print(f"   标签: {tags_str} | 重要度: {entry.importance.value} | 层级: {entry.layer.value}")
+        print()
+
+    cm.close()
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="mindforge",
-        description="MindForge v5.2.4 - AI Agent 终身记忆系统",
+        description="MindForge v5.2.5 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", "-v", action="version", version="MindForge v5.2.4")
+    parser.add_argument("--version", "-v", action="version", version="MindForge v5.2.5")
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")
@@ -2061,6 +2206,32 @@ def main():
     p_similar.add_argument("--threshold", type=float, default=0.3,
                            help="相似度阈值 (0-1)，默认 0.3")
 
+    # ===== 记忆关联命令（v5.2.5 新增）=====
+    p_link = sub.add_parser("link", help="创建记忆关联（双向，v5.2.5 新增）")
+    p_link.add_argument("source_id", help="源记忆 ID")
+    p_link.add_argument("target_id", help="目标记忆 ID")
+    p_link.add_argument("--type", "-t", default="related",
+                        choices=["related", "depends_on", "extends", "contradicts"],
+                        help="关联类型（related/depends_on/extends/contradicts，默认 related）")
+    p_link.add_argument("--note", "-n", default="", help="关联备注（最多 500 字）")
+
+    p_links = sub.add_parser("links", help="列出记忆的所有关联（v5.2.5 新增）")
+    p_links.add_argument("memory_id", help="记忆 ID")
+
+    p_unlink = sub.add_parser("unlink", help="删除记忆关联（v5.2.5 新增）")
+    p_unlink.add_argument("link_id", help="关联 ID")
+
+    # ===== 置顶命令（v5.2.5 新增）=====
+    p_pin = sub.add_parser("pin", help="置顶记忆（v5.2.5 新增）")
+    p_pin.add_argument("memory_id", help="记忆 ID")
+
+    p_unpin = sub.add_parser("unpin", help="取消置顶（v5.2.5 新增）")
+    p_unpin.add_argument("memory_id", help="记忆 ID")
+
+    p_pinned = sub.add_parser("pinned", help="列出所有置顶记忆（v5.2.5 新增）")
+    p_pinned.add_argument("--limit", "-l", type=int, default=50,
+                          help="数量限制（默认 50）")
+
     args = parser.parse_args()
 
     commands = {
@@ -2173,6 +2344,13 @@ def main():
         "template-delete": cmd_template_delete,
         "batch-update": cmd_batch_update,
         "schedule": cmd_schedule,
+        # v5.2.5 新增：记忆关联 + 置顶
+        "link": cmd_link,
+        "links": cmd_links,
+        "unlink": cmd_unlink,
+        "pin": cmd_pin,
+        "unpin": cmd_unpin,
+        "pinned": cmd_pinned,
     }
 
     cmd = commands.get(args.command)

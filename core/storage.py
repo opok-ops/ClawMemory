@@ -41,6 +41,7 @@ class MemoryEntry:
     forgetting_score: float = 0.0
     strength: float = 1.0
     starred: bool = False
+    pinned: bool = False
     metadata: Dict[str, Any] = field(default_factory=dict)
     encrypted: bool = False
     ciphertext: Optional[bytes] = None
@@ -73,6 +74,7 @@ class MemoryEntry:
             "forgetting_score": self.forgetting_score,
             "strength": self.strength,
             "starred": self.starred,
+            "pinned": self.pinned,
             "metadata": self.metadata,
         }
 
@@ -136,6 +138,7 @@ class StorageEngine:
                 forgetting_score REAL DEFAULT 0.0,
                 strength REAL DEFAULT 1.0,
                 starred INTEGER DEFAULT 0,
+                pinned INTEGER DEFAULT 0,
                 metadata TEXT DEFAULT '{}',
                 encrypted INTEGER DEFAULT 0
             );
@@ -147,6 +150,21 @@ class StorageEngine:
             CREATE INDEX IF NOT EXISTS idx_created_at ON memories(created_at);
             CREATE INDEX IF NOT EXISTS idx_memory_type ON memories(memory_type);
             CREATE INDEX IF NOT EXISTS idx_starred ON memories(starred);
+            CREATE INDEX IF NOT EXISTS idx_pinned ON memories(pinned);
+
+            -- 记忆关联（v5.2.5 新增）
+            CREATE TABLE IF NOT EXISTS memory_links (
+                id TEXT PRIMARY KEY,
+                source_id TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                link_type TEXT DEFAULT 'related',
+                note TEXT DEFAULT '',
+                created_at REAL,
+                UNIQUE(source_id, target_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_link_source ON memory_links(source_id);
+            CREATE INDEX IF NOT EXISTS idx_link_target ON memory_links(target_id);
+            CREATE INDEX IF NOT EXISTS idx_link_type ON memory_links(link_type);
 
             CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
                 content, category, tags,
@@ -424,13 +442,14 @@ class StorageEngine:
                       layer: Optional[MemoryLayer] = None,
                       privacy: Optional[PrivacyLevel] = None,
                       starred: Optional[bool] = None,
+                      pinned: Optional[bool] = None,
                       created_after: Optional[float] = None,
                       created_before: Optional[float] = None,
                       limit: int = 50,
                       offset: int = 0,
                       sort_by: str = "created_at",
                       sort_order: str = "desc") -> List[MemoryEntry]:
-        """列出记忆"""
+        """列出记忆（v5.2.5 新增 pinned 筛选和置顶优先排序）"""
         conn = self._get_conn()
         query = "SELECT * FROM memories WHERE 1=1"
         params = []
@@ -447,6 +466,9 @@ class StorageEngine:
         if starred is not None:
             query += " AND starred = ?"
             params.append(1 if starred else 0)
+        if pinned is not None:
+            query += " AND pinned = ?"
+            params.append(1 if pinned else 0)
         if created_after is not None:
             query += " AND created_at >= ?"
             params.append(created_after)
@@ -459,7 +481,8 @@ class StorageEngine:
             sort_by = "created_at"
         sort_order = "DESC" if sort_order.lower() == "desc" else "ASC"
 
-        query += f" ORDER BY {sort_by} {sort_order} LIMIT ? OFFSET ?"
+        # v5.2.5: 置顶记忆优先展示
+        query += f" ORDER BY pinned DESC, {sort_by} {sort_order} LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
         rows = conn.execute(query, params).fetchall()
@@ -474,6 +497,7 @@ class StorageEngine:
                       importance: Optional[Importance] = None,
                       layer: Optional[MemoryLayer] = None,
                       starred: Optional[bool] = None,
+                      pinned: Optional[bool] = None,
                       metadata: Optional[Dict[str, Any]] = None,
                       actor: str = "",
                       session_id: str = "") -> bool:
@@ -527,6 +551,9 @@ class StorageEngine:
         if starred is not None:
             updates.append("starred = ?")
             params.append(1 if starred else 0)
+        if pinned is not None:
+            updates.append("pinned = ?")
+            params.append(1 if pinned else 0)
         if metadata is not None:
             updates.append("metadata = ?")
             params.append(json.dumps(metadata, ensure_ascii=False))
@@ -1992,6 +2019,7 @@ class StorageEngine:
             forgetting_score=row["forgetting_score"],
             strength=row["strength"],
             starred=bool(row["starred"]) if "starred" in row.keys() else False,
+            pinned=bool(row["pinned"]) if "pinned" in row.keys() else False,
             metadata=self._safe_json_loads(row["metadata"], {}),
             encrypted=bool(row["encrypted"]),
             ciphertext=row["ciphertext"],
@@ -4260,3 +4288,95 @@ class StorageEngine:
             "due_now": due,
             "total_reviews_completed": total_reviews,
         }
+
+    # ===== 记忆关联（v5.2.5 新增）=====
+
+    def link_memories(self, source_id: str, target_id: str,
+                      link_type: str = "related", note: str = "") -> Dict[str, Any]:
+        """创建记忆关联（双向）"""
+        if source_id == target_id:
+            return {"success": False, "error": "不能关联自己"}
+
+        # 输入校验
+        link_type = link_type.strip()[:50] if link_type else "related"
+        note = note.strip()[:500] if note else ""
+
+        conn = self._get_conn()
+
+        # 检查两条记忆是否存在
+        for mid in (source_id, target_id):
+            row = conn.execute("SELECT id FROM memories WHERE id = ? AND category != 'trash'", (mid,)).fetchone()
+            if not row:
+                return {"success": False, "error": f"记忆不存在: {mid}"}
+
+        # 检查是否已存在关联（任一方向）
+        existing = conn.execute(
+            "SELECT id FROM memory_links WHERE (source_id = ? AND target_id = ?) OR (source_id = ? AND target_id = ?)",
+            (source_id, target_id, target_id, source_id)
+        ).fetchone()
+        if existing:
+            return {"success": False, "error": "关联已存在"}
+
+        link_id = f"link_{uuid.uuid4().hex[:12]}"
+        now = time.time()
+        conn.execute(
+            "INSERT INTO memory_links (id, source_id, target_id, link_type, note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (link_id, source_id, target_id, link_type, note, now)
+        )
+        conn.commit()
+        return {"success": True, "link_id": link_id, "source_id": source_id, "target_id": target_id,
+                "link_type": link_type, "note": note}
+
+    def list_links(self, memory_id: str) -> List[Dict[str, Any]]:
+        """列出记忆的所有关联（双向）"""
+        conn = self._get_conn()
+        rows = conn.execute(
+            """SELECT ml.*, m.content as target_content, m.category as target_category
+               FROM memory_links ml
+               JOIN memories m ON (ml.target_id = m.id AND ml.source_id = ?)
+                                  OR (ml.source_id = m.id AND ml.target_id = ?)
+               WHERE ml.source_id = ? OR ml.target_id = ?
+               ORDER BY ml.created_at DESC""",
+            (memory_id, memory_id, memory_id, memory_id)
+        ).fetchall()
+        results = []
+        for row in rows:
+            # 确定关联的另一端
+            linked_id = row["target_id"] if row["source_id"] == memory_id else row["source_id"]
+            results.append({
+                "link_id": row["id"],
+                "linked_id": linked_id,
+                "linked_content": row["target_content"],
+                "linked_category": row["target_category"],
+                "link_type": row["link_type"],
+                "note": row["note"],
+                "created_at": row["created_at"],
+            })
+        return results
+
+    def unlink_memories(self, link_id: str) -> bool:
+        """删除记忆关联"""
+        conn = self._get_conn()
+        cursor = conn.execute("DELETE FROM memory_links WHERE id = ?", (link_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+    # ===== 置顶功能（v5.2.5 新增）=====
+
+    def pin_memory(self, memory_id: str) -> bool:
+        """置顶记忆"""
+        return self.update_memory(entry_id=memory_id, pinned=True)
+
+    def unpin_memory(self, memory_id: str) -> bool:
+        """取消置顶"""
+        return self.update_memory(entry_id=memory_id, pinned=False)
+
+    def list_pinned(self, limit: int = 50) -> List[MemoryEntry]:
+        """列出所有置顶记忆"""
+        limit = max(1, min(500, int(limit)))
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM memories WHERE pinned = 1 AND category != 'trash' ORDER BY updated_at DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        return [self._row_to_entry(row) for row in rows]
