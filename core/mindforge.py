@@ -1,5 +1,5 @@
 """
-MindForge v5.2.5 主入口类
+MindForge v5.2.6 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,11 +31,11 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.2.5"
+    __version__ = "5.2.6"
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.2.5"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.2.6"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:

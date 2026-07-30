@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.2.5 CLI - 命令行工具
+MindForge v5.2.6 CLI - 命令行工具
 =================================
 
 Usage:
@@ -57,7 +57,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.2.5"
+    __version__ = "5.2.6"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -1533,10 +1533,10 @@ def cmd_pinned(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="mindforge",
-        description="MindForge v5.2.5 - AI Agent 终身记忆系统",
+        description="MindForge v5.2.6 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", "-v", action="version", version="MindForge v5.2.5")
+    parser.add_argument("--version", "-v", action="version", version="MindForge v5.2.6")
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")
@@ -2199,12 +2199,6 @@ def main():
     p_import_url.add_argument("--layer", "-l", default="short_term",
                               choices=["sensory", "short_term", "long_term", "permanent"],
                               help="记忆层级")
-
-    p_similar = sub.add_parser("similar", help="查找相似记忆（v5.1.3 新增）")
-    p_similar.add_argument("content", help="参考内容")
-    p_similar.add_argument("--limit", type=int, default=5, help="返回数量限制")
-    p_similar.add_argument("--threshold", type=float, default=0.3,
-                           help="相似度阈值 (0-1)，默认 0.3")
 
     # ===== 记忆关联命令（v5.2.5 新增）=====
     p_link = sub.add_parser("link", help="创建记忆关联（双向，v5.2.5 新增）")
