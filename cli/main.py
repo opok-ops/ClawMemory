@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.2.6 CLI - 命令行工具
+MindForge v5.2.8 CLI - 命令行工具
 =================================
 
 Usage:
@@ -281,7 +281,7 @@ def _safe_import_path(input_path, max_size=100 * 1024 * 1024):
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
-║        {COLORS['bold']}MindForge v5.2.5 - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
+║        {COLORS['bold']}MindForge v{__version__} - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
 ║      四层记忆架构 · 知识图谱 · 多模态 · 人格化      ║
 ╚══════════════════════════════════════════════════════╝{COLORS['reset']}
 """
