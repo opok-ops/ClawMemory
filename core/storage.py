@@ -454,6 +454,28 @@ class StorageEngine:
             return self.encryption.decrypt(blob)
         return entry.content
 
+    def get_indexable_documents(self, limit: int = 100000) -> Dict[str, str]:
+        """返回可索引的 {memory_id: content} 映射（v5.2.8 新增）
+
+        用于 IndexEngine 在新进程启动时水合 TF-IDF 内存索引，
+        修复 CLI 跨进程搜索不到历史记忆的问题。
+        跳过回收站与加密条目（密文无法直接索引）。
+
+        Args:
+            limit: 最大加载条数（安全上限）
+
+        Returns:
+            {memory_id: content} 字典
+        """
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT id, content FROM memories"
+            " WHERE category != 'trash' AND encrypted = 0"
+            " ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return {row["id"]: (row["content"] or "") for row in rows}
+
     def list_memories(self,
                       category: Optional[str] = None,
                       layer: Optional[MemoryLayer] = None,

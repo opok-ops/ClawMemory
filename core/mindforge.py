@@ -1,5 +1,5 @@
 """
-MindForge v5.2.7 主入口类
+MindForge v5.2.8 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,11 +31,11 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.2.7"
+    __version__ = "5.2.8"
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.2.7"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.2.8"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -45,6 +45,7 @@ class MindForge:
         self._storage: Optional[StorageEngine] = None
         self._index: Optional[IndexEngine] = None
         self._query: Optional[QueryEngine] = None
+        self._multi_agent = None
 
         if self.config.encrypted:
             self._init_encryption()
@@ -1667,3 +1668,21 @@ class MindForge:
     def rollback_to_version(self, version_id: str, actor: str = "") -> Dict[str, Any]:
         """回滚记忆到指定历史版本（v5.2.7 新增）"""
         return self._storage.rollback_to_version(version_id, actor)
+
+    # ===== 多 Agent 记忆空间（v5.2.8 实验性 — v6.0.0 全量推送预览）=====
+
+    @property
+    def multi_agent(self):
+        """多 Agent 记忆空间管理器（v5.2.8 新增，实验性）
+
+        EXPERIMENTAL: v6.0.0 全量推送预览，API 在正式发布前可能变化。
+        提供共享记忆空间、角色权限隔离（owner/editor/reader）、
+        隐私护栏（PRIVATE/STRICT 禁止共享）与冲突解决（last-write-wins）。
+        """
+        if self._multi_agent is None:
+            try:
+                from ..modules.multi_agent import MultiAgentMemoryManager
+            except (ImportError, ValueError):
+                from modules.multi_agent import MultiAgentMemoryManager
+            self._multi_agent = MultiAgentMemoryManager(self._storage)
+        return self._multi_agent

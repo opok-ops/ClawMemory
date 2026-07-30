@@ -1,6 +1,6 @@
 """
 MindForge v5.0 功能模块
-知识图谱 · 记忆演化 · 人格化 · 多模态 · 联邦记忆
+知识图谱 · 记忆演化 · 人格化 · 多模态 · 联邦记忆 · 多Agent记忆空间
 """
 
 from .recall import RecallEngine, RecallConfig
@@ -12,6 +12,7 @@ from .federated import FederatedMemory, FederatedPeer
 from .categorizer import TaxonomyManager
 from .privacy import PrivacyEngine, PrivacyScanResult
 from .integrator import MemoryIntegrator
+from .multi_agent import MultiAgentMemoryManager, AgentSpace, SpaceMember, SpaceRole
 
 __all__ = [
     "RecallEngine",
@@ -31,4 +32,8 @@ __all__ = [
     "PrivacyEngine",
     "PrivacyScanResult",
     "MemoryIntegrator",
+    "MultiAgentMemoryManager",
+    "AgentSpace",
+    "SpaceMember",
+    "SpaceRole",
 ]

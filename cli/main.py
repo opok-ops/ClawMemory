@@ -60,7 +60,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.2.7"
+    __version__ = "5.2.8"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -114,6 +114,31 @@ def c(text: str, color: str) -> str:
 
 def format_time(ts: float) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+
+def _split_tags(tags):
+    """展开逗号分隔的标签（v5.2.8 新增）
+
+    add/update/find 等命令的 --tags 使用 nargs="+"（空格分隔），
+    而 batch-add-tags 等命令约定逗号分隔。两种习惯混用时，
+    `--tags a,b` 会被错误存为单个标签 "a,b"。
+    此函数在 parse_args 后统一扁平化：空格分隔与逗号分隔均可混用。
+
+    Args:
+        tags: nargs="+" 解析出的原始列表（可能含 "a,b" 形式的元素）
+
+    Returns:
+        展开去空后的标签列表；无有效标签时返回 None
+    """
+    if not tags:
+        return None
+    result = []
+    for item in tags:
+        for part in str(item).split(","):
+            part = part.strip()
+            if part:
+                result.append(part)
+    return result or None
 
 
 def format_size(bytes_val: int) -> str:
@@ -266,7 +291,7 @@ def print_banner():
 def cmd_init(args):
     """初始化 MindForge"""
     print_banner()
-    print(c("MindForge v5.2.7 初始化向导", "bold"))
+    print(c("MindForge v5.2.8 初始化向导", "bold"))
     print("=" * 50)
 
     password = getpass.getpass("请设置加密密码（用于保护记忆）：")
@@ -1759,13 +1784,294 @@ def cmd_rollback(args):
     return 0 if result.get("success") else 1
 
 
+# ===== v5.2.8 新增命令 =====
+
+def cmd_export_csv(args):
+    """导出记忆为 CSV（v5.2.8 新增）"""
+    cm = _get_memory(args)
+
+    try:
+        output = _safe_export_path(args.output, "memory_export.csv", ".csv")
+    except ValueError as e:
+        print(c(f"❌ 路径校验失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    count = cm.export_csv(
+        output_path=str(output),
+        category=args.category,
+        include_private=args.include_private,
+    )
+
+    size = output.stat().st_size
+    print(c(f"\n✅ CSV 导出成功", "green"))
+    print(f"   文件路径: {output}")
+    print(f"   导出条数: {count}")
+    print(f"   文件大小: {format_size(size)}")
+    if not args.include_private:
+        print(f"   隐私过滤: 已排除 PRIVATE/STRICT 记忆")
+    cm.close()
+    return 0
+
+
+def cmd_diff(args):
+    """对比记忆版本差异（v5.2.8 新增）"""
+    import difflib
+
+    cm = _get_memory(args)
+    entry = cm.get(args.memory_id)
+    if not entry:
+        print(c(f"\n❌ 记忆不存在: {args.memory_id}", "red"))
+        cm.close()
+        return 1
+
+    # 解析对比双方：默认 最新历史版本 vs 当前内容
+    if args.version_id:
+        version_a = cm.get_version(args.version_id)
+        if not version_a:
+            print(c(f"\n❌ 版本不存在: {args.version_id}", "red"))
+            cm.close()
+            return 1
+    else:
+        versions = cm.list_versions(args.memory_id, limit=1)
+        if not versions:
+            print(c("\n📭 该记忆暂无历史版本，无法对比", "yellow"))
+            cm.close()
+            return 0
+        version_a = cm.get_version(versions[0]["version_id"])
+
+    if args.against:
+        version_b = cm.get_version(args.against)
+        if not version_b:
+            print(c(f"\n❌ 版本不存在: {args.against}", "red"))
+            cm.close()
+            return 1
+        content_b = version_b["content"]
+        label_b = f"v{version_b['version_number']} ({args.against})"
+    else:
+        content_b = entry.content
+        label_b = "当前内容"
+
+    label_a = f"v{version_a['version_number']} ({version_a['version_id']})"
+
+    if version_a["content"] == content_b:
+        print(c("\n✅ 两份内容完全一致，无差异", "green"))
+        cm.close()
+        return 0
+
+    diff = difflib.unified_diff(
+        version_a["content"].splitlines(),
+        content_b.splitlines(),
+        fromfile=label_a,
+        tofile=label_b,
+        lineterm="",
+    )
+
+    print(c(f"\n🔀 记忆版本差异对比", "cyan"))
+    print("=" * 70)
+    for line in diff:
+        if line.startswith("+") and not line.startswith("+++"):
+            print(c(line, "green"))
+        elif line.startswith("-") and not line.startswith("---"):
+            print(c(line, "red"))
+        elif line.startswith("@@"):
+            print(c(line, "purple"))
+        else:
+            print(line)
+
+    cm.close()
+    return 0
+
+
+# ===== 多 Agent 记忆空间命令（v5.2.8 实验性 — v6.0.0 全量推送预览）=====
+
+def _print_experimental_banner():
+    print(c("🧪 实验性功能：多 Agent 记忆空间（v6.0.0 全量推送预览，API 可能变化）", "yellow"))
+
+
+def cmd_space_create(args):
+    """创建记忆空间（实验性）"""
+    _print_experimental_banner()
+    cm = _get_memory(args)
+    result = cm.multi_agent.create_space(
+        name=args.name,
+        owner_agent=args.agent,
+        description=args.desc,
+        policy=args.policy,
+    )
+    if result.get("success"):
+        print(c(f"\n✅ 记忆空间已创建", "green"))
+        print(f"   空间 ID: {result['space_id']}")
+        print(f"   名称: {result['name']}")
+        print(f"   Owner: {result['owner_agent']}（已自动加入为 owner）")
+        print(f"   策略: {result['policy']}")
+    else:
+        print(c(f"\n❌ 创建失败: {result.get('error')}", "red"))
+    cm.close()
+    return 0 if result.get("success") else 1
+
+
+def cmd_space_list(args):
+    """列出记忆空间（实验性）"""
+    _print_experimental_banner()
+    cm = _get_memory(args)
+    spaces = cm.multi_agent.list_spaces(agent_id=args.agent if args.mine else "")
+
+    if not spaces:
+        print(c("\n📭 暂无记忆空间", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n🌐 记忆空间列表（共 {len(spaces)} 个）", "cyan"))
+    print("=" * 70)
+    for s in spaces:
+        role_info = f" | 我的角色: {s['my_role']}" if s.get("my_role") else ""
+        print(f"📦 {c(s['name'], 'bold')} [{s['space_id']}]")
+        print(f"   Owner: {s['owner_agent']} | 策略: {s['policy']} | "
+              f"成员: {s['member_count']} | 共享记忆: {s['item_count']}{role_info}")
+        if s.get("description"):
+            print(f"   描述: {s['description']}")
+        print(f"   创建: {format_time(s['created_at'])}")
+        print()
+    cm.close()
+    return 0
+
+
+def cmd_space_join(args):
+    """加入记忆空间（实验性）"""
+    _print_experimental_banner()
+    cm = _get_memory(args)
+    result = cm.multi_agent.add_member(
+        space_ref=args.space,
+        agent_id=args.agent,
+        role="reader",
+        actor=args.agent,
+    )
+    if result.get("success"):
+        print(c(f"\n✅ 已加入空间", "green"))
+        print(f"   Agent: {result['agent_id']}（角色: {result['role']}）")
+        print(f"   提示: 需要 editor 角色共享记忆时，请联系空间 owner 调整")
+    else:
+        print(c(f"\n❌ 加入失败: {result.get('error')}", "red"))
+    cm.close()
+    return 0 if result.get("success") else 1
+
+
+def cmd_space_add_member(args):
+    """添加空间成员（实验性，仅 owner）"""
+    _print_experimental_banner()
+    cm = _get_memory(args)
+    result = cm.multi_agent.add_member(
+        space_ref=args.space,
+        agent_id=args.member_agent,
+        role=args.role,
+        actor=args.agent,
+    )
+    if result.get("success"):
+        action = "角色已更新" if result.get("updated") else "成员已添加"
+        print(c(f"\n✅ {action}", "green"))
+        print(f"   Agent: {result['agent_id']} | 角色: {result['role']}")
+    else:
+        print(c(f"\n❌ 操作失败: {result.get('error')}", "red"))
+    cm.close()
+    return 0 if result.get("success") else 1
+
+
+def cmd_space_share(args):
+    """共享记忆到空间（实验性）"""
+    _print_experimental_banner()
+    cm = _get_memory(args)
+    result = cm.multi_agent.share_memory(
+        space_ref=args.space,
+        memory_id=args.memory_id,
+        actor=args.agent,
+    )
+    if result.get("success"):
+        print(c(f"\n✅ 记忆已共享到空间", "green"))
+        print(f"   记忆 ID: {result['memory_id']}")
+        print(f"   条目版本: v{result['version']}")
+        if result.get("conflict_resolved"):
+            print(c(f"   冲突解决: {result['conflict_resolved']}（版本号已递增）", "yellow"))
+    else:
+        print(c(f"\n❌ 共享失败: {result.get('error')}", "red"))
+    cm.close()
+    return 0 if result.get("success") else 1
+
+
+def cmd_space_memories(args):
+    """列出空间中的记忆（实验性）"""
+    _print_experimental_banner()
+    cm = _get_memory(args)
+    result = cm.multi_agent.list_space_memories(
+        space_ref=args.space,
+        actor=args.agent,
+        limit=args.limit,
+    )
+    if not result.get("success"):
+        print(c(f"\n❌ {result.get('error')}", "red"))
+        cm.close()
+        return 1
+
+    items = result["items"]
+    if not items:
+        print(c(f"\n📭 空间 [{result['space_name']}] 中暂无共享记忆", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n🌐 空间 [{result['space_name']}] 的共享记忆（{result['count']} 条）", "cyan"))
+    print("=" * 70)
+    for i, item in enumerate(items, 1):
+        print(f"{i}. [{item['category']}] {item['content_preview']}")
+        print(f"   ID: {item['memory_id']} | 版本: v{item['version']} | "
+              f"来源: {item['source_agent'] or '-'} | 共享者: {item['added_by']}")
+        print(f"   标签: {', '.join(item['tags']) if item['tags'] else '无'} | "
+              f"隐私: {item['privacy']} | 时间: {format_time(item['added_at'])}")
+        print()
+    cm.close()
+    return 0
+
+
+def cmd_space_stats(args):
+    """记忆空间统计（实验性）"""
+    _print_experimental_banner()
+    cm = _get_memory(args)
+    result = cm.multi_agent.space_stats(space_ref=args.space or "")
+    if not result.get("success"):
+        print(c(f"\n❌ {result.get('error')}", "red"))
+        cm.close()
+        return 1
+
+    if args.space:
+        space = result["space"]
+        print(c(f"\n📊 空间统计: {space['name']}", "cyan"))
+        print("=" * 50)
+        print(f"   成员数: {space['member_count']} | 共享记忆: {space['item_count']}")
+        print(f"   策略: {space['policy']} | Owner: {space['owner_agent']}")
+        print(f"   角色分布: " + ", ".join(
+            f"{role}×{cnt}" for role, cnt in result["members_by_role"].items()))
+        if result["top_contributors"]:
+            print(f"   贡献榜:")
+            for t in result["top_contributors"]:
+                print(f"     {t['agent_id']}: 共享 {t['shared']} 条")
+    else:
+        print(c(f"\n📊 多 Agent 记忆空间全局统计", "cyan"))
+        print("=" * 50)
+        print(f"   空间总数: {result['total_spaces']}")
+        print(f"   参与 Agent 数: {result['participating_agents']}")
+        print(f"   成员关系总数: {result['total_memberships']}")
+        print(f"   共享记忆总数: {result['total_shared_items']}")
+        print(f"   目标正式版本: v{result['target_version']}")
+    cm.close()
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="mindforge",
-        description="MindForge v5.2.7 - AI Agent 终身记忆系统",
+        description="MindForge v5.2.8 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", "-v", action="version", version="MindForge v5.2.7")
+    parser.add_argument("--version", "-v", action="version", version="MindForge v5.2.8")
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")
@@ -2463,7 +2769,74 @@ def main():
     p_rollback = sub.add_parser("rollback", help="回滚记忆到指定历史版本（v5.2.7 新增）")
     p_rollback.add_argument("version_id", help="目标版本 ID")
 
+    # ===== v5.2.8 新增命令 =====
+    p_export_csv = sub.add_parser("export-csv", help="导出记忆为 CSV（v5.2.8 新增）")
+    p_export_csv.add_argument("--output", "-o", default="./data/memory_export.csv",
+                              help="输出文件路径")
+    p_export_csv.add_argument("--category", "-c", help="限定分类")
+    p_export_csv.add_argument("--include-private", action="store_true",
+                              help="包含 PRIVATE/STRICT 记忆（默认排除）")
+
+    p_diff = sub.add_parser("diff", help="对比记忆版本差异（v5.2.8 新增）")
+    p_diff.add_argument("memory_id", help="记忆 ID")
+    p_diff.add_argument("--version-id", "-v", dest="version_id", default="",
+                        help="历史版本 ID（默认：最新历史版本 vs 当前内容）")
+    p_diff.add_argument("--against", default="",
+                        help="第二个版本 ID（两个历史版本互相比较）")
+
+    # ===== 多 Agent 记忆空间命令（v5.2.8 实验性 — v6.0.0 全量推送预览）=====
+    p_space_create = sub.add_parser("space-create",
+                                    help="创建多 Agent 记忆空间（实验性 v6.0.0 预览）")
+    p_space_create.add_argument("name", help="空间名称（唯一）")
+    p_space_create.add_argument("--desc", default="", help="空间描述")
+    p_space_create.add_argument("--policy", default="shared",
+                                choices=["shared", "broadcast"],
+                                help="空间策略：shared=成员协作 / broadcast=仅 owner 可写")
+    p_space_create.add_argument("--agent", default="cli", help="Owner Agent ID")
+
+    p_space_list = sub.add_parser("space-list",
+                                  help="列出记忆空间（实验性 v6.0.0 预览）")
+    p_space_list.add_argument("--mine", action="store_true",
+                              help="仅列出我（--agent）加入的空间")
+    p_space_list.add_argument("--agent", default="cli", help="Agent ID")
+
+    p_space_join = sub.add_parser("space-join",
+                                  help="以 reader 身份加入记忆空间（实验性 v6.0.0 预览）")
+    p_space_join.add_argument("space", help="空间 ID 或名称")
+    p_space_join.add_argument("--agent", default="cli", help="Agent ID")
+
+    p_space_add_member = sub.add_parser("space-add-member",
+                                        help="添加空间成员（实验性 v6.0.0 预览，仅 owner）")
+    p_space_add_member.add_argument("space", help="空间 ID 或名称")
+    p_space_add_member.add_argument("member_agent", help="要添加的 Agent ID")
+    p_space_add_member.add_argument("--role", default="reader",
+                                    choices=["editor", "reader"],
+                                    help="成员角色（owner 角色暂不支持转移）")
+    p_space_add_member.add_argument("--agent", default="cli", help="操作者 Agent ID（须为 owner）")
+
+    p_space_share = sub.add_parser("space-share",
+                                   help="共享记忆到空间（实验性 v6.0.0 预览）")
+    p_space_share.add_argument("space", help="空间 ID 或名称")
+    p_space_share.add_argument("memory_id", help="要共享的记忆 ID")
+    p_space_share.add_argument("--agent", default="cli", help="操作者 Agent ID")
+
+    p_space_memories = sub.add_parser("space-memories",
+                                      help="列出空间中的共享记忆（实验性 v6.0.0 预览）")
+    p_space_memories.add_argument("space", help="空间 ID 或名称")
+    p_space_memories.add_argument("--agent", default="cli", help="Agent ID")
+    p_space_memories.add_argument("--limit", "-n", type=int, default=50, help="数量限制")
+
+    p_space_stats = sub.add_parser("space-stats",
+                                   help="记忆空间统计（实验性 v6.0.0 预览）")
+    p_space_stats.add_argument("space", nargs="?", default="",
+                               help="空间 ID 或名称（省略则全局统计）")
+    p_space_stats.add_argument("--agent", default="cli", help="Agent ID")
+
     args = parser.parse_args()
+
+    # v5.2.8 修复：统一展开逗号分隔的标签（覆盖全部 nargs="+" 的 --tags 命令）
+    if isinstance(getattr(args, "tags", None), list):
+        args.tags = _split_tags(args.tags)
 
     commands = {
         "init": cmd_init,
@@ -2585,6 +2958,17 @@ def main():
         # v5.2.7 新增：记忆版本历史
         "history": cmd_history,
         "rollback": cmd_rollback,
+        # v5.2.8 新增
+        "export-csv": cmd_export_csv,
+        "diff": cmd_diff,
+        # v5.2.8 实验性：多 Agent 记忆空间（v6.0.0 全量推送预览）
+        "space-create": cmd_space_create,
+        "space-list": cmd_space_list,
+        "space-join": cmd_space_join,
+        "space-add-member": cmd_space_add_member,
+        "space-share": cmd_space_share,
+        "space-memories": cmd_space_memories,
+        "space-stats": cmd_space_stats,
     }
 
     cmd = commands.get(args.command)

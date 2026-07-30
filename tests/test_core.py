@@ -489,5 +489,142 @@ class TestPurgeTrash(unittest.TestCase):
         storage.close()
 
 
+class TestSearchHydration(unittest.TestCase):
+    """v5.2.8 修复验证：跨进程搜索（索引水合 + 模糊补充召回）"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_cross_process_search(self):
+        """新进程实例中 search 应能搜到历史记忆（索引水合）"""
+        from core.mindforge import MindForge
+
+        cm1 = MindForge(db_path=self.db_path, encrypted=False)
+        cm1.add("知识图谱让记忆不再孤立", category="tech", tags=["kg"])
+        cm1.close()
+
+        # 模拟新进程：全新实例，内存索引为空
+        cm2 = MindForge(db_path=self.db_path, encrypted=False)
+        self.assertTrue(cm2.index.needs_hydration)
+        result = cm2.search("知识图谱")
+        self.assertGreaterEqual(result.total_found, 1)
+        cm2.close()
+
+    def test_cjk_substring_search(self):
+        """CJK 子串查询应通过模糊补充召回命中"""
+        from core.mindforge import MindForge
+
+        cm = MindForge(db_path=self.db_path, encrypted=False)
+        cm.add("SQLite 是轻量级嵌入式数据库", category="tech")
+        result = cm.search("数据库")
+        self.assertGreaterEqual(result.total_found, 1)
+        cm.close()
+
+    def test_search_no_false_positive(self):
+        """不存在的关键词应返回 0 条"""
+        from core.mindforge import MindForge
+
+        cm = MindForge(db_path=self.db_path, encrypted=False)
+        cm.add("普通的一条记忆", category="test")
+        result = cm.search("绝对不存在的关键词zzz")
+        self.assertEqual(result.total_found, 0)
+        cm.close()
+
+
+class TestMultiAgentMemory(unittest.TestCase):
+    """v5.2.8 新增：多 Agent 记忆空间（实验性）"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def _make(self):
+        from core.mindforge import MindForge
+        return MindForge(db_path=self.db_path, encrypted=False)
+
+    def test_space_lifecycle(self):
+        """创建空间 → 添加成员 → 共享 → 冲突解决 → 隐私护栏 → 读取 → 统计"""
+        from core.types import PrivacyLevel
+
+        cm = self._make()
+        entry = cm.add("可共享的团队知识", category="team")
+        private = cm.add("私密内容", category="secret", privacy=PrivacyLevel.PRIVATE)
+
+        ma = cm.multi_agent
+        r = ma.create_space("s1", owner_agent="leader")
+        self.assertTrue(r["success"])
+
+        r = ma.add_member("s1", "worker", role="editor", actor="leader")
+        self.assertTrue(r["success"])
+
+        r = ma.share_memory("s1", entry.id, actor="worker")
+        self.assertTrue(r["success"])
+        self.assertEqual(r["version"], 1)
+
+        # 冲突解决：重复共享 → last-write-wins，版本递增
+        r = ma.share_memory("s1", entry.id, actor="leader")
+        self.assertTrue(r["success"])
+        self.assertEqual(r["version"], 2)
+        self.assertEqual(r["conflict_resolved"], "last-write-wins")
+
+        # 隐私护栏：PRIVATE 禁止共享
+        r = ma.share_memory("s1", private.id, actor="leader")
+        self.assertFalse(r["success"])
+        self.assertIn("隐私护栏", r["error"])
+
+        # reader 可读取
+        ma.add_member("s1", "guest", role="reader", actor="guest")
+        r = ma.list_space_memories("s1", actor="guest")
+        self.assertTrue(r["success"])
+        self.assertEqual(r["count"], 1)
+
+        # 非成员禁止读取
+        r = ma.list_space_memories("s1", actor="outsider")
+        self.assertFalse(r["success"])
+
+        stats = ma.space_stats()
+        self.assertEqual(stats["total_spaces"], 1)
+        self.assertEqual(stats["total_shared_items"], 1)
+        cm.close()
+
+    def test_permission_enforcement(self):
+        """reader 不能共享；非 owner 不能加人/删空间"""
+        cm = self._make()
+        entry = cm.add("知识", category="t")
+        ma = cm.multi_agent
+        ma.create_space("s2", owner_agent="boss")
+        ma.add_member("s2", "reader1", role="reader", actor="boss")
+
+        r = ma.share_memory("s2", entry.id, actor="reader1")
+        self.assertFalse(r["success"])
+
+        r = ma.add_member("s2", "another", role="editor", actor="reader1")
+        self.assertFalse(r["success"])
+
+        r = ma.delete_space("s2", actor="reader1")
+        self.assertFalse(r["success"])
+
+        r = ma.delete_space("s2", actor="boss")
+        self.assertTrue(r["success"])
+        cm.close()
+
+    def test_duplicate_space_name_rejected(self):
+        """空间名称唯一"""
+        cm = self._make()
+        ma = cm.multi_agent
+        self.assertTrue(ma.create_space("dup", owner_agent="a")["success"])
+        self.assertFalse(ma.create_space("dup", owner_agent="b")["success"])
+        cm.close()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

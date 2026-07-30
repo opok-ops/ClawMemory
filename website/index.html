@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="MindForge v5.2.6 - AI Agent 终身记忆系统，多层记忆架构、知识图谱、多模态支持，100% 本地加密">
+<meta name="description" content="MindForge v5.2.8 - AI Agent 终身记忆系统，多层记忆架构、知识图谱、多模态支持、多Agent记忆空间，100% 本地加密">
 <meta name="keywords" content="MindForge, AI Memory, Agent Memory, 知识图谱, 终身记忆, AI Agent, 记忆系统, 本地加密">
 <meta name="author" content="MindForge Project">
 <meta name="robots" content="index, follow">
@@ -26,7 +26,7 @@
 <meta name="twitter:description" content="四层记忆架构模拟人类认知，知识图谱自动关联推理，100% 本地端侧加密">
 <meta name="twitter:image" content="https://opok-ops.github.io/MindForge/assets/og-image.png">
 
-<title>MindForge v5.2.6 — AI Agent 终身记忆系统</title>
+<title>MindForge v5.2.8 — AI Agent 终身记忆系统</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@500;600;700;800;900&display=swap" rel="stylesheet">
@@ -55,7 +55,7 @@
           </defs>
         </svg>
       </div>
-      <span class="logo-text">MindForge <em>v5.2.6</em></span>
+      <span class="logo-text">MindForge <em>v5.2.8</em></span>
     </a>
     <ul class="nav-links">
       <li><a href="#features">功能</a></li>
@@ -84,7 +84,7 @@
   <div class="hero-content">
     <div class="hero-badge">
       <span class="badge-dot"></span>
-      v5.2.7 全新发布 · 记忆版本历史 · 安全加固 · 多层记忆架构 · 知识图谱引擎
+      v5.2.8 全新发布 · search 核心修复 · 多 Agent 记忆空间预览 · 多层记忆架构 · 知识图谱引擎
     </div>
     <h1 class="hero-title">
       让 AI Agent 拥有
@@ -233,6 +233,27 @@
         <p>AES-256-GCM 端侧加密 + 零知识证明验证 + 四级隐私隔离，你的记忆永远只属于你，即使是我们也无法访问。</p>
         <div class="feature-tags">
           <span>端侧加密</span><span>零知识证明</span><span>物理隔离</span>
+        </div>
+      </div>
+
+      <div class="feature-card feature-preview reveal">
+        <div class="feature-badge">
+          <span class="badge-dot"></span>
+          开发中 · v6.0.0 全量推送
+        </div>
+        <div class="feature-icon icon-cyan">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="9" cy="8" r="3"/>
+            <circle cx="17" cy="10" r="2.5"/>
+            <path d="M3 20v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1"/>
+            <path d="M15.5 15.2a4 4 0 0 1 5.5 3.8v1"/>
+            <path d="M9 11a3 3 0 0 1 0 .01"/>
+          </svg>
+        </div>
+        <h3>多 Agent 记忆空间</h3>
+        <p>多个 Agent 在同一本地库内安全协作：共享记忆空间、owner/editor/reader 三级角色权限、PRIVATE/STRICT 隐私护栏、冲突自动解决。v5.2.8 已提供实验性预览，v6.0.0 全量推送。</p>
+        <div class="feature-tags">
+          <span>共享空间</span><span>角色权限</span><span>隐私护栏</span><span>冲突解决</span>
         </div>
       </div>
     </div>
@@ -661,6 +682,34 @@ openclaw restart</code></pre>
     </div>
 
     <div class="changelog-timeline reveal">
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.2.8</span>
+          <span class="cl-date">2026-07-30</span>
+        </div>
+        <div class="cl-content">
+          <h4>🔍 核心修复（P0）</h4>
+          <ul>
+            <li>修复 <code>search</code> 命令跨进程永远返回 0 结果的严重问题：索引自动从数据库水合 + 模糊搜索补充召回（CJK 中文子串亦可命中）</li>
+            <li>修复 <code>--tags a,b</code> 逗号分隔被误存为单个标签，空格/逗号混用现已统一</li>
+            <li>修复联邦模块 <code>sqlite3</code> 未导入的 NameError 隐患</li>
+          </ul>
+          <h4>🌐 多 Agent 记忆空间（实验性 — v6.0.0 全量推送预览）</h4>
+          <ul>
+            <li>共享记忆空间：多 Agent 在同一本地库内受控协作</li>
+            <li>三级角色权限：<code>owner</code> / <code>editor</code> / <code>reader</code></li>
+            <li>隐私护栏：<code>PRIVATE</code> / <code>STRICT</code> 记忆禁止进入共享空间</li>
+            <li>冲突解决：last-write-wins + 条目版本号自动递增</li>
+            <li>新增 7 个实验性命令：<code>space-create</code> / <code>space-list</code> / <code>space-join</code> / <code>space-add-member</code> / <code>space-share</code> / <code>space-memories</code> / <code>space-stats</code></li>
+          </ul>
+          <h4>📤 其他新命令</h4>
+          <ul>
+            <li><code>export-csv</code> - 导出记忆为 CSV（含路径安全校验与隐私过滤）</li>
+            <li><code>diff</code> - 对比记忆版本差异（配合 v5.2.7 版本历史使用）</li>
+          </ul>
+        </div>
+      </div>
+
       <div class="changelog-item">
         <div class="cl-version">
           <span class="cl-num">v5.2.7</span>

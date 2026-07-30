@@ -52,7 +52,28 @@ class QueryEngine:
         import time
         start = time.time()
 
+        # v5.2.8 修复：CLI 等短生命周期进程中，内存 TF-IDF 索引为空，
+        # 导致跨进程搜索永远返回 0 结果。搜索前先从持久层水合索引。
+        if self.index.needs_hydration:
+            self.index.hydrate(self.storage.get_indexable_documents())
+
         raw_results = self.index.search(query, top_k=max_results * 3)
+
+        # v5.2.8 修复：TF-IDF 词表滞后（新记忆未进入词表）或 CJK 子串未命中时，
+        # 用模糊搜索补充召回，保证搜索结果完整性。
+        # 注意：TF-IDF 未命中时也会返回全部文档（零分），因此以"达标结果数"
+        # 而非"返回数量"判断召回是否充足；补充结果与零分项按 id 合并取高分。
+        positive = sum(1 for _, s in raw_results if s >= min_relevance)
+        if positive < max_results:
+            score_map = dict(raw_results)
+            supplements = self.storage.fuzzy_search(
+                query, limit=max_results * 2, threshold=0.1)
+            for item in supplements:
+                entry = item["entry"]
+                s = min(0.95, float(item["score"]))
+                if s > score_map.get(entry.id, 0.0):
+                    score_map[entry.id] = s
+            raw_results = sorted(score_map.items(), key=lambda x: x[1], reverse=True)
 
         chunks = []
         for doc_id, score in raw_results:

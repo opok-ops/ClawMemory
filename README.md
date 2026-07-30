@@ -1,6 +1,6 @@
-# MindForge v5.2.6
+# MindForge v5.2.8
 
-**AI Agent 终身记忆系统 — 四层记忆架构 · 知识图谱 · 多模态 · 人格化 · 联邦网络**
+**AI Agent 终身记忆系统 — 四层记忆架构 · 知识图谱 · 多模态 · 人格化 · 联邦网络 · 多Agent记忆空间**
 
 让 AI Agent 拥有真正的终身记忆与进化学习能力，终结会话失忆、token 爆炸、隐私混乱的行业痛点。
 
@@ -25,7 +25,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    MindForge v5.2.7                        │
+│                    MindForge v5.2.8                        │
 ├─────────────────────────────────────────────────────────┤
 │  🎯 认知层 (Cognitive Layer)                              │
 │     人格引擎 · 知识图谱 · 记忆演化 · 联邦网络              │
@@ -344,6 +344,38 @@ context = adapter.get_context("数据库优化")
 ---
 
 ## 📝 更新日志
+
+### v5.2.8 (2026-07-30)
+
+**🔍 核心修复：search 跨进程失效（P0）**
+- 修复 `search` 命令在 CLI 中永远返回 0 结果的严重问题：TF-IDF 索引为进程内存结构，新进程启动时为空，从未从数据库加载历史记忆
+- `IndexEngine` 新增 `hydrate()` 水合能力，`QueryEngine.search` 搜索前自动从 SQLite 加载可索引文档
+- 新增模糊搜索补充召回：TF-IDF 词表滞后（新记忆未入词表）或 CJK 子串未命中时自动兜底，按 id 合并取高分
+- 新增 3 个回归测试：跨进程搜索 / CJK 子串搜索 / 无误报验证
+
+**🏷️ 标签解析统一（P1）**
+- 修复 `add`/`update`/`find` 等命令 `--tags a,b` 逗号分隔被错误存为单个标签的问题
+- `parse_args` 后单点归一化（`_split_tags`），空格分隔与逗号分隔可混用，覆盖全部 15 个 `nargs="+"` 的命令
+
+**🤝 联邦模块修复（P2）**
+- 修复 `modules/federated.py` `_verify_memory_exists` 的 `except sqlite3.OperationalError` 引用未导入的 `sqlite3` 导致的 NameError 隐患
+
+**🌐 多 Agent 记忆空间（实验性新功能 — v6.0.0 全量推送预览）**
+- 新增 `modules/multi_agent.py`：同一本地库内多 Agent 共享记忆空间
+- 角色权限隔离：`owner` / `editor` / `reader` 三级，broadcast 策略下仅 owner 可写
+- 隐私护栏：`PRIVATE` / `STRICT` 级别记忆永远禁止进入共享空间，回收站记忆禁止共享
+- 冲突解决：重复共享同一条记忆 = last-write-wins，条目版本号自动递增
+- CLI 新增 7 个实验性命令：`space-create` / `space-list` / `space-join` / `space-add-member` / `space-share` / `space-memories` / `space-stats`
+- 新增 `agent_spaces` / `agent_space_members` / `agent_space_items` 三张表，随主库一起备份
+- 所有空间变更操作写入审计日志
+- ⚠️ EXPERIMENTAL：API 在 v6.0.0 正式发布前可能变化，官网已标注"开发中"
+
+**📤 其他新命令**
+- `export-csv` - 导出记忆为 CSV（补齐 `export_csv` API 的 CLI 入口，含路径安全校验与隐私过滤）
+- `diff <memory_id>` - 对比记忆版本差异（unified diff 格式，支持版本 vs 当前、版本 vs 版本）
+
+**🧪 测试**
+- 新增 6 个测试用例（搜索水合 3 个 + 多 Agent 空间 3 个），总计 25 个全部通过
 
 ### v5.2.7 (2026-07-30)
 

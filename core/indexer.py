@@ -123,7 +123,35 @@ class IndexEngine:
         self.vectorizer = TFIDFVectorizer()
         self.vector_index = VectorIndex()
         self._fitted = False
+        self._hydrated = False
         self._doc_texts: Dict[str, str] = {}
+
+    @property
+    def needs_hydration(self) -> bool:
+        """是否需要从持久层水合（v5.2.8 新增）
+
+        TF-IDF 向量索引是进程内存结构，CLI 等短生命周期进程启动时为空，
+        必须先水合才能搜索到历史记忆。
+        """
+        return not self._hydrated
+
+    def hydrate(self, documents: Dict[str, str]) -> int:
+        """从持久层水合文档（v5.2.8 新增：修复跨进程搜索失效）
+
+        Args:
+            documents: {memory_id: content} 映射（通常来自
+                StorageEngine.get_indexable_documents()）
+
+        Returns:
+            水合的文档数量
+        """
+        if self._hydrated:
+            return 0
+        self._doc_texts.update(documents)
+        # 强制下次搜索时重新 fit，确保词表覆盖全部历史文档
+        self._fitted = False
+        self._hydrated = True
+        return len(documents)
 
     def index_memory(self, doc_id: str, text: str, metadata: Optional[Dict] = None):
         """索引记忆"""

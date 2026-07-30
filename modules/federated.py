@@ -6,6 +6,7 @@ MindForge v5.0 联邦记忆网络
 import json
 import hashlib
 import hmac
+import sqlite3  # v5.2.8 修复：_verify_memory_exists 的 except 子句引用了未导入的 sqlite3
 import time
 import uuid
 from dataclasses import dataclass, field
