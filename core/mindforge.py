@@ -1,5 +1,5 @@
 """
-MindForge v5.2.8 主入口类
+MindForge v5.2.9 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,11 +31,74 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.2.8"
+    __version__ = "5.2.9"
+
+
+# ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
+
+def _safe_path(path_str, must_exist=False, allow_symlinks=False,
+               max_size=None, allowed_exts=None, max_len=4096):
+    """校验文件路径安全性，防止路径遍历攻击
+
+    Args:
+        path_str: 用户输入的路径
+        must_exist: 是否要求文件必须存在
+        allow_symlinks: 是否允许符号链接
+        max_size: 文件大小上限（仅 must_exist=True 时）
+        allowed_exts: 允许的文件扩展名集合
+        max_len: 路径最大长度
+
+    Returns:
+        Path: 校验通过后的绝对路径
+
+    Raises:
+        ValueError / OSError: 路径不安全
+    """
+    if not path_str or not isinstance(path_str, str):
+        raise ValueError("路径不能为空")
+    if len(path_str) > max_len:
+        raise ValueError(f"路径过长（上限 {max_len} 字符）")
+
+    target = Path(path_str)
+    if not target.is_absolute():
+        target = Path.cwd() / target
+
+    try:
+        resolved = target.resolve()
+    except (OSError, RuntimeError) as e:
+        raise ValueError(f"路径解析失败: {e}")
+
+    # 符号链接检查
+    if not allow_symlinks:
+        check_path = resolved
+        while check_path != check_path.parent:
+            if check_path.is_symlink():
+                raise ValueError(f"不允许操作符号链接: {check_path}")
+            check_path = check_path.parent
+
+    # 扩展名检查
+    if allowed_exts is not None:
+        ext = resolved.suffix.lower()
+        if ext not in allowed_exts:
+            raise ValueError(
+                f"不支持的文件类型: {ext}（允许: {', '.join(sorted(allowed_exts))}）"
+            )
+
+    # 存在性检查
+    if must_exist and not resolved.exists():
+        raise FileNotFoundError(f"文件不存在: {resolved}")
+
+    # 大小检查
+    if max_size is not None and resolved.exists() and resolved.is_file():
+        size = resolved.stat().st_size
+        if size > max_size:
+            raise ValueError(f"文件过大: {size} 字节（上限 {max_size}）")
+
+    return resolved
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.2.8"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.2.9"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -406,7 +469,7 @@ class MindForge:
                     category: Optional[str] = None,
                     layer: Optional[MemoryLayer] = None,
                     include_private: bool = False) -> int:
-        """导出记忆为 JSON 文件"""
+        """导出记忆为 JSON 文件（v5.2.9 安全加固：路径校验 + 权限收紧）"""
         entries = self._storage.list_memories(
             category=category,
             layer=layer,
@@ -430,31 +493,73 @@ class MindForge:
         from datetime import datetime
         data["export_time"] = datetime.now().isoformat()
 
-        path = Path(output_path)
+        # v5.2.9 安全加固：防止路径遍历
+        path = _safe_path(output_path, allowed_exts={".json"})
         path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+
+        # v5.2.9 安全加固：限制文件权限
+        try:
+            import stat
+            import os
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+        except (OSError, ImportError):
+            pass
 
         return len(entries)
 
     def import_json(self, input_path: str,
                     skip_duplicates: bool = True,
                     target_layer: Optional[MemoryLayer] = None) -> Dict[str, int]:
-        """从 JSON 文件导入记忆"""
-        path = Path(input_path)
-        if not path.exists():
-            raise FileNotFoundError(f"File not found: {input_path}")
+        """从 JSON 文件导入记忆（v5.2.9 安全加固：路径校验 + 内容长度限制 + 枚举校验）"""
+        # v5.2.9 安全加固：防止路径遍历 + 文件大小限制
+        path = _safe_path(input_path, must_exist=True, allowed_exts={".json"}, max_size=500 * 1024 * 1024)
 
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        memories = data.get("memories", [])
+        # v5.2.9 安全加固：限制 memories 数组最大长度，防止 OOM
+        memories_raw = data.get("memories", [])
+        if len(memories_raw) > 100000:
+            raise ValueError(f"记忆条数过多（{len(memories_raw)} 条，上限 100000），请分批导入")
+
+        memories = memories_raw
         stats = {"imported": 0, "skipped": 0, "failed": 0}
+
+        # v5.2.9 安全加固：内容长度白名单常量
+        _MAX_CONTENT = 1000000  # 单条记忆内容 1MB
+        _MAX_CAT = 256
+        _MAX_TAG = 128
+        _MAX_TAGS = 64
 
         for mem_data in memories:
             try:
-                existing = self._storage.get_memory(mem_data.get("id", ""))
+                # v5.2.9 安全加固：字段长度限制
+                content_raw = mem_data.get("content", "")
+                if not isinstance(content_raw, str):
+                    stats["failed"] += 1
+                    continue
+                content = content_raw[:_MAX_CONTENT]
+
+                cat_raw = mem_data.get("category", "general")
+                if not isinstance(cat_raw, str):
+                    cat_raw = "general"
+                category = cat_raw[:_MAX_CAT]
+
+                tags_raw = mem_data.get("tags", [])
+                if not isinstance(tags_raw, list):
+                    tags_raw = []
+                tags = [
+                    str(t)[:_MAX_TAG] for t in tags_raw[:_MAX_TAGS]
+                    if isinstance(t, (str, int, float)) and t
+                ]
+
+                existing_id = mem_data.get("id", "")
+                if not isinstance(existing_id, str):
+                    existing_id = ""
+                existing = self._storage.get_memory(existing_id[:64]) if existing_id else None
                 if existing and skip_duplicates:
                     stats["skipped"] += 1
                     continue
@@ -462,50 +567,58 @@ class MindForge:
                 layer = target_layer
                 if not layer and mem_data.get("layer"):
                     try:
-                        layer = MemoryLayer(mem_data["layer"])
+                        layer = MemoryLayer(str(mem_data["layer"]))
                     except ValueError:
                         layer = self.config.default_layer
 
                 privacy = self.config.default_privacy
                 if mem_data.get("privacy"):
                     try:
-                        privacy = PrivacyLevel(mem_data["privacy"])
+                        privacy = PrivacyLevel(str(mem_data["privacy"]))
                     except ValueError:
                         pass
 
                 importance = self.config.default_importance
                 if mem_data.get("importance"):
                     try:
-                        importance = Importance(mem_data["importance"])
+                        importance = Importance(str(mem_data["importance"]))
                     except ValueError:
                         pass
 
                 memory_type = MemoryType.TEXT
                 if mem_data.get("memory_type"):
                     try:
-                        memory_type = MemoryType(mem_data["memory_type"])
+                        memory_type = MemoryType(str(mem_data["memory_type"]))
                     except ValueError:
                         pass
 
-                new_id = str(uuid.uuid4()) if (skip_duplicates and existing) else mem_data.get("id", str(uuid.uuid4()))
+                new_id = str(uuid.uuid4()) if (skip_duplicates and existing) else (
+                    existing_id[:64] if existing_id else str(uuid.uuid4())
+                )
+
+                # v5.2.9 安全加固：截断 source_session / source_agent
+                session_raw = mem_data.get("source_session", "")
+                agent_raw = mem_data.get("source_agent", "")
+                session_id = str(session_raw)[:128] if isinstance(session_raw, (str, int)) else ""
+                agent_id = str(agent_raw)[:128] if isinstance(agent_raw, (str, int)) else ""
 
                 entry = self._storage.add_memory(
-                    content=mem_data.get("content", ""),
-                    category=mem_data.get("category", "general"),
-                    tags=mem_data.get("tags", []),
+                    content=content,
+                    category=category,
+                    tags=tags,
                     privacy=privacy,
                     importance=importance,
                     memory_type=memory_type,
                     layer=layer or self.config.default_layer,
-                    source_session=mem_data.get("source_session", ""),
-                    source_agent=mem_data.get("source_agent", ""),
-                    metadata=mem_data.get("metadata", {}),
+                    source_session=session_id,
+                    source_agent=agent_id,
+                    metadata={},
                 )
 
                 self._index.index_memory(
                     entry.id,
-                    mem_data.get("content", ""),
-                    metadata={"category": mem_data.get("category", "general")},
+                    content,
+                    metadata={"category": category},
                 )
 
                 stats["imported"] += 1
@@ -517,7 +630,7 @@ class MindForge:
     def export_csv(self, output_path: str,
                    category: Optional[str] = None,
                    include_private: bool = False) -> int:
-        """导出记忆为 CSV 文件"""
+        """导出记忆为 CSV 文件（v5.2.9 安全加固：路径校验 + CSV 公式注入防护）"""
         entries = self._storage.list_memories(
             category=category,
             limit=100000,
@@ -530,8 +643,18 @@ class MindForge:
                 if e.privacy in (PrivacyLevel.PUBLIC, PrivacyLevel.INTERNAL)
             ]
 
-        path = Path(output_path)
+        # v5.2.9 安全加固：防止路径遍历
+        path = _safe_path(output_path, allowed_exts={".csv"})
         path.parent.mkdir(parents=True, exist_ok=True)
+
+        # v5.2.9 安全加固：CSV 公式注入防护 - 以 = + - @ 开头的单元格加 Tab 前缀
+        def _csv_safe(v):
+            if v is None:
+                return ""
+            s = str(v)
+            if s and s[0] in ("=", "+", "-", "@"):
+                return "\t" + s
+            return s
 
         with open(path, "w", encoding="utf-8-sig", newline="") as f:
             writer = csv.writer(f)
@@ -543,17 +666,17 @@ class MindForge:
 
             for e in entries:
                 writer.writerow([
-                    e.id,
-                    e.content,
-                    e.category,
-                    ",".join(e.tags),
-                    e.privacy.value,
-                    e.importance.value,
-                    e.memory_type.value,
-                    e.layer.value,
-                    e.access_count,
-                    e.created_at,
-                    e.updated_at,
+                    _csv_safe(e.id),
+                    _csv_safe(e.content),
+                    _csv_safe(e.category),
+                    _csv_safe(",".join(e.tags)),
+                    _csv_safe(e.privacy.value),
+                    _csv_safe(e.importance.value),
+                    _csv_safe(e.memory_type.value),
+                    _csv_safe(e.layer.value),
+                    _csv_safe(e.access_count),
+                    _csv_safe(e.created_at),
+                    _csv_safe(e.updated_at),
                 ])
 
         return len(entries)
@@ -634,10 +757,9 @@ class MindForge:
 
     @classmethod
     def from_config(cls, config_path: str) -> "MindForge":
-        """从配置文件创建 MindForge 实例"""
-        path = Path(config_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Config file not found: {config_path}")
+        """从配置文件创建 MindForge 实例（v5.2.9 安全加固：路径校验）"""
+        # v5.2.9 安全加固：防止 config 路径遍历
+        path = _safe_path(config_path, must_exist=True, allowed_exts={".json"}, max_size=10 * 1024 * 1024)
 
         with open(path, "r", encoding="utf-8") as f:
             config_data = json.load(f)
@@ -662,16 +784,14 @@ class MindForge:
 
     @classmethod
     def load_config(cls, config_path: str) -> dict:
-        """加载配置文件为字典"""
-        path = Path(config_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Config file not found: {config_path}")
+        """加载配置文件为字典（v5.2.9 安全加固：路径校验）"""
+        path = _safe_path(config_path, must_exist=True, allowed_exts={".json"}, max_size=10 * 1024 * 1024)
 
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
 
     def save_config(self, config_path: str):
-        """保存当前配置到文件"""
+        """保存当前配置到文件（v5.2.9 安全加固：路径校验 + 600 权限）"""
         config_data = {
             "db_path": self.config.db_path,
             "key_file": self.config.key_file,
@@ -681,11 +801,20 @@ class MindForge:
             "default_layer": self.config.default_layer.value,
         }
 
-        path = Path(config_path)
+        # v5.2.9 安全加固：防止 config 路径写入敏感位置
+        path = _safe_path(config_path, allowed_exts={".json"})
         path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(path, "w", encoding="utf-8") as f:
             json.dump(config_data, f, ensure_ascii=False, indent=2)
+
+        # v5.2.9 安全加固：限制文件权限（类 Unix 系统）
+        try:
+            import stat
+            import os
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+        except (OSError, ImportError):
+            pass
 
     def export_excel(self,
                      output_path: str,
@@ -1119,6 +1248,68 @@ class MindForge:
         """获取经典台词（v5.2.1 新增）"""
         return self._storage.classic_lines(drama_id, limit)
 
+    # ===== AI 短剧增强（v5.2.9 新增）=====
+
+    def drama_stars(self,
+                    genre: Optional[str] = None,
+                    min_rating: float = 0.0,
+                    limit: int = 50) -> List[Any]:
+        """高分短剧排行榜（v5.2.9 新增，别名 drama-stars）
+
+        Args:
+            genre: 类型过滤（枚举白名单内）
+            min_rating: 最低评分（0-10）
+            limit: 返回数量
+
+        Returns:
+            高分短剧列表
+        """
+        # v5.2.9 安全加固：genre 在 storage 层再做枚举白名单
+        min_rating = max(0.0, min(10.0, float(min_rating)))
+        limit = max(1, min(1000, int(limit)))
+        return self._storage.top_rated_dramas(
+            genre=genre, min_rating=min_rating, limit=limit
+        )
+
+    def scene_lines(self,
+                    scene_id: str,
+                    limit: int = 500,
+                    offset: int = 0) -> List[Any]:
+        """按场次列出台词（v5.2.9 新增）"""
+        if not scene_id or not isinstance(scene_id, str):
+            return []
+        return self._storage.list_lines_by_scene(
+            scene_id=scene_id[:64], limit=limit, offset=offset
+        )
+
+    def character_lines(self,
+                        character_id: str,
+                        drama_id: Optional[str] = None,
+                        limit: int = 500,
+                        offset: int = 0) -> List[Any]:
+        """按角色列出台词（v5.2.9 新增）"""
+        if not character_id or not isinstance(character_id, str):
+            return []
+        cid = character_id[:64]
+        did = drama_id[:64] if (isinstance(drama_id, str) and drama_id) else None
+        return self._storage.list_lines_by_character(
+            character_id=cid, drama_id=did, limit=limit, offset=offset
+        )
+
+    def import_dramas(self,
+                      input_path: str,
+                      skip_existing: bool = True) -> Dict[str, int]:
+        """从 JSON 批量导入短剧（v5.2.9 新增）
+
+        结构与 export_dramas 相同：{dramas: [{scenes, characters, lines}...]}
+        """
+        # v5.2.9 安全加固：路径再次校验（storage 层也会再校验一次，双重保险）
+        p = _safe_path(input_path, must_exist=True,
+                       allowed_exts={".json"}, max_size=500 * 1024 * 1024)
+        return self._storage.import_dramas_from_json(
+            str(p), skip_existing=bool(skip_existing)
+        )
+
     # ===== v5.2.2 新增功能 =====
 
     def recommend_dramas(self,
@@ -1220,7 +1411,7 @@ class MindForge:
         }
 
     def export_dramas(self, output_path: str, drama_ids: Optional[List[str]] = None) -> int:
-        """导出短剧数据（v5.2.2 新增）
+        """导出短剧数据（v5.2.2 新增，v5.2.9 安全加固：路径校验 + JSON 注入防护）
 
         导出短剧及其关联的场次、角色、台词为 JSON 文件。
 
@@ -1232,16 +1423,17 @@ class MindForge:
             导出的短剧数量
         """
         import json
-        from pathlib import Path
 
         if drama_ids:
-            dramas = [self._storage.get_drama(did) for did in drama_ids]
+            # v5.2.9 安全加固：ID 长度限制白名单
+            safe_ids = [did[:64] for did in drama_ids if isinstance(did, str) and 1 <= len(did) <= 64]
+            dramas = [self._storage.get_drama(did) for did in safe_ids]
             dramas = [d for d in dramas if d is not None]
         else:
             dramas = self._storage.list_dramas(limit=10000)
 
         export_data = {
-            "version": "5.2.2",
+            "version": __version__,
             "export_time": "",
             "total": len(dramas),
             "dramas": [],
@@ -1251,7 +1443,6 @@ class MindForge:
 
         for drama in dramas:
             drama_data = drama.to_dict() if hasattr(drama, "to_dict") else vars(drama)
-            # 导出关联数据
             drama_data["scenes"] = [vars(s) if not hasattr(s, "to_dict") else s.to_dict()
                                      for s in self._storage.list_scenes(drama_id=drama.id, limit=1000)]
             drama_data["characters"] = [vars(c) if not hasattr(c, "to_dict") else c.to_dict()
@@ -1260,10 +1451,19 @@ class MindForge:
                                     for l in self._storage.list_lines(drama_id=drama.id, limit=10000)]
             export_data["dramas"].append(drama_data)
 
-        path = Path(output_path)
+        # v5.2.9 安全加固：路径校验
+        path = _safe_path(output_path, allowed_exts={".json"})
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(export_data, f, ensure_ascii=False, indent=2)
+
+        # v5.2.9 安全加固：权限收紧
+        try:
+            import stat
+            import os
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+        except (OSError, ImportError):
+            pass
 
         return len(dramas)
 
@@ -1361,17 +1561,49 @@ class MindForge:
         )
 
     def quality_score(self, memory_id: str) -> Optional[Dict[str, Any]]:
-        """记忆质量评分（v5.2.2 新增）
+        """记忆质量评分（v5.2.2 新增）"""
+        return self._storage.quality_score(memory_id)
 
-        基于多维度评估记忆质量。
+    # ===== Agent 记忆增强（v5.2.9 新增）=====
+
+    def rank_agents(self,
+                    by: str = "count",
+                    limit: int = 20) -> List[Dict[str, Any]]:
+        """Agent 排行榜（v5.2.9 新增）
 
         Args:
-            memory_id: 记忆 ID
+            by: 排序维度（count / last_active / avg_importance / starred）
+            limit: 返回数量
 
         Returns:
-            质量评分详情
+            Agent 排名列表
         """
-        return self._storage.quality_score(memory_id)
+        # v5.2.9 安全加固：by 白名单枚举
+        _ALLOWED = {"count", "last_active", "avg_importance", "starred"}
+        if by not in _ALLOWED:
+            by = "count"
+        limit = max(1, min(1000, int(limit)))
+        return self._storage.rank_agents(by=by, limit=limit)
+
+    def forget_agent(self,
+                     agent_id: str,
+                     min_quality_score: int = 30,
+                     older_than_days: int = 30,
+                     dry_run: bool = False) -> Dict[str, Any]:
+        """遗忘 Agent 的低质量旧记忆（v5.2.9 新增，代理 forget_agent_memories）"""
+        # v5.2.9 安全加固：参数边界
+        if not agent_id or not isinstance(agent_id, str) or len(agent_id) > 128:
+            return {"evaluated": 0, "selected": 0, "cleaned": 0, "error": "无效 agent_id"}
+        min_quality_score = max(0, min(100, int(min_quality_score)))
+        older_than_days = max(0, int(older_than_days))
+        return self._storage.forget_agent_memories(
+            agent_id=agent_id[:128],
+            min_quality_score=min_quality_score,
+            older_than_days=older_than_days,
+            dry_run=dry_run,
+            actor="cli",
+            session_id="forget",
+        )
 
     def analyze_similarity(self,
                            memory_id: str,

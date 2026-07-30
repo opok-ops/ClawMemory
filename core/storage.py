@@ -1,5 +1,5 @@
 """
-MindForge v5.0 存储引擎
+MindForge v5.2.9 存储引擎
 支持四层记忆架构：感官记忆 → 短期记忆 → 长期记忆 → 永久记忆
 """
 
@@ -18,6 +18,50 @@ from .types import (
     DramaCharacter, DramaLine,
 )
 from .encryption import EncryptionEngine, EncryptedBlob
+
+
+# ===== 路径安全校验（v5.2.9 新增：存储层统一防护）=====
+
+def _safe_path(path_str, must_exist=False, allow_symlinks=False,
+               max_size=None, allowed_exts=None, max_len=4096):
+    """校验文件路径安全性，防止路径遍历攻击"""
+    if not path_str or not isinstance(path_str, str):
+        raise ValueError("路径不能为空")
+    if len(path_str) > max_len:
+        raise ValueError(f"路径过长（上限 {max_len} 字符）")
+
+    target = Path(path_str)
+    if not target.is_absolute():
+        target = Path.cwd() / target
+
+    try:
+        resolved = target.resolve()
+    except (OSError, RuntimeError) as e:
+        raise ValueError(f"路径解析失败: {e}")
+
+    if not allow_symlinks:
+        check_path = resolved
+        while check_path != check_path.parent:
+            if check_path.is_symlink():
+                raise ValueError(f"不允许操作符号链接: {check_path}")
+            check_path = check_path.parent
+
+    if allowed_exts is not None:
+        ext = resolved.suffix.lower()
+        if ext not in allowed_exts:
+            raise ValueError(
+                f"不支持的文件类型: {ext}（允许: {', '.join(sorted(allowed_exts))}）"
+            )
+
+    if must_exist and not resolved.exists():
+        raise FileNotFoundError(f"文件不存在: {resolved}")
+
+    if max_size is not None and resolved.exists() and resolved.is_file():
+        size = resolved.stat().st_size
+        if size > max_size:
+            raise ValueError(f"文件过大: {size} 字节（上限 {max_size}）")
+
+    return resolved
 
 
 @dataclass
@@ -1768,22 +1812,7 @@ class StorageEngine:
         return result
 
     def quality_score(self, memory_id: str) -> Optional[Dict[str, Any]]:
-        """记忆质量评分（v5.2.2 新增）
-
-        基于多维度评估记忆质量：
-        - 内容长度：合理长度加分
-        - 访问频率：高访问加分
-        - 收藏状态：收藏加分
-        - 重要性：高重要性加分
-        - 标签丰富度：有标签加分
-        - 时间衰减：新记忆加分
-
-        Args:
-            memory_id: 记忆 ID
-
-        Returns:
-            质量评分详情，包含总分和各项得分
-        """
+        """记忆质量评分（v5.2.2 新增）"""
         entry = self.get_memory(memory_id)
         if not entry:
             return None
@@ -1891,6 +1920,330 @@ class StorageEngine:
             return "及格"
         else:
             return "需改进"
+
+    # ===== Agent 记忆增强（v5.2.9 新增）=====
+
+    def rank_agents(self,
+                    by: str = "count",
+                    limit: int = 20) -> List[Dict[str, Any]]:
+        """Agent 排行榜（v5.2.9 新增）
+
+        Args:
+            by: 排序维度（count / last_active / avg_importance / starred）
+            limit: 返回数量
+
+        Returns:
+            Agent 排名列表
+        """
+        conn = self._get_conn()
+        # v5.2.9 安全加固：by 白名单枚举校验
+        _ALLOWED = {"count", "last_active", "avg_importance", "starred"}
+        if by not in _ALLOWED:
+            by = "count"
+
+        imp_weights = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "TRIVIAL": 0}
+
+        rows = conn.execute(
+            "SELECT source_agent, COUNT(*) as cnt, MAX(created_at) as last_active, "
+            "SUM(starred) as starred_cnt FROM memories "
+            "WHERE source_agent != '' GROUP BY source_agent"
+        ).fetchall()
+
+        result = []
+        for r in rows:
+            agent = r[0]
+            count = r[1]
+            last_active = r[2] or 0
+            starred_cnt = r[3] or 0
+            avg_imp = 0.0
+            if count > 0:
+                imps = conn.execute(
+                    "SELECT importance FROM memories WHERE source_agent = ?", (agent,)
+                ).fetchall()
+                total_imp = sum(imp_weights.get(str(i[0]), 2) for i in imps)
+                avg_imp = total_imp / count
+
+            result.append({
+                "agent_id": agent,
+                "count": count,
+                "last_active": last_active,
+                "starred_count": starred_cnt,
+                "avg_importance": round(avg_imp, 2),
+            })
+
+        sort_map = {
+            "count": lambda x: -x["count"],
+            "last_active": lambda x: -x["last_active"],
+            "avg_importance": lambda x: -x["avg_importance"],
+            "starred": lambda x: -x["starred_count"],
+        }
+        result.sort(key=sort_map[by])
+        return result[:limit]
+
+    def forget_agent_memories(self,
+                              agent_id: str,
+                              min_quality_score: int = 30,
+                              older_than_days: int = 30,
+                              dry_run: bool = False,
+                              actor: str = "cli",
+                              session_id: str = "forget") -> Dict[str, Any]:
+        """遗忘 Agent 低质量旧记忆（v5.2.9 新增）
+
+        Args:
+            agent_id: 目标 Agent ID
+            min_quality_score: 低于此质量分数的记忆才会被清理
+            older_than_days: 只清理超过此天数未更新的记忆
+            dry_run: 仅预览
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            {evaluated, selected, cleaned}
+        """
+        conn = self._get_conn()
+        # v5.2.9 安全加固：数值边界
+        min_quality_score = max(0, min(100, int(min_quality_score)))
+        older_than_days = max(0, int(older_than_days))
+        if not agent_id or not isinstance(agent_id, str) or len(agent_id) > 128:
+            return {"evaluated": 0, "selected": 0, "cleaned": 0,
+                    "error": "无效 agent_id"}
+
+        now = time.time()
+        cutoff = now - older_than_days * 86400
+
+        mems = conn.execute(
+            "SELECT id, source_agent, updated_at FROM memories "
+            "WHERE source_agent = ? AND updated_at < ? AND category != 'trash'",
+            (agent_id[:128], cutoff)
+        ).fetchall()
+
+        selected_ids = []
+        for r in mems:
+            mid = r[0]
+            qs = self.quality_score(mid)
+            if qs and qs["total_score"] < min_quality_score:
+                selected_ids.append(mid)
+
+        if not dry_run and selected_ids:
+            placeholders = ",".join("?" * len(selected_ids))
+            conn.execute(
+                f"UPDATE memories SET category='trash', updated_at=? "
+                f"WHERE id IN ({placeholders})",
+                [now] + selected_ids,
+            )
+            for mid in selected_ids:
+                self._add_audit("agent_forget", mid, actor, session_id, "")
+            conn.commit()
+
+        return {
+            "agent_id": agent_id,
+            "evaluated": len(mems),
+            "selected": len(selected_ids),
+            "cleaned": 0 if dry_run else len(selected_ids),
+            "selected_ids": selected_ids[:20],
+        }
+
+    # ===== AI 短剧增强（v5.2.9 新增）=====
+
+    def list_lines_by_scene(self,
+                            scene_id: str,
+                            limit: int = 500,
+                            offset: int = 0) -> List[DramaLine]:
+        """按场次列出所有台词（v5.2.9 新增）"""
+        conn = self._get_conn()
+        # 安全：ID 长度限制
+        sid = scene_id[:64] if isinstance(scene_id, str) else ""
+        limit = max(1, min(10000, int(limit)))
+        offset = max(0, int(offset))
+        rows = conn.execute(
+            "SELECT * FROM drama_lines WHERE scene_id = ? "
+            "ORDER BY COALESCE(episode, 0), COALESCE(created_at, 0) LIMIT ? OFFSET ?",
+            (sid, limit, offset),
+        ).fetchall()
+        return [self._row_to_line(r) for r in rows]
+
+    def list_lines_by_character(self,
+                                character_id: str,
+                                drama_id: Optional[str] = None,
+                                limit: int = 500,
+                                offset: int = 0) -> List[DramaLine]:
+        """按角色列出所有台词（v5.2.9 新增）"""
+        conn = self._get_conn()
+        cid = character_id[:64] if isinstance(character_id, str) else ""
+        limit = max(1, min(10000, int(limit)))
+        offset = max(0, int(offset))
+
+        if drama_id:
+            did = drama_id[:64] if isinstance(drama_id, str) else ""
+            rows = conn.execute(
+                "SELECT * FROM drama_lines WHERE character_id = ? AND drama_id = ? "
+                "ORDER BY COALESCE(episode, 0), COALESCE(created_at, 0) LIMIT ? OFFSET ?",
+                (cid, did, limit, offset),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM drama_lines WHERE character_id = ? "
+                "ORDER BY drama_id, COALESCE(episode, 0), COALESCE(created_at, 0) LIMIT ? OFFSET ?",
+                (cid, limit, offset),
+            ).fetchall()
+        return [self._row_to_line(r) for r in rows]
+
+    def top_rated_dramas(self,
+                         genre: Optional[str] = None,
+                         min_rating: float = 0.0,
+                         limit: int = 50) -> List[DramaSeries]:
+        """高分短剧排行榜（v5.2.9 新增，别名 drama-stars）"""
+        conn = self._get_conn()
+        limit = max(1, min(1000, int(limit)))
+        min_rating = max(0.0, min(10.0, float(min_rating)))
+
+        sql = "SELECT * FROM drama_series WHERE rating >= ?"
+        params: List[Any] = [min_rating]
+
+        # 枚举白名单校验 genre
+        _ALLOWED_GENRES = {g.value for g in DramaGenre}
+        if genre:
+            g = genre.strip().upper() if isinstance(genre, str) else ""
+            if g in _ALLOWED_GENRES:
+                sql += " AND genre = ?"
+                params.append(g)
+
+        sql += " ORDER BY rating DESC, current_episode DESC LIMIT ?"
+        params.append(limit)
+
+        rows = conn.execute(sql, params).fetchall()
+        return [self._row_to_drama(r) for r in rows]
+
+    def import_dramas_from_json(self,
+                                input_path: str,
+                                skip_existing: bool = True) -> Dict[str, int]:
+        """从 JSON 文件批量导入短剧（v5.2.9 新增）
+
+        导入结构与 export_dramas 相同，包含：dramas[], scenes[], characters[], lines[]。
+
+        Args:
+            input_path: JSON 文件路径（已在核心层外部做路径校验更好，此处也再校验一次）
+            skip_existing: 跳过已存在的短剧（按 title 匹配）
+
+        Returns:
+            {dramas, scenes, characters, lines, skipped, failed}
+        """
+        # v5.2.9 安全加固：路径二次校验
+        safe_path = _safe_path(input_path, must_exist=True,
+                               allowed_exts={".json"}, max_size=500 * 1024 * 1024)
+
+        import json
+        with open(str(safe_path), "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        stats = {"dramas": 0, "scenes": 0, "characters": 0, "lines": 0,
+                 "skipped": 0, "failed": 0}
+
+        conn = self._get_conn()
+        dramas_raw = data.get("dramas", [])
+        if len(dramas_raw) > 1000:
+            dramas_raw = dramas_raw[:1000]
+
+        for drama_data in dramas_raw:
+            try:
+                title = str(drama_data.get("title", ""))[:512]
+                if not title:
+                    stats["failed"] += 1
+                    continue
+
+                # skip_existing
+                if skip_existing:
+                    exists = conn.execute(
+                        "SELECT id FROM drama_series WHERE title = ?", (title,)
+                    ).fetchone()
+                    if exists:
+                        stats["skipped"] += 1
+                        continue
+
+                # 创建短剧
+                genre_str = str(drama_data.get("genre", "OTHER"))[:64]
+                try:
+                    genre_enum = DramaGenre(genre_str)
+                except ValueError:
+                    genre_enum = DramaGenre.OTHER
+
+                status_str = str(drama_data.get("status", "PLANNED"))[:64]
+                try:
+                    status_enum = DramaStatus(status_str)
+                except ValueError:
+                    status_enum = DramaStatus.PLANNED
+
+                new_drama = self.add_drama(
+                    title=title,
+                    description=str(drama_data.get("description", ""))[:5000],
+                    genre=genre_enum,
+                    total_episodes=max(0, int(drama_data.get("total_episodes", 0) or 0)),
+                    current_episode=max(0, int(drama_data.get("current_episode", 0) or 0)),
+                    rating=max(0.0, min(10.0, float(drama_data.get("rating", 0) or 0))),
+                    platform=str(drama_data.get("platform", ""))[:128],
+                    cover_url=str(drama_data.get("cover_url", ""))[:512],
+                    tags=list(drama_data.get("tags", []) or [])[:64],
+                    actors=list(drama_data.get("actors", []) or [])[:128],
+                    director=str(drama_data.get("director", ""))[:128],
+                    status=status_enum,
+                )
+                stats["dramas"] += 1
+                new_did = new_drama.id
+
+                # 导入场次
+                for scene_data in drama_data.get("scenes", [])[:1000]:
+                    try:
+                        s = self.add_scene(
+                            drama_id=new_did,
+                            title=str(scene_data.get("title", ""))[:512],
+                            description=str(scene_data.get("description", ""))[:5000],
+                            episode=max(0, int(scene_data.get("episode", 0) or 0)),
+                            location=str(scene_data.get("location", ""))[:256],
+                            time_of_day=str(scene_data.get("time_of_day", ""))[:64],
+                            notes=str(scene_data.get("notes", ""))[:5000],
+                        )
+                        stats["scenes"] += 1
+                    except Exception:
+                        stats["failed"] += 1
+
+                # 导入角色
+                for char_data in drama_data.get("characters", [])[:500]:
+                    try:
+                        c = self.add_character(
+                            drama_id=new_did,
+                            name=str(char_data.get("name", ""))[:128],
+                            actor_name=str(char_data.get("actor_name", ""))[:128],
+                            description=str(char_data.get("description", ""))[:5000],
+                            role_type=str(char_data.get("role_type", "supporting"))[:64],
+                            tags=list(char_data.get("tags", []) or [])[:64],
+                        )
+                        stats["characters"] += 1
+                    except Exception:
+                        stats["failed"] += 1
+
+                # 导入台词
+                for line_data in drama_data.get("lines", [])[:50000]:
+                    try:
+                        l = self.add_line(
+                            drama_id=new_did,
+                            scene_id=str(line_data.get("scene_id", ""))[:64],
+                            character_id=str(line_data.get("character_id", ""))[:64],
+                            line_text=str(line_data.get("line_text", ""))[:5000],
+                            character_name=str(line_data.get("character_name", ""))[:128],
+                            context=str(line_data.get("context", ""))[:5000],
+                            episode=max(0, int(line_data.get("episode", 0) or 0)),
+                            timestamp=str(line_data.get("timestamp", ""))[:32],
+                            is_classic=bool(line_data.get("is_classic", False)),
+                            tags=list(line_data.get("tags", []) or [])[:64],
+                        )
+                        stats["lines"] += 1
+                    except Exception:
+                        stats["failed"] += 1
+
+            except Exception:
+                stats["failed"] += 1
+
+        return stats
 
     def analyze_similarity(self,
                            memory_id: str,
@@ -2526,7 +2879,7 @@ class StorageEngine:
                         category: Optional[str] = None,
                         layer: Optional[MemoryLayer] = None,
                         starred_only: bool = False) -> Path:
-        """导出记忆为 Excel 格式（v5.1.9 新增）
+        """导出记忆为 Excel 格式（v5.1.9 新增，v5.2.9 安全加固：路径校验 + CSV 公式注入防护）
 
         Args:
             output_path: 输出文件路径
@@ -2544,8 +2897,18 @@ class StorageEngine:
             limit=100000,
         )
 
-        out = Path(output_path)
+        # v5.2.9 安全加固：路径校验
+        out = _safe_path(output_path, allowed_exts={".xlsx", ".csv"})
         out.parent.mkdir(parents=True, exist_ok=True)
+
+        # v5.2.9 安全加固：CSV/XLSX 公式注入防护
+        def _cell_safe(v, max_len=5000):
+            if v is None:
+                return ""
+            s = str(v)[:max_len]
+            if s and s[0] in ("=", "+", "-", "@"):
+                return "\t" + s
+            return s
 
         try:
             import openpyxl
@@ -2583,17 +2946,17 @@ class StorageEngine:
 
             for row_num, entry in enumerate(entries, 2):
                 ws.append([
-                    entry.id[:20],
-                    entry.content[:500],
-                    entry.category,
-                    ", ".join(entry.tags) if entry.tags else "",
-                    entry.privacy.value,
-                    entry.importance.value,
-                    entry.memory_type.value,
-                    entry.layer.value,
-                    entry.access_count,
-                    _fmt_time(entry.created_at),
-                    _fmt_time(entry.updated_at),
+                    _cell_safe(entry.id, 64),
+                    _cell_safe(entry.content, 500),
+                    _cell_safe(entry.category, 256),
+                    _cell_safe(", ".join(entry.tags) if entry.tags else "", 1024),
+                    _cell_safe(entry.privacy.value, 32),
+                    _cell_safe(entry.importance.value, 32),
+                    _cell_safe(entry.memory_type.value, 32),
+                    _cell_safe(entry.layer.value, 32),
+                    _cell_safe(entry.access_count, 32),
+                    _cell_safe(_fmt_time(entry.created_at), 32),
+                    _cell_safe(_fmt_time(entry.updated_at), 32),
                     "⭐" if entry.starred else "",
                 ])
 
@@ -2618,25 +2981,34 @@ class StorageEngine:
             wb.save(str(out))
         except ImportError:
             import csv
-            with open(str(out).replace('.xlsx', '.csv'), 'w', encoding='utf-8-sig', newline='') as f:
+            out_csv = Path(str(out).replace('.xlsx', '.csv'))
+            with open(str(out_csv), 'w', encoding='utf-8-sig', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(["ID", "内容", "分类", "标签", "隐私等级", "重要性", "类型", "层级", "访问次数", "创建时间", "更新时间", "收藏"])
                 for entry in entries:
                     writer.writerow([
-                        entry.id,
-                        entry.content,
-                        entry.category,
-                        ", ".join(entry.tags) if entry.tags else "",
-                        entry.privacy.value,
-                        entry.importance.value,
-                        entry.memory_type.value,
-                        entry.layer.value,
-                        entry.access_count,
-                        entry.created_at,
-                        entry.updated_at,
-                        entry.starred,
+                        _cell_safe(entry.id, 64),
+                        _cell_safe(entry.content, 500),
+                        _cell_safe(entry.category, 256),
+                        _cell_safe(", ".join(entry.tags) if entry.tags else "", 1024),
+                        _cell_safe(entry.privacy.value, 32),
+                        _cell_safe(entry.importance.value, 32),
+                        _cell_safe(entry.memory_type.value, 32),
+                        _cell_safe(entry.layer.value, 32),
+                        _cell_safe(entry.access_count, 32),
+                        _cell_safe(entry.created_at, 32),
+                        _cell_safe(entry.updated_at, 32),
+                        _cell_safe(entry.starred, 8),
                     ])
-                out = Path(str(out).replace('.xlsx', '.csv'))
+            out = out_csv
+
+        # v5.2.9 安全加固：权限收紧
+        try:
+            import stat
+            import os
+            os.chmod(out, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+        except (OSError, ImportError):
+            pass
 
         return out
 
@@ -2644,7 +3016,7 @@ class StorageEngine:
                           input_path: str,
                           target_category: Optional[str] = None,
                           target_layer: Optional[MemoryLayer] = None) -> Dict[str, int]:
-        """从 Excel 文件导入记忆（v5.1.9 新增）
+        """从 Excel 文件导入记忆（v5.1.9 新增，v5.2.9 安全加固：路径校验 + 长度限制 + 枚举白名单）
 
         Args:
             input_path: Excel 文件路径
@@ -2654,19 +3026,29 @@ class StorageEngine:
         Returns:
             {imported, skipped, failed}
         """
-        path = Path(input_path)
-        if not path.exists():
-            return {"imported": 0, "skipped": 0, "failed": 0}
+        # v5.2.9 安全加固：路径校验 + 大小限制
+        path = _safe_path(input_path, must_exist=True,
+                          allowed_exts={".xlsx", ".xls", ".csv"},
+                          max_size=500 * 1024 * 1024)
 
         entries = []
+        _MAX_CONTENT = 1000000
+        _MAX_CAT = 256
+        _MAX_TAG = 128
+        _MAX_TAGS = 64
+        _MAX_ROWS = 100000
+
         try:
             import openpyxl
-            wb = openpyxl.load_workbook(str(path))
+            wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
             ws = wb.active
 
             headers = {}
-            for col_num, cell in enumerate(next(ws.iter_rows(values_only=True)), 1):
-                headers[str(cell).strip().lower()] = col_num
+            header_row = next(ws.iter_rows(values_only=True))
+            for col_num, cell in enumerate(header_row, 1):
+                h = str(cell).strip().lower() if cell is not None else ""
+                if h:
+                    headers[h] = col_num
 
             content_col = headers.get("内容", 2)
             category_col = headers.get("分类", 3)
@@ -2675,15 +3057,27 @@ class StorageEngine:
             importance_col = headers.get("重要性", 6)
             layer_col = headers.get("层级", 8)
 
+            row_count = 0
             for row in ws.iter_rows(min_row=2, values_only=True):
-                if row[content_col - 1] and str(row[content_col - 1]).strip():
-                    content = str(row[content_col - 1]).strip()
-                    category = target_category or (str(row[category_col - 1]).strip() if row[category_col - 1] else "general")
-                    tags_str = str(row[tags_col - 1]).strip() if row[tags_col - 1] else ""
-                    tags = [t.strip() for t in tags_str.split(',') if t.strip()] if tags_str else []
-                    privacy_str = str(row[privacy_col - 1]).strip() if row[privacy_col - 1] else "internal"
-                    importance_str = str(row[importance_col - 1]).strip() if row[importance_col - 1] else "medium"
-                    layer_str = str(row[layer_col - 1]).strip() if row[layer_col - 1] else "short_term"
+                row_count += 1
+                if row_count > _MAX_ROWS:
+                    break
+                cell_content = row[content_col - 1] if content_col - 1 < len(row) else None
+                if cell_content and str(cell_content).strip():
+                    content = str(cell_content).strip()[:_MAX_CONTENT]
+                    cat_cell = row[category_col - 1] if category_col - 1 < len(row) else None
+                    category = target_category or (
+                        str(cat_cell).strip()[:_MAX_CAT] if cat_cell else "general"
+                    )
+                    tags_cell = row[tags_col - 1] if tags_col - 1 < len(row) else None
+                    tags_str = str(tags_cell).strip() if tags_cell else ""
+                    tags = [t.strip()[:_MAX_TAG] for t in tags_str.split(',') if t.strip()][:_MAX_TAGS] if tags_str else []
+                    priv_cell = row[privacy_col - 1] if privacy_col - 1 < len(row) else None
+                    privacy_str = str(priv_cell).strip() if priv_cell else "internal"
+                    imp_cell = row[importance_col - 1] if importance_col - 1 < len(row) else None
+                    importance_str = str(imp_cell).strip() if imp_cell else "medium"
+                    lay_cell = row[layer_col - 1] if layer_col - 1 < len(row) else None
+                    layer_str = str(lay_cell).strip() if lay_cell else "short_term"
 
                     entries.append({
                         "content": content,
@@ -2697,15 +3091,20 @@ class StorageEngine:
             import csv
             with open(str(path), 'r', encoding='utf-8-sig') as f:
                 reader = csv.DictReader(f)
+                row_count = 0
                 for row in reader:
-                    if row.get("内容") and row["内容"].strip():
-                        content = row["内容"].strip()
-                        category = target_category or (row.get("分类", "").strip() or "general")
-                        tags_str = row.get("标签", "")
-                        tags = [t.strip() for t in tags_str.split(',') if t.strip()] if tags_str else []
-                        privacy_str = row.get("隐私等级", "internal").strip()
-                        importance_str = row.get("重要性", "medium").strip()
-                        layer_str = row.get("层级", "short_term").strip()
+                    row_count += 1
+                    if row_count > _MAX_ROWS:
+                        break
+                    if row.get("内容") and str(row["内容"]).strip():
+                        content = str(row["内容"]).strip()[:_MAX_CONTENT]
+                        cat_val = str(row.get("分类", "") or "general").strip()
+                        category = target_category or (cat_val[:_MAX_CAT] if cat_val else "general")
+                        tags_str = str(row.get("标签", ""))
+                        tags = [t.strip()[:_MAX_TAG] for t in tags_str.split(',') if t.strip()][:_MAX_TAGS] if tags_str else []
+                        privacy_str = str(row.get("隐私等级", "internal")).strip()
+                        importance_str = str(row.get("重要性", "medium")).strip()
+                        layer_str = str(row.get("层级", "short_term")).strip()
 
                         entries.append({
                             "content": content,
@@ -2720,12 +3119,16 @@ class StorageEngine:
         skipped = 0
         failed = 0
 
+        # v5.2.9 安全加固：条数限制
+        if len(entries) > _MAX_ROWS:
+            entries = entries[:_MAX_ROWS]
+
         for entry_data in entries:
             try:
                 existing = None
                 rows = self._get_conn().execute(
                     "SELECT id FROM memories WHERE content = ? AND category = ?",
-                    (entry_data["content"], entry_data["category"])
+                    (entry_data["content"][:5000], entry_data["category"][:_MAX_CAT])
                 ).fetchall()
                 if rows:
                     existing = rows[0][0]
