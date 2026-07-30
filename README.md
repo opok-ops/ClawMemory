@@ -25,7 +25,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    MindForge v5.2.6                        │
+│                    MindForge v5.2.7                        │
 ├─────────────────────────────────────────────────────────┤
 │  🎯 认知层 (Cognitive Layer)                              │
 │     人格引擎 · 知识图谱 · 记忆演化 · 联邦网络              │
@@ -344,6 +344,22 @@ context = adapter.get_context("数据库优化")
 ---
 
 ## 📝 更新日志
+
+### v5.2.7 (2026-07-30)
+
+**🔒 安全加固（工信部合规）**
+- 修复 14 个路径遍历漏洞：所有 `export-*`/`import-*`/`backup`/`db-backup`/`db-restore` 命令增加统一路径校验
+- 修复 `db-restore` 严重漏洞：增加 SQLite 文件签名校验 + `PRAGMA integrity_check` 完整性验证
+- 修复 `export-md` 存储型 XSS：记忆内容/分类/标签未转义，Markdown 渲染器可执行内嵌 HTML
+- 修复 `export-xml` 字段未转义：枚举值/时间戳/数值字段统一 `xml_escape`
+- 修复 `export-html` 时间戳未转义
+- 增强 `import-url` SSRF 防护：DNS 解析校验防重绑定、十进制/十六进制 IP 编码检测、IPv6 内网段屏蔽
+
+**📜 记忆版本历史（新功能）**
+- `history <memory_id>` - 查看记忆的修改历史，列出所有历史版本
+- `rollback <version_id>` - 回滚到指定历史版本（自动保存当前内容为新版本）
+- `update` 命令修改记忆内容时自动保存历史版本
+- 新增 `memory_versions` 表，支持版本号自增和高效索引查询
 
 ### v5.2.6 (2026-07-30)
 

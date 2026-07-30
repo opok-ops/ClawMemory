@@ -1,5 +1,5 @@
 """
-MindForge v5.2.6 主入口类
+MindForge v5.2.7 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,11 +31,11 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.2.6"
+    __version__ = "5.2.7"
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.2.6"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.2.7"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -1648,3 +1648,22 @@ class MindForge:
     def list_pinned(self, limit: int = 50) -> list:
         """列出所有置顶记忆"""
         return self._storage.list_pinned(limit)
+
+    # ===== 记忆版本历史（v5.2.7 新增）=====
+
+    def save_version(self, memory_id: str, content: str, category: str = "",
+                     tags=None, importance="", actor: str = "") -> Dict[str, Any]:
+        """保存记忆历史版本（v5.2.7 新增）"""
+        return self._storage.save_version(memory_id, content, category, tags, importance, actor)
+
+    def list_versions(self, memory_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """列出记忆的所有历史版本（v5.2.7 新增）"""
+        return self._storage.list_versions(memory_id, limit)
+
+    def get_version(self, version_id: str) -> Optional[Dict[str, Any]]:
+        """获取指定版本详情（v5.2.7 新增）"""
+        return self._storage.get_version(version_id)
+
+    def rollback_to_version(self, version_id: str, actor: str = "") -> Dict[str, Any]:
+        """回滚记忆到指定历史版本（v5.2.7 新增）"""
+        return self._storage.rollback_to_version(version_id, actor)

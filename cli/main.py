@@ -39,8 +39,11 @@ import argparse
 import getpass
 import html
 import time
+import socket
+import ipaddress
 from pathlib import Path
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from xml.sax.saxutils import escape as xml_escape
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -57,7 +60,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.2.6"
+    __version__ = "5.2.7"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -122,6 +125,134 @@ def format_size(bytes_val: int) -> str:
         return f"{bytes_val / 1024 / 1024:.2f} MB"
 
 
+# ===== 路径安全校验（v5.2.7 新增：防止路径遍历攻击）=====
+# 允许的工作根目录：当前工作目录 + 用户主目录下的 data
+_ALLOWED_BASE_DIRS = [
+    Path.cwd().resolve(),
+    Path.home().resolve() / "data",
+    Path.home().resolve() / ".mindforge",
+]
+
+# 允许的导入/导出文件扩展名
+_ALLOWED_EXPORT_EXTS = {".md", ".html", ".xml", ".json", ".xlsx", ".csv", ".txt"}
+_ALLOWED_IMPORT_EXTS = {".md", ".xml", ".json", ".xlsx", ".csv", ".txt"}
+
+
+def _validate_path(path_str, base_dir=None, must_exist=False,
+                   allow_symlinks=False, max_size=None, allowed_exts=None):
+    """校验文件路径安全性，防止路径遍历攻击（v5.2.7 新增）
+
+    Args:
+        path_str: 用户输入的路径
+        base_dir: 允许的基础目录，默认使用 _ALLOWED_BASE_DIRS
+        must_exist: 是否要求文件必须存在（用于读取）
+        allow_symlinks: 是否允许符号链接（默认禁止）
+        max_size: 文件大小上限（字节，仅 must_exist=True 时检查）
+        allowed_exts: 允许的文件扩展名集合，None 表示不限制
+
+    Returns:
+        Path: 校验通过后的绝对路径
+
+    Raises:
+        ValueError: 路径不安全或校验失败
+    """
+    if not path_str or not isinstance(path_str, str):
+        raise ValueError("路径不能为空")
+    if len(path_str) > 4096:
+        raise ValueError("路径过长（上限 4096 字符）")
+
+    target = Path(path_str)
+    # 相对路径基于当前工作目录解析
+    if not target.is_absolute():
+        target = Path.cwd() / target
+
+    # resolve 解析所有 .. 和符号链接
+    try:
+        resolved = target.resolve()
+    except (OSError, RuntimeError) as e:
+        raise ValueError(f"路径解析失败: {e}")
+
+    # 校验在允许的基础目录内（防止路径遍历越界）
+    base_dirs = [Path(b).resolve() for b in ([base_dir] if base_dir else _ALLOWED_BASE_DIRS)]
+    in_allowed = False
+    for b in base_dirs:
+        try:
+            resolved.relative_to(b)
+            in_allowed = True
+            break
+        except ValueError:
+            continue
+    if not in_allowed:
+        raise ValueError(f"路径越界：只允许在 {', '.join(str(b) for b in base_dirs)} 之下")
+
+    # 符号链接检查
+    if not allow_symlinks:
+        # 检查目标本身或父路径中是否存在符号链接
+        check_path = resolved
+        while check_path != check_path.parent:
+            if check_path.is_symlink():
+                raise ValueError(f"不允许操作符号链接: {check_path}")
+            check_path = check_path.parent
+
+    # 扩展名检查
+    if allowed_exts is not None:
+        ext = resolved.suffix.lower()
+        if ext not in allowed_exts:
+            raise ValueError(f"不支持的文件类型: {ext}（允许: {', '.join(sorted(allowed_exts))}）")
+
+    # 存在性检查
+    if must_exist and not resolved.exists():
+        raise ValueError(f"文件不存在: {resolved}")
+
+    # 大小检查
+    if max_size is not None and resolved.exists() and resolved.is_file():
+        size = resolved.stat().st_size
+        if size > max_size:
+            raise ValueError(f"文件过大: {size} 字节（上限 {max_size}）")
+
+    return resolved
+
+
+def _safe_export_path(output_path, default_name, ext):
+    """安全处理导出路径（v5.2.7 新增）
+
+    Args:
+        output_path: 用户指定的输出路径（可能为空）
+        default_name: 默认文件名
+        ext: 允许的扩展名（如 ".md"）
+
+    Returns:
+        校验后的 Path 对象
+    """
+    if not output_path:
+        # 默认输出到当前目录
+        out = Path.cwd() / default_name
+    else:
+        out = output_path
+
+    return _validate_path(out, allowed_exts={ext})
+
+
+def _safe_import_path(input_path, max_size=100 * 1024 * 1024):
+    """安全处理导入路径（v5.2.7 新增）
+
+    Args:
+        input_path: 用户指定的输入路径
+        max_size: 文件大小上限，默认 100MB
+
+    Returns:
+        校验后的 Path 对象
+    """
+    return _validate_path(
+        input_path,
+        must_exist=True,
+        allow_symlinks=False,
+        max_size=max_size,
+        allowed_exts=_ALLOWED_IMPORT_EXTS,
+    )
+
+
+
 def print_banner():
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
@@ -135,7 +266,7 @@ def print_banner():
 def cmd_init(args):
     """初始化 MindForge"""
     print_banner()
-    print(c("MindForge v5.2.5 初始化向导", "bold"))
+    print(c("MindForge v5.2.7 初始化向导", "bold"))
     print("=" * 50)
 
     password = getpass.getpass("请设置加密密码（用于保护记忆）：")
@@ -768,8 +899,15 @@ def cmd_export_md(args):
     """导出为 Markdown（v5.0.4 新增）"""
     cm = _get_memory(args)
 
+    try:
+        output = _safe_export_path(args.output, "memory_export.md", ".md")
+    except ValueError as e:
+        print(c(f"❌ 路径校验失败: {e}", "red"))
+        cm.close()
+        return 1
+
     path = cm.export_as_markdown(
-        output_path=args.output,
+        output_path=str(output),
         category=args.category,
         layer=MemoryLayer.from_string(args.layer) if args.layer else None,
         starred_only=args.starred,
@@ -981,7 +1119,12 @@ def cmd_import_md(args):
     """从 Markdown 导入记忆（v5.0.8 新增）"""
     cm = _get_memory(args)
 
-    input_path = Path(args.input)
+    try:
+        input_path = _safe_import_path(args.input)
+    except ValueError as e:
+        print(c(f"❌ 路径校验失败: {e}", "red"))
+        return 1
+
     if not input_path.exists():
         print(c(f"❌ 文件不存在：{input_path}", "red"))
         return 1
@@ -1142,14 +1285,19 @@ def cmd_export_html(args):
     <div class="card-content">{html.escape(entry.content)}</div>
     <div class="card-footer">
         <div class="tags">{tags_html}</div>
-        <span>{format_time(entry.created_at)}</span>
+        <span>{html.escape(str(format_time(entry.created_at)))}</span>
     </div>
 </div>"""
 
-    export_time = format_time(time.time())
+    export_time = html.escape(str(format_time(time.time())))
     html_content = html_template.format(count=len(entries), export_time=export_time, cards=cards_html, __version__=__version__)
 
-    output_path = Path(args.output) if args.output else Path("memory_export.html")
+    try:
+        output_path = _safe_export_path(args.output, "memory_export.html", ".html")
+    except ValueError as e:
+        print(c(f"❌ 路径校验失败: {e}", "red"))
+        cm.close()
+        return 1
     output_path.write_text(html_content, encoding='utf-8')
 
     print(c(f"✅ HTML 导出完成！", "green"))
@@ -1279,7 +1427,13 @@ def cmd_personality(args):
 def cmd_backup(args):
     """备份"""
     cm = _get_memory(args)
-    backup_path = cm.backup(args.output)
+    try:
+        backup_dir = _validate_path(args.output or "./data/backup", allow_symlinks=False)
+    except ValueError as e:
+        print(c(f"❌ 路径校验失败: {e}", "red"))
+        cm.close()
+        return 1
+    backup_path = cm.backup(str(backup_dir))
     print(c(f"✅ 备份已创建：{backup_path}", "green"))
     print(f"   大小：{format_size(backup_path.stat().st_size)}")
     cm.close()
@@ -1291,25 +1445,40 @@ def cmd_export(args):
     cm = _get_memory(args)
     layer = MemoryLayer.from_string(args.layer) if args.layer else None
 
+    # 路径安全校验（v5.2.7 新增）
+    _fmt_ext_map = {"json": ".json", "csv": ".csv"}
+    _fmt_default_map = {"json": "memory_export.json", "csv": "memory_export.csv"}
+    ext = _fmt_ext_map.get(args.format)
+    if ext:
+        try:
+            output = _safe_export_path(args.output, _fmt_default_map[args.format], ext)
+        except ValueError as e:
+            print(c(f"❌ 路径校验失败: {e}", "red"))
+            cm.close()
+            return 1
+    else:
+        output = args.output
+
     if args.format == "json":
         count = cm.export_json(
-            output_path=args.output,
+            output_path=str(output),
             category=args.category,
             layer=layer,
             include_private=args.include_private,
         )
     elif args.format == "csv":
         count = cm.export_csv(
-            output_path=args.output,
+            output_path=str(output),
             category=args.category,
             include_private=args.include_private,
         )
     else:
         print(c(f"❌ 不支持的格式：{args.format}", "red"))
+        cm.close()
         return 1
 
     print(c(f"✅ 导出成功！共 {count} 条记忆", "green"))
-    print(f"   文件：{args.output}")
+    print(f"   文件：{output}")
     print(f"   格式：{args.format.upper()}")
     cm.close()
     return 0
@@ -1320,8 +1489,15 @@ def cmd_import(args):
     cm = _get_memory(args)
     target_layer = MemoryLayer.from_string(args.target_layer) if args.target_layer else None
 
+    try:
+        input_path = _safe_import_path(args.input)
+    except ValueError as e:
+        print(c(f"❌ 路径校验失败: {e}", "red"))
+        cm.close()
+        return 1
+
     stats = cm.import_json(
-        input_path=args.input,
+        input_path=str(input_path),
         skip_duplicates=not args.force,
         target_layer=target_layer,
     )
@@ -1530,13 +1706,66 @@ def cmd_pinned(args):
     return 0
 
 
+# ===== 记忆版本历史命令（v5.2.7 新增）=====
+
+def cmd_history(args):
+    """查看记忆的修改历史"""
+    cm = _get_memory(args)
+    versions = cm.list_versions(args.memory_id, limit=args.limit)
+
+    if not versions:
+        print(c("\n📭 该记忆暂无修改历史", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n📜 记忆 {args.memory_id} 的修改历史（共 {len(versions)} 个版本）", "cyan"))
+    print("=" * 70)
+
+    for i, v in enumerate(versions, 1):
+        print(f"{i}. 版本 v{v['version_number']}  {c(v['version_id'], 'cyan')}")
+        print(f"   内容: {v['content_preview']}")
+        print(f"   分类: {v.get('category', '-')} | 重要度: {v.get('importance', '-')}")
+        print(f"   修改者: {v.get('actor', '-')} | 时间: {format_time(v['changed_at'])}")
+        print()
+
+    cm.close()
+    return 0
+
+def cmd_rollback(args):
+    """回滚记忆到指定历史版本"""
+    cm = _get_memory(args)
+
+    # 先获取版本信息展示给用户
+    version = cm.get_version(args.version_id)
+    if not version:
+        print(c(f"\n❌ 版本不存在: {args.version_id}", "red"))
+        cm.close()
+        return 1
+
+    print(c(f"\n📜 目标版本 v{version['version_number']}", "cyan"))
+    print(f"   内容预览: {version['content'][:80]}...")
+    print(c("   ⚠️ 当前内容将被保存为新版本后回滚", "yellow"))
+
+    result = cm.rollback_to_version(args.version_id, actor="cli")
+
+    if result.get("success"):
+        print(c("\n✅ 回滚成功", "green"))
+        print(f"   记忆 ID: {result['memory_id']}")
+        print(f"   已保存当前版本为 v{result.get('saved_current_as_version', '?')}")
+    else:
+        print(c(f"\n❌ 回滚失败: {result.get('error', '未知错误')}", "red"))
+
+    cm.close()
+    return 0 if result.get("success") else 1
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="mindforge",
-        description="MindForge v5.2.6 - AI Agent 终身记忆系统",
+        description="MindForge v5.2.7 - AI Agent 终身记忆系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", "-v", action="version", version="MindForge v5.2.6")
+    parser.add_argument("--version", "-v", action="version", version="MindForge v5.2.7")
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")
@@ -2226,6 +2455,14 @@ def main():
     p_pinned.add_argument("--limit", "-l", type=int, default=50,
                           help="数量限制（默认 50）")
 
+    # ===== 记忆版本历史命令（v5.2.7 新增）=====
+    p_history = sub.add_parser("history", help="查看记忆的修改历史（v5.2.7 新增）")
+    p_history.add_argument("memory_id", help="记忆 ID")
+    p_history.add_argument("--limit", "-l", type=int, default=50, help="返回版本数量上限")
+
+    p_rollback = sub.add_parser("rollback", help="回滚记忆到指定历史版本（v5.2.7 新增）")
+    p_rollback.add_argument("version_id", help="目标版本 ID")
+
     args = parser.parse_args()
 
     commands = {
@@ -2345,6 +2582,9 @@ def main():
         "pin": cmd_pin,
         "unpin": cmd_unpin,
         "pinned": cmd_pinned,
+        # v5.2.7 新增：记忆版本历史
+        "history": cmd_history,
+        "rollback": cmd_rollback,
     }
 
     cmd = commands.get(args.command)
@@ -2397,6 +2637,42 @@ def cmd_batch_add(args):
     return 0
 
 
+def _is_private_ip(ip_str):
+    """检查 IP 是否为内网/保留地址"""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
+    except ValueError:
+        return False
+
+
+def _validate_url_safe(url):
+    """校验 URL 安全性，防止 SSRF"""
+    if len(url) > 2048:
+        raise ValueError("URL 过长")
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("只允许 http/https 协议")
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("无效的 hostname")
+    # 检查十进制/十六进制 IP 编码
+    if hostname.isdigit():
+        raise ValueError("不允许十进制 IP 编码")
+    if hostname.lower().startswith("0x"):
+        raise ValueError("不允许十六进制 IP 编码")
+    # DNS 解析并检查所有 IP
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        raise ValueError("DNS 解析失败")
+    for info in infos:
+        ip = info[4][0]
+        if _is_private_ip(ip):
+            raise ValueError(f"hostname 解析到内网地址: {ip}")
+    return url
+
+
 def cmd_import_url(args):
     """从 URL 导入网页内容（v5.1.3 新增）"""
     cm = _get_memory(args)
@@ -2406,19 +2682,7 @@ def cmd_import_url(args):
         import re
         from urllib.parse import urlparse
 
-        parsed = urlparse(args.url)
-        if parsed.scheme not in ("http", "https"):
-            print(c("❌ 仅支持 http/https 协议", "red"))
-            cm.close()
-            return 1
-        if parsed.hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or \
-           parsed.hostname.startswith(("10.", "172.16.", "172.17.", "172.18.", "172.19.",
-                                        "172.20.", "172.21.", "172.22.", "172.23.", "172.24.",
-                                        "172.25.", "172.26.", "172.27.", "172.28.", "172.29.",
-                                        "172.30.", "172.31.", "192.168.", "169.254.")):
-            print(c("❌ 不支持访问内网/元数据地址", "red"))
-            cm.close()
-            return 1
+        _validate_url_safe(args.url)
 
         with urllib.request.urlopen(args.url, timeout=10) as response:
             content = response.read(5 * 1024 * 1024).decode("utf-8", errors="ignore")
@@ -2484,7 +2748,12 @@ def cmd_export_xml(args):
         print(c("⚠️  没有可导出的记忆", "yellow"))
         return 0
 
-    output_path = Path(args.output)
+    try:
+        output_path = _safe_export_path(args.output, "memory_export.xml", ".xml")
+    except ValueError as e:
+        print(c(f"❌ 路径校验失败: {e}", "red"))
+        cm.close()
+        return 1
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     xml_content = """<?xml version="1.0" encoding="UTF-8"?>
@@ -2505,18 +2774,18 @@ def cmd_export_xml(args):
             <content>{xml_escape(entry.content)}</content>
             <category>{xml_escape(str(entry.category))}</category>
             <tags>{tags_xml}</tags>
-            <privacy>{entry.privacy.value}</privacy>
-            <importance>{entry.importance.value}</importance>
-            <memory_type>{entry.memory_type.value}</memory_type>
-            <layer>{entry.layer.value}</layer>
-            <access_count>{entry.access_count}</access_count>
-            <created_at>{entry.created_at}</created_at>
-            <updated_at>{entry.updated_at}</updated_at>
+            <privacy>{xml_escape(str(entry.privacy.value))}</privacy>
+            <importance>{xml_escape(str(entry.importance.value))}</importance>
+            <memory_type>{xml_escape(str(entry.memory_type.value))}</memory_type>
+            <layer>{xml_escape(str(entry.layer.value))}</layer>
+            <access_count>{xml_escape(str(entry.access_count))}</access_count>
+            <created_at>{xml_escape(str(entry.created_at))}</created_at>
+            <updated_at>{xml_escape(str(entry.updated_at))}</updated_at>
             <starred>{'true' if entry.starred else 'false'}</starred>
         </memory>
 """
 
-    export_time = format_time(time.time())
+    export_time = xml_escape(str(format_time(time.time())))
     final_xml = xml_content.format(version=__version__, export_time=export_time, total=len(entries), memories=memories_xml)
 
     output_path.write_text(final_xml, encoding='utf-8')
@@ -2531,7 +2800,13 @@ def cmd_export_xml(args):
 def cmd_import_xml(args):
     """从 XML 导入记忆（v5.1.4 新增）"""
     cm = _get_memory(args)
-    input_path = Path(args.input)
+
+    try:
+        input_path = _safe_import_path(args.input)
+    except ValueError as e:
+        print(c(f"❌ 路径校验失败: {e}", "red"))
+        cm.close()
+        return 1
 
     if not input_path.exists():
         print(c(f"\n❌ 文件不存在: {input_path}", "red"))
@@ -2617,7 +2892,12 @@ def cmd_export_json(args):
         print(c("⚠️  没有可导出的记忆", "yellow"))
         return 0
 
-    output_path = Path(args.output)
+    try:
+        output_path = _safe_export_path(args.output, "memory_export.json", ".json")
+    except ValueError as e:
+        print(c(f"❌ 路径校验失败: {e}", "red"))
+        cm.close()
+        return 1
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     export_data = {
@@ -2659,7 +2939,13 @@ def cmd_export_json(args):
 def cmd_import_json(args):
     """从 JSON 导入记忆（v5.1.5 新增）"""
     cm = _get_memory(args)
-    input_path = Path(args.input)
+
+    try:
+        input_path = _safe_import_path(args.input)
+    except ValueError as e:
+        print(c(f"❌ 路径校验失败: {e}", "red"))
+        cm.close()
+        return 1
 
     if not input_path.exists():
         print(c(f"\n❌ 文件不存在: {input_path}", "red"))
@@ -3168,8 +3454,15 @@ def cmd_export_excel(args):
 
     layer = MemoryLayer.from_string(args.layer) if args.layer else None
 
+    try:
+        output = _safe_export_path(args.output, "memory_export.xlsx", ".xlsx")
+    except ValueError as e:
+        print(c(f"❌ 路径校验失败: {e}", "red"))
+        cm.close()
+        return 1
+
     path = cm.export_excel(
-        output_path=args.output,
+        output_path=str(output),
         category=args.category,
         layer=layer,
         starred_only=getattr(args, 'starred', False),
@@ -3186,7 +3479,13 @@ def cmd_export_excel(args):
 def cmd_import_excel(args):
     """从 Excel 导入记忆（v5.1.9 新增）"""
     cm = _get_memory(args)
-    input_path = Path(args.input)
+
+    try:
+        input_path = _safe_import_path(args.input)
+    except ValueError as e:
+        print(c(f"❌ 路径校验失败: {e}", "red"))
+        cm.close()
+        return 1
 
     if not input_path.exists():
         print(c(f"\n❌ 文件不存在: {input_path}", "red"))
@@ -3421,7 +3720,14 @@ def cmd_db_backup(args):
 
     print(c("\n💾 创建数据库备份...", "yellow"))
 
-    result = cm.create_backup(backup_dir=args.dir)
+    try:
+        backup_dir = _validate_path(args.dir or "./data/backups", allow_symlinks=False)
+    except ValueError as e:
+        print(c(f"❌ 路径校验失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    result = cm.create_backup(backup_dir=str(backup_dir))
 
     if result["success"]:
         print(c(f"\n✅ 备份成功", "green"))
@@ -3466,8 +3772,29 @@ def cmd_db_restore(args):
     """从备份恢复（v5.2.0 新增）"""
     cm = _get_memory(args)
 
+    # 路径安全校验（v5.2.7 新增：防止路径遍历 + 符号链接攻击）
+    try:
+        backup_file = _validate_path(args.backup, must_exist=True, allow_symlinks=False)
+    except ValueError as e:
+        print(c(f"❌ 路径校验失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    # SQLite 文件签名校验（v5.2.7 新增：防止恢复非数据库文件导致损坏）
+    try:
+        with open(backup_file, 'rb') as f:
+            header = f.read(16)
+    except (OSError, IOError) as e:
+        print(c(f"❌ 读取备份文件失败: {e}", "red"))
+        cm.close()
+        return 1
+    if not header.startswith(b'SQLite format 3'):
+        print(c("❌ 文件不是有效的 SQLite 数据库", "red"))
+        cm.close()
+        return 1
+
     print(c(f"\n⚠️  恢复备份警告:", "yellow"))
-    print(f"   备份文件: {args.backup}")
+    print(f"   备份文件: {backup_file}")
     print(f"   恢复前自动备份: {'否' if args.no_pre_backup else '是'}")
     print(c("\n   此操作将覆盖当前数据库！", "red"))
 
@@ -3479,7 +3806,7 @@ def cmd_db_restore(args):
             return 0
 
     result = cm.restore_backup(
-        backup_path=args.backup,
+        backup_path=str(backup_file),
         create_backup_before=not args.no_pre_backup,
     )
 

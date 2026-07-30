@@ -166,6 +166,23 @@ class StorageEngine:
             CREATE INDEX IF NOT EXISTS idx_link_target ON memory_links(target_id);
             CREATE INDEX IF NOT EXISTS idx_link_type ON memory_links(link_type);
 
+            -- 记忆版本历史（v5.2.7 新增）
+            CREATE TABLE IF NOT EXISTS memory_versions (
+                id TEXT PRIMARY KEY,
+                memory_id TEXT NOT NULL,
+                version_number INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                category TEXT,
+                tags TEXT,
+                importance TEXT,
+                actor TEXT DEFAULT '',
+                changed_at REAL,
+                FOREIGN KEY (memory_id) REFERENCES memories(id),
+                UNIQUE(memory_id, version_number)
+            );
+            CREATE INDEX IF NOT EXISTS idx_versions_memory_id ON memory_versions(memory_id);
+            CREATE INDEX IF NOT EXISTS idx_versions_changed_at ON memory_versions(changed_at);
+
             CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
                 content, category, tags,
                 content=''
@@ -578,6 +595,21 @@ class StorageEngine:
                 except sqlite3.OperationalError:
                     pass
 
+        # v5.2.7: 更新前读取旧内容，用于保存历史版本
+        old_entry = None
+        if content is not None:
+            old_row = conn.execute(
+                "SELECT content, category, tags, importance FROM memories WHERE id = ?",
+                (entry_id,)
+            ).fetchone()
+            if old_row:
+                old_entry = {
+                    "content": old_row[0] or "",
+                    "category": old_row[1] or "",
+                    "tags": old_row[2],
+                    "importance": old_row[3] or "",
+                }
+
         # 更新 memories 表
         updates.append("updated_at = ?")
         params.append(now)
@@ -598,6 +630,26 @@ class StorageEngine:
                     )
                 except sqlite3.OperationalError:
                     pass
+
+        # v5.2.7: 保存历史版本（仅当 content 变更时）
+        if content is not None and old_entry:
+            try:
+                old_tags = old_entry.get("tags", "")
+                if isinstance(old_tags, str) and old_tags.startswith("["):
+                    try:
+                        old_tags = json.loads(old_tags)
+                    except Exception:
+                        pass
+                self.save_version(
+                    memory_id=entry_id,
+                    content=old_entry.get("content", ""),
+                    category=old_entry.get("category", ""),
+                    tags=old_tags,
+                    importance=old_entry.get("importance", ""),
+                    actor=actor,
+                )
+            except Exception:
+                pass  # 版本保存失败不影响主流程
 
         conn.commit()
 
@@ -1115,6 +1167,8 @@ class StorageEngine:
         Returns:
             导出文件的 Path 对象
         """
+        import html as _html
+
         entries = self.list_memories(
             category=category,
             layer=layer,
@@ -1133,7 +1187,7 @@ class StorageEngine:
             "",
             f"- 导出时间：{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
             f"- 记忆总数：{len(entries)}",
-            f"- 筛选条件：分类={category or '全部'}, 层级={layer.value if layer else '全部'}, 仅收藏={'是' if starred_only else '否'}",
+            f"- 筛选条件：分类={_html.escape(str(category)) if category else '全部'}, 层级={layer.value if layer else '全部'}, 仅收藏={'是' if starred_only else '否'}",
             "",
             "---",
             "",
@@ -1145,24 +1199,24 @@ class StorageEngine:
             groups.setdefault(e.category, []).append(e)
 
         for cat in sorted(groups.keys()):
-            lines.append(f"## 📂 {cat}")
+            lines.append(f"## 📂 {_html.escape(str(cat))}")
             lines.append("")
             for e in groups[cat]:
                 star = "⭐ " if e.starred else ""
-                lines.append(f"### {star}{e.preview[:60]}")
+                lines.append(f"### {star}{_html.escape(str(e.preview[:60]))}")
                 lines.append("")
-                lines.append(f"- **ID**: `{e.id}`")
+                lines.append(f"- **ID**: `{_html.escape(str(e.id))}`")
                 lines.append(f"- **层级**: {e.layer.value}")
                 lines.append(f"- **隐私**: {e.privacy.value}")
                 lines.append(f"- **重要性**: {e.importance.value}")
                 lines.append(f"- **类型**: {e.memory_type.value}")
-                lines.append(f"- **标签**: {', '.join(f'#{t}' for t in e.tags) if e.tags else '无'}")
+                lines.append(f"- **标签**: {', '.join(f'#{_html.escape(str(t))}' for t in e.tags) if e.tags else '无'}")
                 lines.append(f"- **创建**: {_fmt_time(e.created_at)}")
                 lines.append(f"- **访问**: {e.access_count} 次")
                 lines.append("")
                 lines.append("**内容**：")
                 lines.append("")
-                lines.append(e.content)
+                lines.append(_html.escape(str(e.content)))
                 lines.append("")
                 lines.append("---")
                 lines.append("")
@@ -3128,11 +3182,13 @@ class StorageEngine:
             "backup_created": None,
         }
 
+        pre_backup_path = None
         try:
             if create_backup_before:
                 pre_backup = self.create_backup()
                 if pre_backup["success"]:
                     result["backup_created"] = pre_backup["path"]
+                    pre_backup_path = pre_backup["path"]
 
             if self._conn:
                 self._conn.close()
@@ -3141,6 +3197,40 @@ class StorageEngine:
             shutil.copy2(str(backup_file), str(self.db_path))
 
             self._init_db()
+
+            # PRAGMA integrity_check 校验（v5.2.7 新增：确保恢复的数据库结构完整）
+            if self._conn:
+                try:
+                    cur = self._conn.execute("PRAGMA integrity_check")
+                    integrity_row = cur.fetchone()
+                    cur.close()
+                except sqlite3.DatabaseError as ie:
+                    result["error"] = f"数据库完整性校验异常: {ie}"
+                    # 校验异常时尝试回滚到恢复前的备份
+                    if pre_backup_path:
+                        try:
+                            self._conn.close()
+                            self._conn = None
+                            shutil.copy2(pre_backup_path, str(self.db_path))
+                            self._init_db()
+                        except (OSError, IOError):
+                            pass
+                    return result
+
+                if integrity_row is None or str(integrity_row[0]).lower() != "ok":
+                    integrity_msg = integrity_row[0] if integrity_row else "无结果"
+                    result["error"] = f"数据库完整性校验失败: {integrity_msg}"
+                    # 完整性校验失败时尝试回滚到恢复前的备份
+                    if pre_backup_path:
+                        try:
+                            self._conn.close()
+                            self._conn = None
+                            shutil.copy2(pre_backup_path, str(self.db_path))
+                            self._init_db()
+                        except (OSError, IOError):
+                            pass
+                    return result
+
             result["success"] = True
         except (OSError, IOError) as e:
             result["error"] = str(e)
@@ -4360,6 +4450,164 @@ class StorageEngine:
         cursor = conn.execute("DELETE FROM memory_links WHERE id = ?", (link_id,))
         conn.commit()
         return cursor.rowcount > 0
+
+    # ===== 记忆版本历史（v5.2.7 新增）=====
+
+    def save_version(self, memory_id: str, content: str, category: str,
+                     tags, importance, actor: str = "") -> Dict[str, Any]:
+        """保存记忆的历史版本（v5.2.7 新增）"""
+        # 输入校验
+        if not memory_id or len(memory_id) > 128:
+            return {"success": False, "error": "记忆 ID 无效"}
+        if not content or len(content) > 100000:
+            return {"success": False, "error": "内容无效或过长"}
+
+        conn = self._get_conn()
+        try:
+            # 检查记忆是否存在
+            row = conn.execute("SELECT id FROM memories WHERE id = ?", (memory_id,)).fetchone()
+            if not row:
+                return {"success": False, "error": "记忆不存在"}
+
+            # 获取当前版本号
+            row = conn.execute(
+                "SELECT MAX(version_number) FROM memory_versions WHERE memory_id = ?",
+                (memory_id,)
+            ).fetchone()
+            next_version = (row[0] or 0) + 1
+
+            version_id = f"ver_{uuid.uuid4().hex[:12]}"
+            now = time.time()
+            tags_str = json.dumps(tags, ensure_ascii=False) if isinstance(tags, list) else str(tags or "")
+
+            conn.execute(
+                """INSERT INTO memory_versions
+                   (id, memory_id, version_number, content, category, tags, importance, actor, changed_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (version_id, memory_id, next_version, content, category or "",
+                 tags_str, str(importance or ""), actor or "", now)
+            )
+            conn.commit()
+            return {
+                "success": True,
+                "version_id": version_id,
+                "version_number": next_version,
+                "memory_id": memory_id,
+            }
+        except Exception as e:
+            conn.rollback()
+            return {"success": False, "error": str(e)}
+
+    def list_versions(self, memory_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """列出记忆的所有历史版本（v5.2.7 新增）"""
+        if not memory_id or len(memory_id) > 128:
+            return []
+        # 限制 limit 范围
+        limit = max(1, min(limit, 500))
+
+        conn = self._get_conn()
+        rows = conn.execute(
+            """SELECT id, version_number, content, category, tags, importance, actor, changed_at
+               FROM memory_versions WHERE memory_id = ?
+               ORDER BY version_number DESC LIMIT ?""",
+            (memory_id, limit)
+        ).fetchall()
+
+        versions = []
+        for r in rows:
+            versions.append({
+                "version_id": r[0],
+                "version_number": r[1],
+                "content": r[2],
+                "content_preview": r[2][:80] + ("..." if len(r[2]) > 80 else ""),
+                "category": r[3],
+                "tags": json.loads(r[4]) if r[4] and r[4].startswith("[") else r[4],
+                "importance": r[5],
+                "actor": r[6],
+                "changed_at": r[7],
+            })
+        return versions
+
+    def get_version(self, version_id: str) -> Optional[Dict[str, Any]]:
+        """获取指定版本详情（v5.2.7 新增）"""
+        if not version_id or len(version_id) > 128:
+            return None
+        conn = self._get_conn()
+        row = conn.execute(
+            """SELECT id, memory_id, version_number, content, category, tags, importance, actor, changed_at
+               FROM memory_versions WHERE id = ?""",
+            (version_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "version_id": row[0],
+            "memory_id": row[1],
+            "version_number": row[2],
+            "content": row[3],
+            "category": row[4],
+            "tags": json.loads(row[5]) if row[5] and row[5].startswith("[") else row[5],
+            "importance": row[6],
+            "actor": row[7],
+            "changed_at": row[8],
+        }
+
+    def rollback_to_version(self, version_id: str, actor: str = "") -> Dict[str, Any]:
+        """回滚记忆到指定历史版本（v5.2.7 新增）
+
+        会先保存当前内容为新版本，再回滚到目标版本。
+        """
+        if not version_id or len(version_id) > 128:
+            return {"success": False, "error": "版本 ID 无效"}
+
+        conn = self._get_conn()
+        try:
+            # 获取目标版本
+            target = conn.execute(
+                "SELECT memory_id, content, category, tags, importance FROM memory_versions WHERE id = ?",
+                (version_id,)
+            ).fetchone()
+            if not target:
+                return {"success": False, "error": "版本不存在"}
+
+            memory_id = target[0]
+            content = target[1]
+            category = target[2]
+            tags_json = target[3]
+            importance = target[4]
+
+            # 获取当前记忆内容（保存为新版本）
+            current = conn.execute(
+                "SELECT content, category, tags, importance FROM memories WHERE id = ?",
+                (memory_id,)
+            ).fetchone()
+            if not current:
+                return {"success": False, "error": "记忆不存在"}
+
+            # 保存当前状态为新版本
+            save_result = self.save_version(
+                memory_id, current[0], current[1],
+                json.loads(current[2]) if current[2] and current[2].startswith("[") else current[2],
+                current[3], actor
+            )
+
+            # 回滚：更新记忆为目标版本的内容
+            conn.execute(
+                """UPDATE memories SET content = ?, category = ?, tags = ?, importance = ?,
+                   updated_at = ? WHERE id = ?""",
+                (content, category, tags_json, importance, time.time(), memory_id)
+            )
+            conn.commit()
+
+            return {
+                "success": True,
+                "memory_id": memory_id,
+                "rolled_back_to_version": target[1] if len(target) > 1 else None,
+                "saved_current_as_version": save_result.get("version_number"),
+            }
+        except Exception as e:
+            conn.rollback()
+            return {"success": False, "error": str(e)}
 
     # ===== 置顶功能（v5.2.5 新增）=====
 

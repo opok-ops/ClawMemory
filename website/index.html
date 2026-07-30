@@ -84,7 +84,7 @@
   <div class="hero-content">
     <div class="hero-badge">
       <span class="badge-dot"></span>
-      v5.2.6 全新发布 · 记忆关联 · 置顶收藏 · 多层记忆架构 · 知识图谱引擎
+      v5.2.7 全新发布 · 记忆版本历史 · 安全加固 · 多层记忆架构 · 知识图谱引擎
     </div>
     <h1 class="hero-title">
       让 AI Agent 拥有
@@ -661,6 +661,29 @@ openclaw restart</code></pre>
     </div>
 
     <div class="changelog-timeline reveal">
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.2.7</span>
+          <span class="cl-date">2026-07-30</span>
+        </div>
+        <div class="cl-content">
+          <h4>🔒 安全加固（工信部合规）</h4>
+          <ul>
+            <li>修复 14 个路径遍历漏洞：所有 export/import/backup 命令增加统一路径校验</li>
+            <li>修复 db-restore 严重漏洞：增加 SQLite 签名校验 + integrity_check</li>
+            <li>修复 export-md 存储型 XSS：内容/分类/标签转义</li>
+            <li>修复 export-xml/html 未转义字段</li>
+            <li>增强 import-url SSRF 防护：DNS 重绑定 + 编码绕过检测</li>
+          </ul>
+          <h4>📜 记忆版本历史（新功能）</h4>
+          <ul>
+            <li><code>history</code> - 查看记忆修改历史</li>
+            <li><code>rollback</code> - 回滚到指定历史版本</li>
+            <li>update 自动保存历史版本</li>
+          </ul>
+        </div>
+      </div>
+
       <div class="changelog-item">
         <div class="cl-version">
           <span class="cl-num">v5.2.6</span>

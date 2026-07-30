@@ -10,6 +10,12 @@ document.addEventListener('DOMContentLoaded', () => {
   initNavScroll();
 });
 
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = String(str == null ? '' : str);
+    return div.innerHTML;
+}
+
 /* v5.0.7: 点击涟漪效果 */
 function initRipple() {
   document.addEventListener('click', (e) => {
@@ -226,10 +232,10 @@ function initPlayground() {
   function renderMemoryList(memories) {
     memoryList.innerHTML = memories.map(m => `
       <div class="pg-memory-item ${selectedId === m.id ? 'selected' : ''}" data-id="${m.id}">
-        <div class="pg-memory-title">${m.title}</div>
+        <div class="pg-memory-title">${escapeHtml(m.title)}</div>
         <div class="pg-memory-meta">
-          <span class="pg-memory-cat">${m.category}</span>
-          <span>${m.time}</span>
+          <span class="pg-memory-cat">${escapeHtml(m.category)}</span>
+          <span>${escapeHtml(m.time)}</span>
         </div>
       </div>
     `).join('');
@@ -295,12 +301,12 @@ function initPlayground() {
       results.map(m => `
         <div class="result-card" data-id="${m.id}">
           <div class="result-header">
-            <span class="result-category">${m.category}</span>
+            <span class="result-category">${escapeHtml(m.category)}</span>
             <span class="result-relevance">相关度 <strong>${(m.relevance || 0.85).toFixed(2)}</strong></span>
           </div>
-          <div class="result-content">${m.content}</div>
+          <div class="result-content">${escapeHtml(m.content)}</div>
           <div class="result-tags">
-            ${m.tags.map(t => `<span class="result-tag">#${t}</span>`).join('')}
+            ${m.tags.map(t => `<span class="result-tag">#${escapeHtml(t)}</span>`).join('')}
           </div>
         </div>
       `).join('');
