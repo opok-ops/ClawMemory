@@ -57,8 +57,8 @@ pip install MindForge
 
 ```bash
 # 克隆仓库
-git clone https://github.com/opok-ops/MindForge.git
-cd MindForge
+git clone https://github.com/opok-ops/ClawMemory.git
+cd ClawMemory
 
 # 本地安装
 pip install -e .

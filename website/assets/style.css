@@ -605,8 +605,40 @@ a, button, .btn, .pg-cat, .pg-memory-item, .arch-mod,
 }
 
 .feature-card.feature-preview {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 1.5rem;
+  align-items: start;
   border-style: dashed;
   border-color: rgba(245, 158, 11, 0.3);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.06), var(--bg-card) 45%);
+}
+
+.feature-card.feature-preview .feature-icon {
+  grid-row: span 3;
+  margin-bottom: 0;
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--accent-orange);
+}
+
+.feature-card.feature-preview:hover {
+  border-color: rgba(245, 158, 11, 0.55);
+  box-shadow: var(--shadow-card-hover), 0 0 40px rgba(245, 158, 11, 0.1);
+}
+
+.feature-card.feature-preview:hover::before {
+  background: linear-gradient(90deg, var(--accent-orange), transparent);
+}
+
+@media (max-width: 640px) {
+  .feature-card.feature-preview {
+    grid-template-columns: 1fr;
+  }
+  .feature-card.feature-preview .feature-icon {
+    grid-row: auto;
+    margin-bottom: 1.25rem;
+  }
 }
 
 .architecture-section {
@@ -1056,9 +1088,24 @@ a, button, .btn, .pg-cat, .pg-memory-item, .arch-mod,
 .tier-strict::before { background: var(--accent-purple); }
 
 .tier-icon {
-  font-size: 2rem;
+  width: 44px;
+  height: 44px;
   margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
 }
+
+.tier-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.tier-public .tier-icon { color: var(--accent-green); background: rgba(16, 185, 129, 0.1); }
+.tier-internal .tier-icon { color: var(--accent-orange); background: rgba(245, 158, 11, 0.1); }
+.tier-private .tier-icon { color: var(--accent-red); background: rgba(239, 68, 68, 0.1); }
+.tier-strict .tier-icon { color: var(--accent-purple); background: rgba(168, 85, 247, 0.1); }
 
 .tier-card h3 {
   font-family: var(--font-mono);
@@ -1111,9 +1158,24 @@ a, button, .btn, .pg-cat, .pg-memory-item, .arch-mod,
 }
 
 .pf-icon {
-  font-size: 2rem;
+  width: 40px;
+  height: 40px;
   margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
 }
+
+.pf-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.pf-icon.icon-cyan { background: rgba(0, 212, 255, 0.1); color: var(--accent-cyan); }
+.pf-icon.icon-green { background: rgba(16, 185, 129, 0.1); color: var(--accent-green); }
+.pf-icon.icon-orange { background: rgba(245, 158, 11, 0.1); color: var(--accent-orange); }
+.pf-icon.icon-purple { background: rgba(168, 85, 247, 0.1); color: var(--accent-purple); }
 
 .pf-item h4 {
   font-size: 0.95rem;
