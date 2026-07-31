@@ -2740,6 +2740,239 @@ class StorageEngine:
             "longest_line": longest_line[:300],
         }
 
+    # ===== v5.3.1 新增 =====
+
+    def search_agent_memories(self,
+                              agent_id: str,
+                              keyword: str,
+                              limit: int = 50,
+                              offset: int = 0) -> List[Any]:
+        """在指定 Agent 的记忆中搜索关键词（v5.3.1 新增）
+
+        Args:
+            agent_id: Agent ID
+            keyword: 搜索关键词
+            limit: 返回数量上限
+            offset: 偏移量
+
+        Returns:
+            匹配的记忆列表
+        """
+        conn = self._get_conn()
+        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        kw = keyword[:200] if isinstance(keyword, str) else ""
+        if not aid or not kw:
+            return []
+
+        limit = max(1, min(500, int(limit)))
+        offset = max(0, int(offset))
+
+        # v5.3.1 安全加固：参数化查询防 SQL 注入；软删除通过 category='trash' 标记
+        pattern = f"%{kw}%"
+        rows = conn.execute(
+            "SELECT * FROM memories WHERE source_agent = ? AND category != 'trash' "
+            "AND (content LIKE ? OR category LIKE ? OR tags LIKE ?) "
+            "ORDER BY importance DESC, created_at DESC LIMIT ? OFFSET ?",
+            (aid, pattern, pattern, pattern, limit, offset)
+        ).fetchall()
+        return [self._row_to_entry(r) for r in rows]
+
+    def compare_agents(self,
+                       agent_a: str,
+                       agent_b: str) -> Dict[str, Any]:
+        """对比两个 Agent 的记忆差异（v5.3.1 新增）
+
+        Args:
+            agent_a: Agent A ID
+            agent_b: Agent B ID
+
+        Returns:
+            对比结果：各自记忆数、共同分类、独有分类、共同标签
+        """
+        conn = self._get_conn()
+        aid_a = agent_a[:128] if isinstance(agent_a, str) else ""
+        aid_b = agent_b[:128] if isinstance(agent_b, str) else ""
+        if not aid_a or not aid_b:
+            return {"error": "Agent ID 不能为空"}
+
+        # 各自记忆总数（软删除通过 category='trash' 标记）
+        count_a = conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE source_agent = ? AND category != 'trash'",
+            (aid_a,)
+        ).fetchone()[0]
+        count_b = conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE source_agent = ? AND category != 'trash'",
+            (aid_b,)
+        ).fetchone()[0]
+
+        # 各自分类集合
+        cats_a = set(r[0] for r in conn.execute(
+            "SELECT DISTINCT category FROM memories WHERE source_agent = ? AND category != 'trash' AND category IS NOT NULL",
+            (aid_a,)
+        ).fetchall())
+        cats_b = set(r[0] for r in conn.execute(
+            "SELECT DISTINCT category FROM memories WHERE source_agent = ? AND category != 'trash' AND category IS NOT NULL",
+            (aid_b,)
+        ).fetchall())
+
+        # 各自标签集合
+        tags_a = set()
+        for r in conn.execute(
+            "SELECT DISTINCT tags FROM memories WHERE source_agent = ? AND category != 'trash' AND tags IS NOT NULL",
+            (aid_a,)
+        ).fetchall():
+            if r[0]:
+                tags_a.update(t.strip() for t in r[0].split(",") if t.strip())
+        tags_b = set()
+        for r in conn.execute(
+            "SELECT DISTINCT tags FROM memories WHERE source_agent = ? AND category != 'trash' AND tags IS NOT NULL",
+            (aid_b,)
+        ).fetchall():
+            if r[0]:
+                tags_b.update(t.strip() for t in r[0].split(",") if t.strip())
+
+        # 平均重要度
+        avg_a = conn.execute(
+            "SELECT AVG(CASE importance WHEN 'CRITICAL' THEN 4 WHEN 'HIGH' THEN 3 WHEN 'MEDIUM' THEN 2 ELSE 1 END) "
+            "FROM memories WHERE source_agent = ? AND category != 'trash'",
+            (aid_a,)
+        ).fetchone()[0] or 0
+        avg_b = conn.execute(
+            "SELECT AVG(CASE importance WHEN 'CRITICAL' THEN 4 WHEN 'HIGH' THEN 3 WHEN 'MEDIUM' THEN 2 ELSE 1 END) "
+            "FROM memories WHERE source_agent = ? AND category != 'trash'",
+            (aid_b,)
+        ).fetchone()[0] or 0
+
+        common_cats = sorted(cats_a & cats_b)
+        only_a_cats = sorted(cats_a - cats_b)
+        only_b_cats = sorted(cats_b - cats_a)
+        common_tags = sorted(tags_a & tags_b)
+
+        return {
+            "agent_a": aid_a,
+            "agent_b": aid_b,
+            "count_a": count_a,
+            "count_b": count_b,
+            "avg_importance_a": round(avg_a, 2),
+            "avg_importance_b": round(avg_b, 2),
+            "common_categories": common_cats,
+            "only_a_categories": only_a_cats,
+            "only_b_categories": only_b_cats,
+            "common_tags": common_tags[:50],
+            "tags_a_count": len(tags_a),
+            "tags_b_count": len(tags_b),
+        }
+
+    def search_dramas(self,
+                      keyword: str,
+                      genre: Optional[str] = None,
+                      min_rating: float = 0.0,
+                      limit: int = 50,
+                      offset: int = 0) -> List[Any]:
+        """按关键词搜索短剧（v5.3.1 新增）
+
+        Args:
+            keyword: 搜索关键词（匹配标题/描述/标签）
+            genre: 类型过滤
+            min_rating: 最低评分
+            limit: 返回数量上限
+            offset: 偏移量
+
+        Returns:
+            匹配的短剧列表
+        """
+        conn = self._get_conn()
+        kw = keyword[:200] if isinstance(keyword, str) else ""
+        if not kw:
+            return []
+
+        limit = max(1, min(500, int(limit)))
+        offset = max(0, int(offset))
+        min_rating = max(0.0, min(10.0, float(min_rating)))
+
+        pattern = f"%{kw}%"
+        query = ("SELECT * FROM drama_series WHERE "
+                 "(title LIKE ? OR description LIKE ? OR tags LIKE ?)")
+        params = [pattern, pattern, pattern]
+
+        if genre:
+            query += " AND genre = ?"
+            params.append(genre)
+        if min_rating > 0:
+            query += " AND rating >= ?"
+            params.append(min_rating)
+
+        query += " ORDER BY rating DESC, updated_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        rows = conn.execute(query, params).fetchall()
+        return [self._row_to_drama(r) for r in rows]
+
+    def character_ranking(self,
+                          drama_id: Optional[str] = None,
+                          sort_by: str = "lines",
+                          limit: int = 20) -> List[Dict[str, Any]]:
+        """角色台词排行榜（v5.3.1 新增）
+
+        Args:
+            drama_id: 限定短剧（可选，不指定则全局排行）
+            sort_by: 排序维度 lines/classic/scenes
+            limit: 返回数量上限
+
+        Returns:
+            角色排行列表
+        """
+        conn = self._get_conn()
+        limit = max(1, min(100, int(limit)))
+
+        valid_sorts = {"lines": "total_lines", "classic": "classic_lines", "scenes": "scene_count"}
+        sort_col = valid_sorts.get(sort_by, "total_lines")
+
+        if drama_id:
+            did = drama_id[:64] if isinstance(drama_id, str) else ""
+            sql = (
+                "SELECT character_id, character_name, "
+                "COUNT(*) as total_lines, "
+                "SUM(is_classic) as classic_lines, "
+                "COUNT(DISTINCT scene_id) as scene_count, "
+                "SUM(LENGTH(line_text)) as total_chars "
+                "FROM drama_lines WHERE drama_id = ? "
+                "GROUP BY character_id, character_name "
+                f"ORDER BY {sort_col} DESC LIMIT ?"
+            )
+            rows = conn.execute(sql, (did, limit)).fetchall()
+        else:
+            sql = (
+                "SELECT character_id, character_name, "
+                "COUNT(*) as total_lines, "
+                "SUM(is_classic) as classic_lines, "
+                "COUNT(DISTINCT scene_id) as scene_count, "
+                "SUM(LENGTH(line_text)) as total_chars "
+                "FROM drama_lines "
+                "GROUP BY character_id, character_name "
+                f"ORDER BY {sort_col} DESC LIMIT ?"
+            )
+            rows = conn.execute(sql, (limit,)).fetchall()
+
+        result = []
+        for i, r in enumerate(rows):
+            total = r[2] or 0
+            classic = r[3] or 0
+            scenes = r[4] or 0
+            chars = r[5] or 0
+            result.append({
+                "rank": i + 1,
+                "character_id": r[0] or "",
+                "name": r[1] or "",
+                "total_lines": total,
+                "classic_lines": classic,
+                "classic_ratio": round(classic / total * 100, 1) if total > 0 else 0.0,
+                "scene_count": scenes,
+                "total_chars": chars,
+                "avg_line_length": round(chars / total, 1) if total > 0 else 0.0,
+            })
+        return result
+
     def analyze_similarity(self,
                            memory_id: str,
                            limit: int = 10,

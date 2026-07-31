@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.2.9 CLI - 命令行工具
+MindForge v5.3.1 CLI - 命令行工具
 =================================
 
 Usage:
@@ -2702,6 +2702,32 @@ def main():
     p_agent_export.add_argument("--output", "-o", default="./data/agent_export.json", help="输出文件路径")
     p_agent_export.add_argument("--include-audit", action="store_true", help="包含审计日志")
 
+    # ===== v5.3.1 新增 Agent 记忆命令 =====
+    p_agent_search = sub.add_parser("agent-search", help="在指定 Agent 的记忆中搜索关键词（v5.3.1 新增）")
+    p_agent_search.add_argument("agent", help="Agent ID")
+    p_agent_search.add_argument("keyword", help="搜索关键词")
+    p_agent_search.add_argument("--limit", "-n", type=int, default=50, help="数量限制（1-500）")
+    p_agent_search.add_argument("--offset", type=int, default=0, help="偏移量")
+    p_agent_search.add_argument("--format", "-f", choices=["table", "json"], default="table", help="输出格式")
+
+    p_agent_compare = sub.add_parser("agent-compare", help="对比两个 Agent 的记忆差异（v5.3.1 新增）")
+    p_agent_compare.add_argument("agent_a", help="Agent A ID")
+    p_agent_compare.add_argument("agent_b", help="Agent B ID")
+
+    # ===== v5.3.1 新增 AI 短剧命令 =====
+    p_drama_search = sub.add_parser("drama-search", help="按关键词搜索短剧（v5.3.1 新增）")
+    p_drama_search.add_argument("keyword", help="搜索关键词")
+    p_drama_search.add_argument("--genre", "-g", help="类型过滤（ROMANCE/ACTION/COMEDY/THRILLER/SCIFI 等）")
+    p_drama_search.add_argument("--min-rating", "-r", type=float, default=0.0, help="最低评分（0-10）")
+    p_drama_search.add_argument("--limit", "-n", type=int, default=50, help="数量限制（1-500）")
+    p_drama_search.add_argument("--offset", type=int, default=0, help="偏移量")
+
+    p_char_ranking = sub.add_parser("char-ranking", help="角色台词排行榜（v5.3.1 新增）")
+    p_char_ranking.add_argument("--drama-id", help="限定短剧 ID（不指定则全局排行）")
+    p_char_ranking.add_argument("--sort-by", "-s", default="lines",
+                                choices=["lines", "classic", "scenes"], help="排序维度（lines=总台词数/classic=经典台词数/scenes=出场场次数）")
+    p_char_ranking.add_argument("--limit", "-n", type=int, default=20, help="数量限制（1-100）")
+
     p_quality = sub.add_parser("quality", help="记忆质量评分（v5.2.2 新增）")
     p_quality.add_argument("memory_id", nargs="?", help="记忆 ID（不指定则批量评分）")
     p_quality.add_argument("--category", "-c", help="批量评分时按分类过滤")
@@ -2972,6 +2998,10 @@ def main():
         "agent-profile": cmd_agent_profile,
         "agent-merge": cmd_agent_merge,
         "agent-export": cmd_agent_export,
+        "agent-search": cmd_agent_search,
+        "agent-compare": cmd_agent_compare,
+        "drama-search": cmd_drama_search,
+        "char-ranking": cmd_char_ranking,
         "quality": cmd_quality,
         "similar": cmd_similar,
         "backup": cmd_backup,
@@ -5599,6 +5629,203 @@ def cmd_agent_export(args):
     print(c(f"\n✅ 导出成功", "green"))
     print(f"   文件: {result['file_path']}")
     print(f"   数量: {result['total']} 条记忆")
+
+    cm.close()
+    return 0
+
+
+def cmd_agent_search(args):
+    """在指定 Agent 的记忆中搜索关键词（v5.3.1 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🔍 Agent 记忆搜索（v5.3.1）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:  {args.agent}")
+    print(f"  关键词:    {args.keyword}")
+    print(f"  限制:      {args.limit}（偏移 {args.offset}）")
+
+    try:
+        results = cm.agent_search(
+            agent_id=args.agent,
+            keyword=args.keyword,
+            limit=args.limit,
+            offset=args.offset,
+        )
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 搜索失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if not results:
+        print(c(f"\n⚠️  未找到匹配的记忆", "yellow"))
+        cm.close()
+        return 0
+
+    if args.format == "json":
+        import json as _json
+        out = []
+        for r in results:
+            imp = getattr(r, "importance", "")
+            out.append({
+                "id": getattr(r, "id", ""),
+                "content": getattr(r, "content", ""),
+                "category": getattr(r, "category", ""),
+                "tags": getattr(r, "tags", []) if hasattr(r, "tags") else [],
+                "importance": imp.value if hasattr(imp, "value") else str(imp),
+                "created_at": getattr(r, "created_at", 0),
+            })
+        print(_json.dumps(out, ensure_ascii=False, indent=2, default=str))
+    else:
+        print(c(f"\n📋 共找到 {len(results)} 条匹配记忆", "green"))
+        print("-" * 60)
+        for i, r in enumerate(results, 1):
+            content = getattr(r, "content", "")[:60]
+            cat = getattr(r, "category", "general")
+            imp = getattr(r, "importance", "")
+            imp_str = imp.value if hasattr(imp, "value") else str(imp)
+            print(f"  {i}. [{cat}][{imp_str}] {content}...")
+
+    cm.close()
+    return 0
+
+
+def cmd_agent_compare(args):
+    """对比两个 Agent 的记忆差异（v5.3.1 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n⚖️  Agent 记忆对比（v5.3.1）", "bold"))
+    print("=" * 60)
+    print(f"  Agent A:   {args.agent_a}")
+    print(f"  Agent B:   {args.agent_b}")
+
+    try:
+        result = cm.agent_compare(args.agent_a, args.agent_b)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 对比失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(c(f"\n📊 记忆数量对比", "cyan"))
+    print(f"  Agent A:   {result['count_a']} 条")
+    print(f"  Agent B:   {result['count_b']} 条")
+    print(f"  差值:      {result['count_a'] - result['count_b']:+d}")
+
+    print(c(f"\n📈 平均重要度对比", "cyan"))
+    print(f"  Agent A:   {result['avg_importance_a']}")
+    print(f"  Agent B:   {result['avg_importance_b']}")
+
+    print(c(f"\n📂 共有分类", "cyan"))
+    if result["common_categories"]:
+        for cat in result["common_categories"][:10]:
+            print(f"  • {cat}")
+        if len(result["common_categories"]) > 10:
+            print(f"  ... 共 {len(result['common_categories'])} 个")
+    else:
+        print(f"  （无共有分类）")
+
+    print(c(f"\n📂 A 独有分类（{len(result['only_a_categories'])} 个）", "yellow"))
+    for cat in result["only_a_categories"][:5]:
+        print(f"  • {cat}")
+
+    print(c(f"\n📂 B 独有分类（{len(result['only_b_categories'])} 个）", "yellow"))
+    for cat in result["only_b_categories"][:5]:
+        print(f"  • {cat}")
+
+    print(c(f"\n🏷️  共有标签", "cyan"))
+    if result["common_tags"]:
+        print(f"  {' '.join(result['common_tags'][:15])}")
+    else:
+        print(f"  （无共有标签）")
+
+    print(f"\n  标签总数: A={result['tags_a_count']}  B={result['tags_b_count']}")
+
+    cm.close()
+    return 0
+
+
+def cmd_drama_search(args):
+    """按关键词搜索短剧（v5.3.1 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🎬 短剧搜索（v5.3.1）", "bold"))
+    print("=" * 60)
+    print(f"  关键词:    {args.keyword}")
+    if args.genre:
+        print(f"  类型:      {args.genre}")
+    if args.min_rating > 0:
+        print(f"  最低评分:  {args.min_rating}")
+    print(f"  限制:      {args.limit}（偏移 {args.offset}）")
+
+    try:
+        results = cm.drama_search(
+            keyword=args.keyword,
+            genre=args.genre,
+            min_rating=args.min_rating,
+            limit=args.limit,
+            offset=args.offset,
+        )
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 搜索失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if not results:
+        print(c(f"\n⚠️  未找到匹配的短剧", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n📋 共找到 {len(results)} 部短剧", "green"))
+    print("-" * 60)
+    for i, d in enumerate(results, 1):
+        title = getattr(d, "title", "")
+        genre = getattr(d, "genre", "")
+        rating = getattr(d, "rating", 0.0)
+        status = getattr(d, "status", "")
+        desc = (getattr(d, "description", "") or "")[:40]
+        print(f"  {i}. 《{title}》  [{genre}][{status}]  评分: {rating}")
+        if desc:
+            print(f"     {desc}...")
+
+    cm.close()
+    return 0
+
+
+def cmd_char_ranking(args):
+    """角色台词排行榜（v5.3.1 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🏆 角色台词排行榜（v5.3.1）", "bold"))
+    print("=" * 60)
+    if args.drama_id:
+        print(f"  短剧 ID:   {args.drama_id}")
+    else:
+        print(f"  范围:      全局")
+    print(f"  排序维度:  {args.sort_by}")
+    print(f"  Top 数:    {args.limit}")
+
+    try:
+        results = cm.character_ranking(
+            drama_id=args.drama_id,
+            sort_by=args.sort_by,
+            limit=args.limit,
+        )
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 排行榜生成失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if not results:
+        print(c(f"\n⚠️  暂无角色数据", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n🥇 角色排行 Top {len(results)}", "green"))
+    print("-" * 70)
+    print(f"{'排名':<5}{'角色名':<15}{'总台词':<8}{'经典':<8}{'经典率':<10}{'场次':<8}{'平均字数':<10}")
+    for r in results:
+        print(f"{r['rank']:<5}{r['name'][:12]:<15}{r['total_lines']:<8}"
+              f"{r['classic_lines']:<8}{r['classic_ratio']}%{'':<5}{r['scene_count']:<8}{r['avg_line_length']:<10}")
 
     cm.close()
     return 0

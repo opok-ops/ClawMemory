@@ -1,5 +1,5 @@
 """
-MindForge v5.2.9 主入口类
+MindForge v5.3.1 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,7 +31,7 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.2.9"
+    __version__ = "5.3.1"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -98,7 +98,7 @@ def _safe_path(path_str, must_exist=False, allow_symlinks=False,
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.2.9"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.3.1"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -1695,6 +1695,115 @@ class MindForge:
         cid = character_id[:64]
         did = drama_id[:64] if (isinstance(drama_id, str) and drama_id) else None
         return self._storage.character_profile(character_id=cid, drama_id=did)
+
+    # ===== v5.3.1 新增 =====
+
+    def agent_search(self,
+                     agent_id: str,
+                     keyword: str,
+                     limit: int = 50,
+                     offset: int = 0) -> List[Any]:
+        """在指定 Agent 的记忆中搜索关键词（v5.3.1 新增）
+
+        Args:
+            agent_id: Agent ID
+            keyword: 搜索关键词
+            limit: 返回数量上限
+            offset: 偏移量
+
+        Returns:
+            匹配的记忆列表
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return []
+        if not keyword or not isinstance(keyword, str):
+            return []
+        # v5.3.1 安全加固：Unicode 控制字符过滤
+        import unicodedata
+        keyword = "".join(c for c in keyword if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        keyword = keyword[:200]
+        agent_id = agent_id[:128]
+
+        limit = max(1, min(500, int(limit)))
+        offset = max(0, int(offset))
+        return self._storage.search_agent_memories(agent_id, keyword, limit, offset)
+
+    def agent_compare(self,
+                      agent_a: str,
+                      agent_b: str) -> Dict[str, Any]:
+        """对比两个 Agent 的记忆差异（v5.3.1 新增）
+
+        Args:
+            agent_a: Agent A ID
+            agent_b: Agent B ID
+
+        Returns:
+            对比结果：各自记忆数、共同分类、独有分类、共同标签
+        """
+        if not agent_a or not isinstance(agent_a, str):
+            return {"error": "Agent A ID 不能为空"}
+        if not agent_b or not isinstance(agent_b, str):
+            return {"error": "Agent B ID 不能为空"}
+        return self._storage.compare_agents(agent_a[:128], agent_b[:128])
+
+    def drama_search(self,
+                     keyword: str,
+                     genre: Optional[str] = None,
+                     min_rating: float = 0.0,
+                     limit: int = 50,
+                     offset: int = 0) -> List[Any]:
+        """按关键词搜索短剧（v5.3.1 新增）
+
+        Args:
+            keyword: 搜索关键词（匹配标题/描述/标签）
+            genre: 类型过滤
+            min_rating: 最低评分
+            limit: 返回数量上限
+            offset: 偏移量
+
+        Returns:
+            匹配的短剧列表
+        """
+        if not keyword or not isinstance(keyword, str):
+            return []
+        # v5.3.1 安全加固：Unicode 控制字符过滤
+        import unicodedata
+        keyword = "".join(c for c in keyword if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        keyword = keyword[:200]
+
+        limit = max(1, min(500, int(limit)))
+        offset = max(0, int(offset))
+        min_rating = max(0.0, min(10.0, float(min_rating)))
+
+        # v5.3.1 安全加固：genre 枚举白名单
+        valid_genres = {"ROMANCE", "ACTION", "COMEDY", "THRILLER", "SCIFI",
+                        "HISTORICAL", "URBAN", "FANTASY", "MYSTERY", "DRAMA"}
+        if genre and genre.upper() not in valid_genres:
+            genre = None
+
+        return self._storage.search_dramas(keyword, genre, min_rating, limit, offset)
+
+    def character_ranking(self,
+                          drama_id: Optional[str] = None,
+                          sort_by: str = "lines",
+                          limit: int = 20) -> List[Dict[str, Any]]:
+        """角色台词排行榜（v5.3.1 新增）
+
+        Args:
+            drama_id: 限定短剧（可选）
+            sort_by: 排序维度 lines/classic/scenes
+            limit: 返回数量上限
+
+        Returns:
+            角色排行列表
+        """
+        limit = max(1, min(100, int(limit)))
+        # v5.3.1 安全加固：sort_by 枚举白名单
+        valid_sorts = {"lines", "classic", "scenes"}
+        if sort_by not in valid_sorts:
+            sort_by = "lines"
+        did = drama_id[:64] if (isinstance(drama_id, str) and drama_id) else None
+        return self._storage.character_ranking(drama_id=did, sort_by=sort_by, limit=limit)
 
     def analyze_similarity(self,
                            memory_id: str,
