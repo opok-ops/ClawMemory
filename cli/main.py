@@ -2497,6 +2497,21 @@ def main():
     p_char_list_lines.add_argument("--limit", "-n", type=int, default=500, help="数量限制（默认 500）")
     p_char_list_lines.add_argument("--offset", "-o", type=int, default=0, help="偏移量")
 
+    # ===== v5.3.0 AI 短剧增强 =====
+
+    p_drama_info = sub.add_parser("drama-info", help="短剧深度统计（v5.3.0 新增）")
+    p_drama_info.add_argument("drama_id", help="短剧 ID")
+
+    p_line_random = sub.add_parser("line-random", help="随机抽取台词（v5.3.0 新增）")
+    p_line_random.add_argument("--drama-id", "-d", default=None, help="限定短剧 ID")
+    p_line_random.add_argument("--char-id", "-c", default=None, help="限定角色 ID")
+    p_line_random.add_argument("--classic", action="store_true", help="仅经典台词")
+    p_line_random.add_argument("--count", "-n", type=int, default=1, help="抽取数量（默认 1，上限 100）")
+
+    p_char_profile = sub.add_parser("char-profile", help="角色画像分析（v5.3.0 新增）")
+    p_char_profile.add_argument("char_id", help="角色 ID")
+    p_char_profile.add_argument("--drama-id", "-d", default=None, help="限定短剧 ID")
+
     # 台词相关
     p_line_add = sub.add_parser("line-add", help="添加短剧台词（v5.2.1 新增）")
     p_line_add.add_argument("drama_id", help="短剧 ID")
@@ -2669,6 +2684,23 @@ def main():
     p_agent_forget.add_argument("--days", "-d", type=int, default=30,
                                  help="只遗忘超过多少天未更新的记忆（默认 30 天）")
     p_agent_forget.add_argument("--dry-run", action="store_true", help="仅预览不执行")
+
+    # ===== v5.3.0 Agent 记忆增强 =====
+
+    p_agent_profile = sub.add_parser("agent-profile", help="Agent 记忆画像（v5.3.0 新增）")
+    p_agent_profile.add_argument("agent", help="Agent ID")
+
+    p_agent_merge = sub.add_parser("agent-merge", help="合并两个 Agent 的记忆（v5.3.0 新增）")
+    p_agent_merge.add_argument("from_agent", help="源 Agent ID")
+    p_agent_merge.add_argument("to_agent", help="目标 Agent ID")
+    p_agent_merge.add_argument("--dedup", "-d", choices=["exact", "none"], default="exact",
+                                help="去重模式（exact=内容完全相同则跳过，none=不去重，默认 exact）")
+    p_agent_merge.add_argument("--dry-run", action="store_true", help="仅预览不执行")
+
+    p_agent_export = sub.add_parser("agent-export", help="导出 Agent 记忆为 JSON 包（v5.3.0 新增）")
+    p_agent_export.add_argument("agent", help="Agent ID")
+    p_agent_export.add_argument("--output", "-o", default="./data/agent_export.json", help="输出文件路径")
+    p_agent_export.add_argument("--include-audit", action="store_true", help="包含审计日志")
 
     p_quality = sub.add_parser("quality", help="记忆质量评分（v5.2.2 新增）")
     p_quality.add_argument("memory_id", nargs="?", help="记忆 ID（不指定则批量评分）")
@@ -2937,6 +2969,9 @@ def main():
         "agent-list-memories": cmd_agent_list_memories,
         "agent-rank": cmd_agent_rank,
         "agent-forget": cmd_agent_forget,
+        "agent-profile": cmd_agent_profile,
+        "agent-merge": cmd_agent_merge,
+        "agent-export": cmd_agent_export,
         "quality": cmd_quality,
         "similar": cmd_similar,
         "backup": cmd_backup,
@@ -2974,6 +3009,9 @@ def main():
         "drama-stars": cmd_drama_stars,
         "scene-list-lines": cmd_scene_list_lines,
         "char-list-lines": cmd_char_list_lines,
+        "drama-info": cmd_drama_info,
+        "line-random": cmd_line_random,
+        "char-profile": cmd_char_profile,
         "line-add": cmd_line_add,
         "line-list": cmd_line_list,
         "line-search": cmd_line_search,
@@ -4682,6 +4720,126 @@ def cmd_char_list_lines(args):
     return 0
 
 
+# ===== v5.3.0 AI 短剧增强命令 =====
+
+def cmd_drama_info(args):
+    """短剧深度统计（v5.3.0 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n📊 短剧深度统计", "bold"))
+    print("=" * 60)
+
+    info = cm.drama_info(drama_id=args.drama_id)
+
+    if not info:
+        print(c(f"\n❌ 短剧不存在: {args.drama_id}", "red"))
+        cm.close()
+        return 1
+
+    print(f"  标题:       {c(info['title'], 'bold')}")
+    print(f"  类型:       {info['genre']}")
+    print(f"  状态:       {info['status']}")
+    print(f"  评分:       {c(str(round(info['rating'], 1)) + '★', 'yellow')}")
+    print(f"  总集数:     {info['total_episodes']}  |  当前: {info['current_episode']}")
+    print(f"\n  📋 内容统计:")
+    print(f"     场次数:     {info['scene_count']}")
+    print(f"     角色数:     {info['character_count']}")
+    print(f"     台词数:     {c(str(info['line_count']), 'cyan')}")
+    print(f"     经典台词:   {info['classic_line_count']} ({info['classic_ratio']}%)")
+    print(f"     总字数:     {info['total_text_chars']}")
+    print(f"     平均台词:   {info['avg_line_length']} 字/条")
+
+    if info.get("episode_distribution"):
+        print(f"\n  📺 每集台词分布:")
+        for ep, cnt in info["episode_distribution"].items():
+            bar = "█" * min(cnt, 40)
+            print(f"     EP{ep}: {bar} {cnt}")
+
+    if info.get("top_characters_by_lines"):
+        print(f"\n  🧑 台词最多角色 Top-5:")
+        for i, ch in enumerate(info["top_characters_by_lines"], 1):
+            print(f"     {i}. {ch['name']}: {ch['line_count']} 条")
+
+    cm.close()
+    return 0
+
+
+def cmd_line_random(args):
+    """随机抽取台词（v5.3.0 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🎲 随机台词", "bold"))
+    print("=" * 60)
+    if args.drama_id:
+        print(f"  限定短剧:  {args.drama_id}")
+    if args.char_id:
+        print(f"  限定角色:  {args.char_id}")
+    if args.classic:
+        print(f"  仅经典:    是")
+    print(f"  抽取数量:  {args.count}")
+
+    lines = cm.random_lines(
+        drama_id=args.drama_id,
+        character_id=args.char_id,
+        is_classic=args.classic if args.classic else None,
+        count=args.count,
+    )
+
+    if not lines:
+        print(c("\nℹ️  没有符合条件的台词", "yellow"))
+        cm.close()
+        return 0
+
+    print(f"\n抽取到 {c(str(len(lines)), 'cyan')} 条：")
+    for i, l in enumerate(lines, 1):
+        char = l.character_name or "未知"
+        classic = "⭐" if l.is_classic else "  "
+        ep = f"EP{l.episode}" if l.episode else ""
+        print(f"\n  {i}. {classic} {ep} {c(char, 'cyan')}:")
+        print(f'     "{l.line_text}"')
+
+    cm.close()
+    return 0
+
+
+def cmd_char_profile(args):
+    """角色画像分析（v5.3.0 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🧑 角色画像", "bold"))
+    print("=" * 60)
+
+    profile = cm.character_profile(
+        character_id=args.char_id,
+        drama_id=args.drama_id,
+    )
+
+    if not profile:
+        print(c(f"\n❌ 角色不存在: {args.char_id}", "red"))
+        cm.close()
+        return 1
+
+    print(f"  角色名:       {c(profile['name'], 'bold')}")
+    print(f"  角色 ID:      {profile['character_id']}")
+    if profile.get("drama_id"):
+        print(f"  限定短剧:     {profile['drama_id']}")
+    print(f"\n  📋 台词统计:")
+    print(f"     总台词:     {c(str(profile['total_lines']), 'cyan')}")
+    print(f"     经典台词:   {profile['classic_lines']} ({profile['classic_ratio']}%)")
+    print(f"     总字数:     {profile['total_text_chars']}")
+    print(f"     平均长度:   {profile['avg_line_length']} 字/条")
+    print(f"\n  🎬 出场统计:")
+    print(f"     场次:       {profile['scene_appearances']}")
+    print(f"     短剧数:     {profile['drama_appearances']}")
+
+    if profile.get("drama_ids"):
+        print(f"     出场短剧:   {', '.join(profile['drama_ids'][:5])}")
+
+    if profile.get("longest_line"):
+        print(f"\n  💬 代表性台词（最长）:")
+        print(f'     "{profile["longest_line"]}"')
+
+    cm.close()
+    return 0
+
+
 def cmd_line_add(args):
     """添加短剧台词（v5.2.1 新增）"""
     cm = _get_memory(args)
@@ -5304,6 +5462,143 @@ def cmd_agent_forget(args):
         print(f"  已执行:     {c(str(result['cleaned']) + ' 条', 'green')}")
     if result.get("selected_ids"):
         print(f"  前 20 ID:  {', '.join(result['selected_ids'])}")
+
+    cm.close()
+    return 0
+
+
+# ===== v5.3.0 Agent 记忆增强命令 =====
+
+def cmd_agent_profile(args):
+    """Agent 记忆画像（v5.3.0 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🧠 Agent 记忆画像", "bold"))
+    print("=" * 60)
+
+    profile = cm.agent_profile(agent_id=args.agent)
+
+    if profile.get("error"):
+        print(c(f"\n❌ {profile['error']}", "red"))
+        cm.close()
+        return 1
+
+    if profile.get("total_memories", 0) == 0:
+        print(c(f"\nℹ️  Agent '{args.agent}' 暂无记忆", "yellow"))
+        cm.close()
+        return 0
+
+    from datetime import datetime
+    print(f"  Agent ID:       {profile['agent_id']}")
+    print(f"  记忆总数:       {c(str(profile['total_memories']), 'cyan')}")
+    first = datetime.fromtimestamp(profile['first_active']).strftime("%Y-%m-%d %H:%M") if profile.get('first_active') else "-"
+    last = datetime.fromtimestamp(profile['last_active']).strftime("%Y-%m-%d %H:%M") if profile.get('last_active') else "-"
+    print(f"  首次活跃:       {first}")
+    print(f"  最近活跃:       {c(last, 'green')}")
+
+    if profile.get("by_layer"):
+        print(f"\n  📊 层级分布:")
+        for layer, cnt in profile["by_layer"].items():
+            print(f"     {layer}: {cnt}")
+
+    if profile.get("by_category"):
+        print(f"\n  📁 分类分布 Top-10:")
+        for cat, cnt in profile["by_category"].items():
+            print(f"     {cat}: {cnt}")
+
+    if profile.get("by_importance"):
+        print(f"\n  ⚡ 重要度分布:")
+        for imp, cnt in profile["by_importance"].items():
+            print(f"     {imp}: {cnt}")
+
+    print(f"\n  ⭐ 收藏: {profile.get('starred_count', 0)}  |  📌 置顶: {profile.get('pinned_count', 0)}")
+
+    if profile.get("top_tags"):
+        print(f"\n  🏷️  知识领域 Top-10:")
+        for t in profile["top_tags"]:
+            print(f"     {t['tag']}: {t['count']}")
+
+    if profile.get("activity_timeline_30d"):
+        print(f"\n  📈 近 30 天活跃:")
+        for day, cnt in sorted(profile["activity_timeline_30d"].items())[-7:]:
+            bar = "█" * min(cnt, 30)
+            print(f"     {day}: {bar} {cnt}")
+
+    if profile.get("quality_distribution_sample"):
+        print(f"\n  📋 质量分布（采样 {profile.get('quality_sample_size', 0)} 条）:")
+        qd = profile["quality_distribution_sample"]
+        for grade in ["优秀", "良好", "中等", "及格", "需改进"]:
+            cnt = qd.get(grade, 0)
+            if cnt > 0:
+                print(f"     {grade}: {cnt}")
+
+    cm.close()
+    return 0
+
+
+def cmd_agent_merge(args):
+    """合并两个 Agent 的记忆（v5.3.0 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🔀 Agent 记忆合并", "bold"))
+    print("=" * 60)
+    print(f"  源 Agent:    {args.from_agent}")
+    print(f"  目标 Agent:  {args.to_agent}")
+    print(f"  去重模式:    {args.dedup}")
+
+    if args.dry_run:
+        print(c("\n📊 预览模式（未执行）", "yellow"))
+    else:
+        print(c("\n⚠️  执行模式（将迁移源 Agent 记忆到目标 Agent）", "yellow"))
+
+    result = cm.merge_agents(
+        from_agent=args.from_agent,
+        to_agent=args.to_agent,
+        dedup=args.dedup,
+        dry_run=args.dry_run,
+    )
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(f"\n  评估总数:       {result['evaluated']}")
+    print(f"  迁移数量:       {c(str(result['migrated']) + ' 条', 'green')}")
+    print(f"  跳过重复:       {result['skipped_duplicates']}")
+    if result.get("failed"):
+        print(f"  失败:           {c(str(result['failed']), 'red')}")
+
+    cm.close()
+    return 0
+
+
+def cmd_agent_export(args):
+    """导出 Agent 记忆为 JSON 包（v5.3.0 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n📦 导出 Agent 记忆", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:    {args.agent}")
+    print(f"  输出文件:    {args.output}")
+    print(f"  含审计日志:  {'是' if args.include_audit else '否'}")
+
+    try:
+        result = cm.export_agent(
+            agent_id=args.agent,
+            output_path=args.output,
+            include_audit=args.include_audit,
+        )
+    except (OSError, ValueError) as e:
+        print(c(f"\n❌ 导出失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(c(f"\n✅ 导出成功", "green"))
+    print(f"   文件: {result['file_path']}")
+    print(f"   数量: {result['total']} 条记忆")
 
     cm.close()
     return 0

@@ -1605,6 +1605,97 @@ class MindForge:
             session_id="forget",
         )
 
+    # ===== Agent 记忆增强（v5.3.0 新增）=====
+
+    def agent_profile(self, agent_id: str) -> Dict[str, Any]:
+        """Agent 记忆画像（v5.3.0 新增）
+
+        聚合分析指定 Agent 的记忆全景。
+        """
+        if not agent_id or not isinstance(agent_id, str) or len(agent_id) > 128:
+            return {"error": "无效 agent_id"}
+        return self._storage.agent_profile(agent_id[:128])
+
+    def merge_agents(self,
+                     from_agent: str,
+                     to_agent: str,
+                     dedup: str = "exact",
+                     dry_run: bool = False) -> Dict[str, Any]:
+        """合并两个 Agent 的记忆（v5.3.0 新增）
+
+        Args:
+            from_agent: 源 Agent ID
+            to_agent: 目标 Agent ID
+            dedup: 去重模式（exact / none）
+            dry_run: 仅预览
+        """
+        # v5.3.0 安全加固
+        _ALLOWED_DEDUP = {"exact", "none"}
+        if dedup not in _ALLOWED_DEDUP:
+            dedup = "exact"
+        if not from_agent or not isinstance(from_agent, str) or len(from_agent) > 128:
+            return {"evaluated": 0, "migrated": 0, "error": "无效 from_agent"}
+        if not to_agent or not isinstance(to_agent, str) or len(to_agent) > 128:
+            return {"evaluated": 0, "migrated": 0, "error": "无效 to_agent"}
+        return self._storage.merge_agent_memories(
+            from_agent=from_agent[:128],
+            to_agent=to_agent[:128],
+            dedup=dedup,
+            dry_run=dry_run,
+            actor="cli",
+            session_id="merge",
+        )
+
+    def export_agent(self,
+                     agent_id: str,
+                     output_path: str,
+                     include_audit: bool = False) -> Dict[str, Any]:
+        """导出 Agent 全部记忆为独立 JSON 包（v5.3.0 新增）"""
+        if not agent_id or not isinstance(agent_id, str) or len(agent_id) > 128:
+            return {"error": "无效 agent_id"}
+        # 路径校验（mindforge 层 + storage 层双重）
+        _safe_path(output_path, allowed_exts={".json"})
+        return self._storage.export_agent_memories(
+            agent_id=agent_id[:128],
+            output_path=output_path,
+            include_audit=bool(include_audit),
+        )
+
+    # ===== AI 短剧增强（v5.3.0 新增）=====
+
+    def drama_info(self, drama_id: str) -> Optional[Dict[str, Any]]:
+        """短剧深度统计（v5.3.0 新增）
+
+        台词数/角色数/场次数/总字数/经典占比/每集分布/角色 Top-5。
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return None
+        return self._storage.drama_detail_stats(drama_id[:64])
+
+    def random_lines(self,
+                     drama_id: Optional[str] = None,
+                     character_id: Optional[str] = None,
+                     is_classic: Optional[bool] = None,
+                     count: int = 1) -> List[Any]:
+        """随机抽取台词（v5.3.0 新增）"""
+        count = max(1, min(100, int(count)))
+        did = drama_id[:64] if (isinstance(drama_id, str) and drama_id) else None
+        cid = character_id[:64] if (isinstance(character_id, str) and character_id) else None
+        return self._storage.random_lines(
+            drama_id=did, character_id=cid,
+            is_classic=is_classic, count=count,
+        )
+
+    def character_profile(self,
+                          character_id: str,
+                          drama_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """角色画像分析（v5.3.0 新增）"""
+        if not character_id or not isinstance(character_id, str):
+            return None
+        cid = character_id[:64]
+        did = drama_id[:64] if (isinstance(drama_id, str) and drama_id) else None
+        return self._storage.character_profile(character_id=cid, drama_id=did)
+
     def analyze_similarity(self,
                            memory_id: str,
                            limit: int = 10,

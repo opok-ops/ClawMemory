@@ -404,6 +404,15 @@ class StorageEngine:
                    starred: bool = False,
                    metadata: Optional[Dict[str, Any]] = None) -> MemoryEntry:
         """添加记忆"""
+        # v5.3.0 安全加固：内容长度上限防 DoS
+        MAX_CONTENT_LEN = 50000
+        if content and isinstance(content, str) and len(content) > MAX_CONTENT_LEN:
+            content = content[:MAX_CONTENT_LEN]
+        if category and isinstance(category, str) and len(category) > 128:
+            category = category[:128]
+        if source_agent and isinstance(source_agent, str) and len(source_agent) > 128:
+            source_agent = source_agent[:128]
+
         now = time.time()
         entry_id = str(uuid.uuid4())
 
@@ -2244,6 +2253,492 @@ class StorageEngine:
                 stats["failed"] += 1
 
         return stats
+
+    # ===== Agent 记忆增强（v5.3.0 新增）=====
+
+    def agent_profile(self, agent_id: str) -> Dict[str, Any]:
+        """Agent 记忆画像（v5.3.0 新增）
+
+        聚合分析指定 Agent 的记忆全景：总量/质量分布/层级分布/分类分布/
+        活跃时间线/知识领域（标签 Top-N）/收藏与置顶统计。
+
+        Args:
+            agent_id: Agent ID
+
+        Returns:
+            画像字典
+        """
+        # v5.3.0 安全加固：ID 长度限制
+        if not agent_id or not isinstance(agent_id, str) or len(agent_id) > 128:
+            return {"error": "无效 agent_id"}
+
+        conn = self._get_conn()
+        aid = agent_id[:128]
+
+        total = conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE source_agent = ?", (aid,)
+        ).fetchone()[0]
+
+        if total == 0:
+            return {"agent_id": aid, "total_memories": 0, "message": "该 Agent 暂无记忆"}
+
+        # 层级分布
+        layers = conn.execute(
+            "SELECT layer, COUNT(*) as cnt FROM memories WHERE source_agent = ? GROUP BY layer",
+            (aid,)
+        ).fetchall()
+
+        # 分类分布 Top-10
+        cats = conn.execute(
+            "SELECT category, COUNT(*) as cnt FROM memories WHERE source_agent = ? "
+            "GROUP BY category ORDER BY cnt DESC LIMIT 10",
+            (aid,)
+        ).fetchall()
+
+        # 重要度分布
+        imps = conn.execute(
+            "SELECT importance, COUNT(*) as cnt FROM memories WHERE source_agent = ? GROUP BY importance",
+            (aid,)
+        ).fetchall()
+
+        # 收藏/置顶统计
+        starred = conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE source_agent = ? AND starred = 1", (aid,)
+        ).fetchone()[0]
+        pinned = conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE source_agent = ? AND pinned = 1", (aid,)
+        ).fetchone()[0]
+
+        # 标签 Top-10（知识领域）
+        tag_rows = conn.execute(
+            "SELECT tags FROM memories WHERE source_agent = ? AND tags != ''", (aid,)
+        ).fetchall()
+        tag_counter: Dict[str, int] = {}
+        for r in tag_rows:
+            for t in self._safe_json_loads(r[0], []):
+                t = str(t)[:64]
+                tag_counter[t] = tag_counter.get(t, 0) + 1
+        top_tags = sorted(tag_counter.items(), key=lambda x: -x[1])[:10]
+
+        # 活跃时间线（按天聚合，最近 30 天）
+        now = time.time()
+        cutoff = now - 30 * 86400
+        timeline = conn.execute(
+            "SELECT created_at FROM memories WHERE source_agent = ? AND created_at >= ?",
+            (aid, cutoff)
+        ).fetchall()
+        daily: Dict[str, int] = {}
+        for r in timeline:
+            ts = r[0] or 0
+            day = time.strftime("%Y-%m-%d", time.localtime(ts))
+            daily[day] = daily.get(day, 0) + 1
+
+        # 质量分布（采样最多 200 条，避免大 Agent 性能问题）
+        sample_ids = conn.execute(
+            "SELECT id FROM memories WHERE source_agent = ? LIMIT 200", (aid,)
+        ).fetchall()
+        quality_dist = {"优秀": 0, "良好": 0, "中等": 0, "及格": 0, "需改进": 0}
+        for r in sample_ids:
+            qs = self.quality_score(r[0])
+            if qs:
+                quality_dist[qs["grade"]] = quality_dist.get(qs["grade"], 0) + 1
+
+        last_active = conn.execute(
+            "SELECT MAX(created_at) FROM memories WHERE source_agent = ?", (aid,)
+        ).fetchone()[0] or 0
+        first_active = conn.execute(
+            "SELECT MIN(created_at) FROM memories WHERE source_agent = ?", (aid,)
+        ).fetchone()[0] or 0
+
+        return {
+            "agent_id": aid,
+            "total_memories": total,
+            "first_active": first_active,
+            "last_active": last_active,
+            "by_layer": {r[0]: r[1] for r in layers},
+            "by_category": {r[0]: r[1] for r in cats},
+            "by_importance": {r[0]: r[1] for r in imps},
+            "starred_count": starred,
+            "pinned_count": pinned,
+            "top_tags": [{"tag": t, "count": c} for t, c in top_tags],
+            "activity_timeline_30d": daily,
+            "quality_distribution_sample": quality_dist,
+            "quality_sample_size": len(sample_ids),
+        }
+
+    def merge_agent_memories(self,
+                             from_agent: str,
+                             to_agent: str,
+                             dedup: str = "exact",
+                             dry_run: bool = False,
+                             actor: str = "cli",
+                             session_id: str = "merge") -> Dict[str, Any]:
+        """合并两个 Agent 的记忆（v5.3.0 新增）
+
+        将 from_agent 的记忆迁移到 to_agent，支持去重：
+        - exact: 内容完全相同则跳过
+        - none: 不去重，全部迁移
+
+        Args:
+            from_agent: 源 Agent ID
+            to_agent: 目标 Agent ID
+            dedup: 去重模式（exact / none）
+            dry_run: 仅预览
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            {evaluated, migrated, skipped_duplicates, failed}
+        """
+        # v5.3.0 安全加固
+        if not from_agent or not isinstance(from_agent, str) or len(from_agent) > 128:
+            return {"evaluated": 0, "migrated": 0, "error": "无效 from_agent"}
+        if not to_agent or not isinstance(to_agent, str) or len(to_agent) > 128:
+            return {"evaluated": 0, "migrated": 0, "error": "无效 to_agent"}
+        if from_agent == to_agent:
+            return {"evaluated": 0, "migrated": 0, "error": "源和目标 Agent 相同"}
+
+        _ALLOWED_DEDUP = {"exact", "none"}
+        if dedup not in _ALLOWED_DEDUP:
+            dedup = "exact"
+
+        conn = self._get_conn()
+        fa = from_agent[:128]
+        ta = to_agent[:128]
+
+        src_rows = conn.execute(
+            "SELECT id, content FROM memories WHERE source_agent = ?", (fa,)
+        ).fetchall()
+
+        # 如果去重，预取目标 Agent 已有内容集合
+        existing_contents: set = set()
+        if dedup == "exact":
+            tgt_rows = conn.execute(
+                "SELECT content FROM memories WHERE source_agent = ?", (ta,)
+            ).fetchall()
+            for r in tgt_rows:
+                existing_contents.add(r[0])
+
+        now = time.time()
+        migrated = 0
+        skipped = 0
+        failed = 0
+
+        for r in src_rows:
+            mid = r[0]
+            content = r[1]
+            if dedup == "exact" and content in existing_contents:
+                skipped += 1
+                continue
+            if not dry_run:
+                try:
+                    conn.execute(
+                        "UPDATE memories SET source_agent = ?, updated_at = ? WHERE id = ?",
+                        (ta, now, mid)
+                    )
+                    self._add_audit("agent_merge", mid, actor, session_id,
+                                    f"{fa} -> {ta}")
+                except Exception:
+                    failed += 1
+                    continue
+            migrated += 1
+
+        if not dry_run and migrated > 0:
+            conn.commit()
+
+        return {
+            "from_agent": fa,
+            "to_agent": ta,
+            "dedup": dedup,
+            "evaluated": len(src_rows),
+            "migrated": migrated,
+            "skipped_duplicates": skipped,
+            "failed": failed,
+        }
+
+    def export_agent_memories(self,
+                              agent_id: str,
+                              output_path: str,
+                              include_audit: bool = False) -> Dict[str, Any]:
+        """导出 Agent 全部记忆为独立 JSON 包（v5.3.0 新增）
+
+        Args:
+            agent_id: Agent ID
+            output_path: 输出 JSON 路径
+            include_audit: 是否包含审计日志
+
+        Returns:
+            {agent_id, total, file_path}
+        """
+        # v5.3.0 安全加固
+        if not agent_id or not isinstance(agent_id, str) or len(agent_id) > 128:
+            return {"error": "无效 agent_id"}
+
+        # 路径校验
+        path = _safe_path(output_path, allowed_exts={".json"})
+
+        aid = agent_id[:128]
+        entries = self.list_by_agent(agent_id=aid, limit=100000, offset=0)
+
+        export_data: Dict[str, Any] = {
+            "version": __version__,
+            "export_type": "agent_memories",
+            "agent_id": aid,
+            "export_time": "",
+            "total": len(entries),
+            "memories": [],
+        }
+        from datetime import datetime
+        export_data["export_time"] = datetime.now().isoformat()
+
+        for e in entries:
+            d = e.to_dict() if hasattr(e, "to_dict") else vars(e)
+            export_data["memories"].append(d)
+
+        if include_audit:
+            conn = self._get_conn()
+            audits = conn.execute(
+                "SELECT * FROM audit_log WHERE memory_id IN "
+                "(SELECT id FROM memories WHERE source_agent = ?) LIMIT 10000",
+                (aid,)
+            ).fetchall()
+            export_data["audit_logs"] = [dict(r) for r in audits]
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        import json
+        with open(str(path), "w", encoding="utf-8") as f:
+            json.dump(export_data, f, ensure_ascii=False, indent=2, default=str)
+
+        # v5.3.0 安全加固：权限收紧
+        try:
+            import stat
+            import os
+            os.chmod(str(path), stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+        except (OSError, ImportError):
+            pass
+
+        return {
+            "agent_id": aid,
+            "total": len(entries),
+            "file_path": str(path),
+        }
+
+    # ===== AI 短剧增强（v5.3.0 新增）=====
+
+    def drama_detail_stats(self, drama_id: str) -> Optional[Dict[str, Any]]:
+        """短剧深度统计（v5.3.0 新增）
+
+        Args:
+            drama_id: 短剧 ID
+
+        Returns:
+            包含台词数/角色数/场次数/总字数/经典占比等
+        """
+        conn = self._get_conn()
+        did = drama_id[:64] if isinstance(drama_id, str) else ""
+        if not did:
+            return None
+
+        drama = self.get_drama(did)
+        if not drama:
+            return None
+
+        scene_count = conn.execute(
+            "SELECT COUNT(*) FROM drama_scenes WHERE drama_id = ?", (did,)
+        ).fetchone()[0]
+        char_count = conn.execute(
+            "SELECT COUNT(*) FROM drama_characters WHERE drama_id = ?", (did,)
+        ).fetchone()[0]
+        line_count = conn.execute(
+            "SELECT COUNT(*) FROM drama_lines WHERE drama_id = ?", (did,)
+        ).fetchone()[0]
+        classic_count = conn.execute(
+            "SELECT COUNT(*) FROM drama_lines WHERE drama_id = ? AND is_classic = 1", (did,)
+        ).fetchone()[0]
+
+        # 总字数 & 平均台词长度
+        text_info = conn.execute(
+            "SELECT SUM(LENGTH(line_text)) as total_chars, "
+            "AVG(LENGTH(line_text)) as avg_len FROM drama_lines WHERE drama_id = ?",
+            (did,)
+        ).fetchone()
+        total_chars = text_info[0] or 0
+        avg_line_len = round(text_info[1] or 0, 1)
+
+        # 每集台词数分布
+        ep_dist = conn.execute(
+            "SELECT episode, COUNT(*) as cnt FROM drama_lines "
+            "WHERE drama_id = ? GROUP BY episode ORDER BY episode", (did,)
+        ).fetchall()
+
+        # 台词最多的角色 Top-5
+        top_chars = conn.execute(
+            "SELECT character_name, COUNT(*) as cnt FROM drama_lines "
+            "WHERE drama_id = ? AND character_name != '' "
+            "GROUP BY character_name ORDER BY cnt DESC LIMIT 5", (did,)
+        ).fetchall()
+
+        classic_ratio = round(classic_count / line_count * 100, 1) if line_count > 0 else 0.0
+
+        return {
+            "drama_id": did,
+            "title": drama.title,
+            "genre": drama.genre.value if hasattr(drama.genre, "value") else str(drama.genre),
+            "status": drama.status.value if hasattr(drama.status, "value") else str(drama.status),
+            "rating": drama.rating,
+            "total_episodes": drama.total_episodes,
+            "current_episode": drama.current_episode,
+            "scene_count": scene_count,
+            "character_count": char_count,
+            "line_count": line_count,
+            "classic_line_count": classic_count,
+            "classic_ratio": classic_ratio,
+            "total_text_chars": total_chars,
+            "avg_line_length": avg_line_len,
+            "episode_distribution": {str(r[0]): r[1] for r in ep_dist},
+            "top_characters_by_lines": [
+                {"name": r[0], "line_count": r[1]} for r in top_chars
+            ],
+        }
+
+    def random_lines(self,
+                     drama_id: Optional[str] = None,
+                     character_id: Optional[str] = None,
+                     is_classic: Optional[bool] = None,
+                     count: int = 1) -> List[DramaLine]:
+        """随机抽取台词（v5.3.0 新增）
+
+        Args:
+            drama_id: 限定短剧
+            character_id: 限定角色
+            is_classic: 仅经典台词
+            count: 抽取数量
+
+        Returns:
+            随机台词列表
+        """
+        conn = self._get_conn()
+        count = max(1, min(100, int(count)))
+
+        sql = "SELECT * FROM drama_lines WHERE 1=1"
+        params: List[Any] = []
+
+        if drama_id:
+            sql += " AND drama_id = ?"
+            params.append(drama_id[:64])
+        if character_id:
+            sql += " AND character_id = ?"
+            params.append(character_id[:64])
+        if is_classic is not None:
+            sql += " AND is_classic = ?"
+            params.append(1 if is_classic else 0)
+
+        sql += " ORDER BY RANDOM() LIMIT ?"
+        params.append(count)
+
+        rows = conn.execute(sql, params).fetchall()
+        return [self._row_to_line(r) for r in rows]
+
+    def character_profile(self,
+                          character_id: str,
+                          drama_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """角色画像分析（v5.3.0 新增）
+
+        Args:
+            character_id: 角色 ID
+            drama_id: 限定短剧（可选）
+
+        Returns:
+            角色画像：台词数/经典台词数/出场场次/平均台词长度/台词风格
+        """
+        conn = self._get_conn()
+        cid = character_id[:64] if isinstance(character_id, str) else ""
+        if not cid:
+            return None
+
+        # 查找角色信息
+        char = None
+        if drama_id:
+            did = drama_id[:64]
+            chars = conn.execute(
+                "SELECT * FROM drama_characters WHERE id = ? AND drama_id = ?",
+                (cid, did)
+            ).fetchall()
+        else:
+            chars = conn.execute(
+                "SELECT * FROM drama_characters WHERE id = ?", (cid,)
+            ).fetchall()
+
+        if chars:
+            char = self._row_to_character(chars[0])
+        else:
+            # 可能角色 ID 不在 characters 表但台词中有记录
+            name_row = conn.execute(
+                "SELECT character_name FROM drama_lines WHERE character_id = ? LIMIT 1",
+                (cid,)
+            ).fetchone()
+            if not name_row:
+                return None
+
+        # 统计台词
+        if drama_id:
+            did = drama_id[:64]
+            line_sql = "SELECT COUNT(*), SUM(is_classic), SUM(LENGTH(line_text)), " \
+                       "COUNT(DISTINCT scene_id) FROM drama_lines " \
+                       "WHERE character_id = ? AND drama_id = ?"
+            line_params = [cid, did]
+        else:
+            line_sql = "SELECT COUNT(*), SUM(is_classic), SUM(LENGTH(line_text)), " \
+                       "COUNT(DISTINCT scene_id) FROM drama_lines " \
+                       "WHERE character_id = ?"
+            line_params = [cid]
+
+        info = conn.execute(line_sql, line_params).fetchone()
+        total_lines = info[0] or 0
+        classic_lines = info[1] or 0
+        total_chars = info[2] or 0
+        scene_count = info[3] or 0
+
+        avg_line_len = round(total_chars / total_lines, 1) if total_lines > 0 else 0.0
+
+        # 出场短剧列表
+        dramas = conn.execute(
+            "SELECT DISTINCT drama_id FROM drama_lines WHERE character_id = ?", (cid,)
+        ).fetchall()
+
+        # 最长台词（代表性台词）
+        longest = conn.execute(
+            "SELECT line_text FROM drama_lines WHERE character_id = ? "
+            "ORDER BY LENGTH(line_text) DESC LIMIT 1", (cid,)
+        ).fetchone()
+        longest_line = longest[0] if longest else ""
+
+        # 经典台词数
+        classic_ratio = round(classic_lines / total_lines * 100, 1) if total_lines > 0 else 0.0
+
+        name = ""
+        if char:
+            name = char.name
+        elif info:
+            name_row = conn.execute(
+                "SELECT character_name FROM drama_lines WHERE character_id = ? LIMIT 1", (cid,)
+            ).fetchone()
+            name = name_row[0] if name_row else ""
+
+        return {
+            "character_id": cid,
+            "name": name,
+            "drama_id": drama_id[:64] if drama_id else None,
+            "total_lines": total_lines,
+            "classic_lines": classic_lines,
+            "classic_ratio": classic_ratio,
+            "scene_appearances": scene_count,
+            "drama_appearances": len(dramas),
+            "drama_ids": [r[0] for r in dramas],
+            "avg_line_length": avg_line_len,
+            "total_text_chars": total_chars,
+            "longest_line": longest_line[:300],
+        }
 
     def analyze_similarity(self,
                            memory_id: str,
