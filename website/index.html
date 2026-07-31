@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="MindForge v5.2.8 - AI Agent 终身记忆系统，多层记忆架构、知识图谱、多模态支持、多Agent记忆空间，100% 本地加密">
+<meta name="description" content="MindForge v5.3.0 - AI Agent 终身记忆系统，多层记忆架构、知识图谱、多模态支持、多Agent记忆空间、Agent画像与短剧分析，100% 本地加密">
 <meta name="keywords" content="MindForge, AI Memory, Agent Memory, 知识图谱, 终身记忆, AI Agent, 记忆系统, 本地加密">
 <meta name="author" content="MindForge Project">
 <meta name="robots" content="index, follow">
@@ -26,7 +26,7 @@
 <meta name="twitter:description" content="四层记忆架构模拟人类认知，知识图谱自动关联推理，100% 本地端侧加密">
 <meta name="twitter:image" content="https://opok-ops.github.io/ClawMemory/assets/og-image.png">
 
-<title>MindForge v5.2.8 — AI Agent 终身记忆系统</title>
+<title>MindForge v5.3.0 — AI Agent 终身记忆系统</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@500;600;700;800;900&display=swap" rel="stylesheet">
@@ -55,7 +55,7 @@
           </defs>
         </svg>
       </div>
-      <span class="logo-text">MindForge <em>v5.2.8</em></span>
+      <span class="logo-text">MindForge <em>v5.3.0</em></span>
     </a>
     <ul class="nav-links">
       <li><a href="#features">功能</a></li>
@@ -84,7 +84,7 @@
   <div class="hero-content">
     <div class="hero-badge">
       <span class="badge-dot"></span>
-      v5.2.8 全新发布 · search 核心修复 · 多 Agent 记忆空间预览 · 多层记忆架构 · 知识图谱引擎
+      v5.3.0 全新发布 · Agent 画像 · 短剧深度分析 · 安全加固 · 记忆合并
     </div>
     <h1 class="hero-title">
       让 AI Agent 拥有
@@ -139,9 +139,9 @@
   <div class="container">
     <div class="section-header reveal">
       <span class="section-tag">核心能力</span>
-      <h2 class="section-title">v5.2.0 带来<span class="gradient-text"> 八大突破</span></h2>
+      <h2 class="section-title">v5.3.0 带来<span class="gradient-text"> 全新升级</span></h2>
       <p class="section-desc">
-        从简单的文本记忆进化到完整的认知记忆系统，模拟人类大脑的记忆形成、巩固与遗忘机制。
+        Agent 记忆画像、合并与导出，AI 短剧深度分析与随机灵感抽取，全方位安全加固与路径遍历防护。
       </p>
     </div>
 
@@ -251,7 +251,7 @@
           </svg>
         </div>
         <h3>多 Agent 记忆空间</h3>
-        <p>多个 Agent 在同一本地库内安全协作：共享记忆空间、owner/editor/reader 三级角色权限、PRIVATE/STRICT 隐私护栏、冲突自动解决。v5.2.8 已提供实验性预览，v6.0.0 全量推送。</p>
+        <p>多个 Agent 在同一本地库内安全协作：共享记忆空间、owner/editor/reader 三级角色权限、PRIVATE/STRICT 隐私护栏、冲突自动解决。v5.3.0 已提供实验性预览，v6.0.0 全量推送。</p>
         <div class="feature-tags">
           <span>共享空间</span><span>角色权限</span><span>隐私护栏</span><span>冲突解决</span>
         </div>
@@ -727,6 +727,60 @@ openclaw restart</code></pre>
     </div>
 
     <div class="changelog-timeline reveal">
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.3.0</span>
+          <span class="cl-date">2026-07-31</span>
+        </div>
+        <div class="cl-content">
+          <h4>🧠 Agent 记忆增强</h4>
+          <ul>
+            <li><code>agent-profile</code> - Agent 记忆画像（层级/分类/重要度分布、知识领域 Top-10、30天活跃时间线、质量分布采样）</li>
+            <li><code>agent-merge</code> - 合并两个 Agent 的记忆（精确去重模式 + dry-run 预览）</li>
+            <li><code>agent-export</code> - 导出 Agent 记忆为独立 JSON 包（可选包含审计日志）</li>
+          </ul>
+          <h4>🎬 AI 短剧增强</h4>
+          <ul>
+            <li><code>drama-info</code> - 短剧深度统计（台词/角色/场次/经典占比/每集分布/角色 Top-5）</li>
+            <li><code>line-random</code> - 随机抽取台词（多维筛选，灵感激发）</li>
+            <li><code>char-profile</code> - 角色画像分析（台词统计/出场统计/代表性台词）</li>
+          </ul>
+          <h4>🔐 安全加固</h4>
+          <ul>
+            <li><code>add_memory</code> 内容长度上限 50000 字符防 DoS</li>
+            <li>所有新方法 ID 长度限制 + 枚举白名单校验</li>
+            <li>导出路径双重校验 + 权限收紧 0644</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.2.9</span>
+          <span class="cl-date">2026-07-31</span>
+        </div>
+        <div class="cl-content">
+          <h4>🧠 Agent 记忆增强</h4>
+          <ul>
+            <li><code>agent-list-memories</code> - 列出 Agent 记忆（table/json 双格式）</li>
+            <li><code>agent-rank</code> - Agent 记忆排行榜（4 维度）</li>
+            <li><code>agent-forget</code> - 智能遗忘低质量旧记忆</li>
+          </ul>
+          <h4>🎬 AI 短剧增强</h4>
+          <ul>
+            <li><code>drama-import</code> - JSON 批量导入短剧</li>
+            <li><code>drama-stars</code> - 高分短剧排行榜</li>
+            <li><code>scene-list-lines</code> / <code>char-list-lines</code> - 按场次/角色列台词</li>
+          </ul>
+          <h4>🔐 安全加固</h4>
+          <ul>
+            <li>核心层路径遍历防护（<code>_safe_path</code>）</li>
+            <li>CSV 公式注入防护（单元格 =/+/-/@ 前缀）</li>
+            <li>文件权限收紧至 0644</li>
+          </ul>
+        </div>
+      </div>
+
       <div class="changelog-item">
         <div class="cl-version">
           <span class="cl-num">v5.2.8</span>
