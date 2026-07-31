@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="MindForge v5.2.0 - AI Agent 终身记忆系统，多层记忆架构、知识图谱、多模态支持，100% 本地加密">
+<meta name="description" content="MindForge v5.3.0 - AI Agent 终身记忆系统，多层记忆架构、知识图谱、多模态支持、多Agent记忆空间、Agent画像与短剧分析，100% 本地加密">
 <meta name="keywords" content="MindForge, AI Memory, Agent Memory, 知识图谱, 终身记忆, AI Agent, 记忆系统, 本地加密">
 <meta name="author" content="MindForge Project">
 <meta name="robots" content="index, follow">
@@ -15,8 +15,8 @@
 <meta property="og:title" content="MindForge — AI Agent 终身记忆系统">
 <meta property="og:description" content="四层记忆架构模拟人类认知，知识图谱自动关联推理，100% 本地端侧加密，零云端依赖">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://opok-ops.github.io/MindForge/">
-<meta property="og:image" content="https://opok-ops.github.io/MindForge/assets/og-image.png">
+<meta property="og:url" content="https://opok-ops.github.io/ClawMemory/">
+<meta property="og:image" content="https://opok-ops.github.io/ClawMemory/assets/og-image.png">
 <meta property="og:locale" content="zh_CN">
 <meta property="og:site_name" content="MindForge">
 
@@ -24,15 +24,15 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="MindForge — AI Agent 终身记忆系统">
 <meta name="twitter:description" content="四层记忆架构模拟人类认知，知识图谱自动关联推理，100% 本地端侧加密">
-<meta name="twitter:image" content="https://opok-ops.github.io/MindForge/assets/og-image.png">
+<meta name="twitter:image" content="https://opok-ops.github.io/ClawMemory/assets/og-image.png">
 
-<title>MindForge v5.2.0 — AI Agent 终身记忆系统</title>
+<title>MindForge v5.3.0 — AI Agent 终身记忆系统</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/style.css">
 </head>
-<body>
+<body id="top">
 
 <canvas id="particle-canvas"></canvas>
 
@@ -40,7 +40,7 @@
 
 <nav class="nav">
   <div class="nav-container">
-    <a href="#" class="nav-logo">
+    <a href="#top" class="nav-logo">
       <div class="logo-mark">
         <svg viewBox="0 0 40 40" fill="none">
           <circle cx="20" cy="20" r="18" stroke="url(#logoGrad)" stroke-width="2"/>
@@ -55,17 +55,18 @@
           </defs>
         </svg>
       </div>
-      <span class="logo-text">MindForge <em>v5.2.0</em></span>
+      <span class="logo-text">MindForge <em>v5.3.0</em></span>
     </a>
     <ul class="nav-links">
       <li><a href="#features">功能</a></li>
       <li><a href="#architecture">架构</a></li>
       <li><a href="#playground">演示</a></li>
       <li><a href="#privacy">隐私</a></li>
+      <li><a href="#changelog">更新日志</a></li>
       <li><a href="#docs">文档</a></li>
     </ul>
     <div class="nav-actions">
-      <a href="https://github.com/opok-ops/MindForge" class="btn btn-ghost" target="_blank">
+      <a href="https://github.com/opok-ops/ClawMemory" class="btn btn-ghost" target="_blank">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
         GitHub
       </a>
@@ -83,7 +84,7 @@
   <div class="hero-content">
     <div class="hero-badge">
       <span class="badge-dot"></span>
-      v5.2.0 全新发布 · 多层记忆架构 · 知识图谱引擎
+      v5.3.0 全新发布 · Agent 画像 · 短剧深度分析 · 安全加固 · 记忆合并
     </div>
     <h1 class="hero-title">
       让 AI Agent 拥有
@@ -138,9 +139,9 @@
   <div class="container">
     <div class="section-header reveal">
       <span class="section-tag">核心能力</span>
-      <h2 class="section-title">v5.2.0 带来<span class="gradient-text"> 八大突破</span></h2>
+      <h2 class="section-title">v5.3.0 带来<span class="gradient-text"> 全新升级</span></h2>
       <p class="section-desc">
-        从简单的文本记忆进化到完整的认知记忆系统，模拟人类大脑的记忆形成、巩固与遗忘机制。
+        Agent 记忆画像、合并与导出，AI 短剧深度分析与随机灵感抽取，全方位安全加固与路径遍历防护。
       </p>
     </div>
 
@@ -232,6 +233,27 @@
         <p>AES-256-GCM 端侧加密 + 零知识证明验证 + 四级隐私隔离，你的记忆永远只属于你，即使是我们也无法访问。</p>
         <div class="feature-tags">
           <span>端侧加密</span><span>零知识证明</span><span>物理隔离</span>
+        </div>
+      </div>
+
+      <div class="feature-card feature-preview reveal">
+        <div class="feature-badge">
+          <span class="badge-dot"></span>
+          开发中 · v6.0.0 全量推送
+        </div>
+        <div class="feature-icon icon-cyan">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="9" cy="8" r="3"/>
+            <circle cx="17" cy="10" r="2.5"/>
+            <path d="M3 20v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1"/>
+            <path d="M15.5 15.2a4 4 0 0 1 5.5 3.8v1"/>
+            <path d="M9 11a3 3 0 0 1 0 .01"/>
+          </svg>
+        </div>
+        <h3>多 Agent 记忆空间</h3>
+        <p>多个 Agent 在同一本地库内安全协作：共享记忆空间、owner/editor/reader 三级角色权限、PRIVATE/STRICT 隐私护栏、冲突自动解决。v5.3.0 已提供实验性预览，v6.0.0 全量推送。</p>
+        <div class="feature-tags">
+          <span>共享空间</span><span>角色权限</span><span>隐私护栏</span><span>冲突解决</span>
         </div>
       </div>
     </div>
@@ -451,7 +473,13 @@
 
     <div class="privacy-tiers reveal">
       <div class="tier-card tier-public">
-        <div class="tier-icon">🌐</div>
+        <div class="tier-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M2 12h20"/>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+          </svg>
+        </div>
         <h3>PUBLIC</h3>
         <p>公开级记忆，可被任何模块和 Agent 访问，用于通用知识和公开信息。</p>
         <ul>
@@ -461,7 +489,13 @@
         </ul>
       </div>
       <div class="tier-card tier-internal">
-        <div class="tier-icon">🏠</div>
+        <div class="tier-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M3 10.5 12 3l9 7.5"/>
+            <path d="M5 9.5V21h14V9.5"/>
+            <path d="M9 21v-6h6v6"/>
+          </svg>
+        </div>
         <h3>INTERNAL</h3>
         <p>内部级记忆，仅同一 Agent 会话内可访问，默认隐私级别。</p>
         <ul>
@@ -471,7 +505,13 @@
         </ul>
       </div>
       <div class="tier-card tier-private">
-        <div class="tier-icon">🔐</div>
+        <div class="tier-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="4" y="11" width="16" height="10" rx="2"/>
+            <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+            <circle cx="12" cy="16" r="1.5"/>
+          </svg>
+        </div>
         <h3>PRIVATE</h3>
         <p>私密级记忆，高度敏感数据，需显式授权才能访问，全程审计追踪。</p>
         <ul>
@@ -481,7 +521,12 @@
         </ul>
       </div>
       <div class="tier-card tier-strict">
-        <div class="tier-icon">🛡️</div>
+        <div class="tier-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="M9 12l2 2 4-4"/>
+          </svg>
+        </div>
         <h3>STRICT</h3>
         <p>严格级记忆，物理隔离存储，最高级别保护，仅用户本人可解锁。</p>
         <ul>
@@ -494,22 +539,44 @@
 
     <div class="privacy-features reveal">
       <div class="pf-item">
-        <div class="pf-icon">🔒</div>
+        <div class="pf-icon icon-cyan">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="4" y="11" width="16" height="10" rx="2"/>
+            <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+            <path d="M12 15v3"/>
+          </svg>
+        </div>
         <h4>AES-256-GCM</h4>
         <p>军用级加密强度，PBKDF2 密钥派生，每条记忆独立加密</p>
       </div>
       <div class="pf-item">
-        <div class="pf-icon">🚫</div>
+        <div class="pf-icon icon-orange">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M17.5 19a4.5 4.5 0 0 0 .42-8.98 6 6 0 0 0-11.7 1.62A4 4 0 0 0 7 19h10.5z"/>
+            <path d="M4 4l16 16"/>
+          </svg>
+        </div>
         <h4>零云端依赖</h4>
         <p>架构层面禁用云端上传，完全本地化运行，离线可用</p>
       </div>
       <div class="pf-item">
-        <div class="pf-icon">📝</div>
+        <div class="pf-icon icon-green">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <path d="M14 2v6h6"/>
+            <path d="M9 15l2 2 4-4"/>
+          </svg>
+        </div>
         <h4>完整审计</h4>
         <p>所有访问操作均有不可篡改的审计日志，随时可追溯</p>
       </div>
       <div class="pf-item">
-        <div class="pf-icon">🧩</div>
+        <div class="pf-icon icon-purple">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <circle cx="12" cy="11" r="3"/>
+          </svg>
+        </div>
         <h4>零知识证明</h4>
         <p>验证记忆存在性而不泄露内容，支持隐私计算场景</p>
       </div>
@@ -536,7 +603,7 @@
       </div>
       <div class="code-panel">
         <pre class="code-block active" id="tab-install"><code><span class="c"># 克隆仓库</span>
-git clone https://github.com/opok-ops/MindForge.git
+git clone https://github.com/opok-ops/ClawMemory.git
 cd MindForge
 
 <span class="c"># 初始化（生成加密密钥）</span>
@@ -621,7 +688,7 @@ openclaw restart</code></pre>
         <h2>准备好让你的 Agent<br>拥有<span class="gradient-text"> 终身记忆</span>了吗？</h2>
         <p>加入数千名开发者，一起构建更智能、更懂你的 AI Agent。</p>
         <div class="cta-actions">
-          <a href="https://github.com/opok-ops/MindForge" class="btn btn-primary btn-lg" target="_blank">
+          <a href="https://github.com/opok-ops/ClawMemory" class="btn btn-primary btn-lg" target="_blank">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
             GitHub 仓库
           </a>
@@ -649,6 +716,258 @@ openclaw restart</code></pre>
   </div>
 </section>
 
+<section id="changelog" class="section changelog-section">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-tag">版本历史</span>
+      <h2 class="section-title"><span class="gradient-text">更新日志</span></h2>
+      <p class="section-desc">
+        MindForge 持续进化，每次更新都带来更多能力。
+      </p>
+    </div>
+
+    <div class="changelog-timeline reveal">
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.3.0</span>
+          <span class="cl-date">2026-07-31</span>
+        </div>
+        <div class="cl-content">
+          <h4>🧠 Agent 记忆增强</h4>
+          <ul>
+            <li><code>agent-profile</code> - Agent 记忆画像（层级/分类/重要度分布、知识领域 Top-10、30天活跃时间线、质量分布采样）</li>
+            <li><code>agent-merge</code> - 合并两个 Agent 的记忆（精确去重模式 + dry-run 预览）</li>
+            <li><code>agent-export</code> - 导出 Agent 记忆为独立 JSON 包（可选包含审计日志）</li>
+          </ul>
+          <h4>🎬 AI 短剧增强</h4>
+          <ul>
+            <li><code>drama-info</code> - 短剧深度统计（台词/角色/场次/经典占比/每集分布/角色 Top-5）</li>
+            <li><code>line-random</code> - 随机抽取台词（多维筛选，灵感激发）</li>
+            <li><code>char-profile</code> - 角色画像分析（台词统计/出场统计/代表性台词）</li>
+          </ul>
+          <h4>🔐 安全加固</h4>
+          <ul>
+            <li><code>add_memory</code> 内容长度上限 50000 字符防 DoS</li>
+            <li>所有新方法 ID 长度限制 + 枚举白名单校验</li>
+            <li>导出路径双重校验 + 权限收紧 0644</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.2.9</span>
+          <span class="cl-date">2026-07-31</span>
+        </div>
+        <div class="cl-content">
+          <h4>🧠 Agent 记忆增强</h4>
+          <ul>
+            <li><code>agent-list-memories</code> - 列出 Agent 记忆（table/json 双格式）</li>
+            <li><code>agent-rank</code> - Agent 记忆排行榜（4 维度）</li>
+            <li><code>agent-forget</code> - 智能遗忘低质量旧记忆</li>
+          </ul>
+          <h4>🎬 AI 短剧增强</h4>
+          <ul>
+            <li><code>drama-import</code> - JSON 批量导入短剧</li>
+            <li><code>drama-stars</code> - 高分短剧排行榜</li>
+            <li><code>scene-list-lines</code> / <code>char-list-lines</code> - 按场次/角色列台词</li>
+          </ul>
+          <h4>🔐 安全加固</h4>
+          <ul>
+            <li>核心层路径遍历防护（<code>_safe_path</code>）</li>
+            <li>CSV 公式注入防护（单元格 =/+/-/@ 前缀）</li>
+            <li>文件权限收紧至 0644</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.2.8</span>
+          <span class="cl-date">2026-07-30</span>
+        </div>
+        <div class="cl-content">
+          <h4>🔍 核心修复（P0）</h4>
+          <ul>
+            <li>修复 <code>search</code> 命令跨进程永远返回 0 结果的严重问题：索引自动从数据库水合 + 模糊搜索补充召回（CJK 中文子串亦可命中）</li>
+            <li>修复 <code>--tags a,b</code> 逗号分隔被误存为单个标签，空格/逗号混用现已统一</li>
+            <li>修复联邦模块 <code>sqlite3</code> 未导入的 NameError 隐患</li>
+          </ul>
+          <h4>🌐 多 Agent 记忆空间（实验性 — v6.0.0 全量推送预览）</h4>
+          <ul>
+            <li>共享记忆空间：多 Agent 在同一本地库内受控协作</li>
+            <li>三级角色权限：<code>owner</code> / <code>editor</code> / <code>reader</code></li>
+            <li>隐私护栏：<code>PRIVATE</code> / <code>STRICT</code> 记忆禁止进入共享空间</li>
+            <li>冲突解决：last-write-wins + 条目版本号自动递增</li>
+            <li>新增 7 个实验性命令：<code>space-create</code> / <code>space-list</code> / <code>space-join</code> / <code>space-add-member</code> / <code>space-share</code> / <code>space-memories</code> / <code>space-stats</code></li>
+          </ul>
+          <h4>📤 其他新命令</h4>
+          <ul>
+            <li><code>export-csv</code> - 导出记忆为 CSV（含路径安全校验与隐私过滤）</li>
+            <li><code>diff</code> - 对比记忆版本差异（配合 v5.2.7 版本历史使用）</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.2.7</span>
+          <span class="cl-date">2026-07-30</span>
+        </div>
+        <div class="cl-content">
+          <h4>🔒 安全加固（工信部合规）</h4>
+          <ul>
+            <li>修复 14 个路径遍历漏洞：所有 export/import/backup 命令增加统一路径校验</li>
+            <li>修复 db-restore 严重漏洞：增加 SQLite 签名校验 + integrity_check</li>
+            <li>修复 export-md 存储型 XSS：内容/分类/标签转义</li>
+            <li>修复 export-xml/html 未转义字段</li>
+            <li>增强 import-url SSRF 防护：DNS 重绑定 + 编码绕过检测</li>
+          </ul>
+          <h4>📜 记忆版本历史（新功能）</h4>
+          <ul>
+            <li><code>history</code> - 查看记忆修改历史</li>
+            <li><code>rollback</code> - 回滚到指定历史版本</li>
+            <li>update 自动保存历史版本</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.2.6</span>
+          <span class="cl-date">2026-07-30</span>
+        </div>
+        <div class="cl-content">
+          <h4>🔧 紧急修复</h4>
+          <ul>
+            <li>修复 MindForge Bot 自动化提交误删 <code>commands</code> 命令分发字典导致 CLI 完全失效的严重问题</li>
+            <li>恢复 <code>args = parser.parse_args()</code> 调用和命令分发逻辑</li>
+            <li>保留 v5.2.5 全部功能（记忆关联、置顶收藏）的原始标注</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.2.5</span>
+          <span class="cl-date">2026-07-29</span>
+        </div>
+        <div class="cl-content">
+          <h4>🔗 记忆关联（Memory Links）</h4>
+          <ul>
+            <li><code>link</code> / <code>links</code> / <code>unlink</code> - 手动创建、查看、删除记忆间的双向关联</li>
+            <li>支持关联类型：<code>related</code> / <code>depends_on</code> / <code>extends</code> / <code>contradicts</code></li>
+            <li>支持关联备注，自动去重，禁止自关联</li>
+          </ul>
+          <h4>📌 置顶/收藏增强（Pin）</h4>
+          <ul>
+            <li><code>pin</code> / <code>unpin</code> / <code>pinned</code> - 置顶记忆，列表和搜索时优先展示</li>
+            <li><code>list</code> 命令支持置顶优先排序</li>
+          </ul>
+          <h4>🗄️ 数据库变更</h4>
+          <ul>
+            <li>新增 <code>memory_links</code> 表（双向关联存储）</li>
+            <li><code>memories</code> 表新增 <code>pinned</code> 字段</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.2.4</span>
+          <span class="cl-date">2026-07-29</span>
+        </div>
+        <div class="cl-content">
+          <h4>✨ 记忆笔记/批注</h4>
+          <ul>
+            <li><code>note-add</code> / <code>note-list</code> / <code>note-delete</code> - 为记忆添加、列出、删除笔记批注</li>
+          </ul>
+          <h4>✨ 记忆模板</h4>
+          <ul>
+            <li><code>template-add</code> / <code>template-list</code> / <code>template-use</code> / <code>template-delete</code> - 创建和使用记忆模板，支持变量占位符</li>
+          </ul>
+          <h4>✨ 批量更新</h4>
+          <ul>
+            <li><code>batch-update</code> - 批量更新记忆的分类/标签/重要性/层级/收藏状态</li>
+          </ul>
+          <h4>✨ 复习计划（间隔重复）</h4>
+          <ul>
+            <li><code>schedule create/list/review/stats</code> - 间隔重复复习系统（1→2→4→7→15→30 天）</li>
+          </ul>
+          <h4>🔧 修复</h4>
+          <ul>
+            <li>修复多处版本号不一致问题</li>
+            <li>修复 CLI commands 字典 "similar" 键重复注册</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.2.3</span>
+          <span class="cl-date">2026-07-28</span>
+        </div>
+        <div class="cl-content">
+          <h4>🛡️ 安全加固</h4>
+          <ul>
+            <li>新增 <code>_safe_json_loads()</code> 统一处理损坏 JSON 数据</li>
+            <li>修复数据转换方法中的 JSON 解析安全问题</li>
+            <li>修复批量标签操作和审计日志中的 JSON 解析安全问题</li>
+            <li>替换所有裸 <code>except Exception:</code> 为具体异常类型</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.2.2</span>
+          <span class="cl-date">2026-07-27</span>
+        </div>
+        <div class="cl-content">
+          <h4>✨ AI 短剧智能增强</h4>
+          <ul>
+            <li>智能推荐短剧、观看进度统计、一键导出功能</li>
+          </ul>
+          <h4>🤖 Agent 记忆优化</h4>
+          <ul>
+            <li>Agent 记忆统计、迁移、清理全生命周期管理</li>
+            <li>记忆演化（基于艾宾浩斯遗忘曲线）</li>
+          </ul>
+          <h4>📊 记忆质量与相似度分析</h4>
+          <ul>
+            <li>多维度记忆质量评分、相似度分析</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.2.1</span>
+          <span class="cl-date">2026-07-27</span>
+        </div>
+        <div class="cl-content">
+          <h4>✨ AI 短剧记忆模块</h4>
+          <ul>
+            <li>短剧系列、场次、角色、台词完整管理</li>
+            <li>经典台词标记、模糊搜索、关键词高亮</li>
+          </ul>
+          <h4>🛡️ 安全加固</h4>
+          <ul>
+            <li>输入验证机制、SQL 注入防护、枚举类型校验</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="changelog-more reveal">
+      <a href="https://github.com/opok-ops/ClawMemory/blob/master/README.md#-更新日志" class="btn btn-secondary" target="_blank">
+        查看完整更新日志
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
 <footer class="footer">
   <div class="container">
     <div class="footer-grid">
@@ -671,7 +990,7 @@ openclaw restart</code></pre>
         </div>
         <p>AI Agent 终身记忆系统<br>本地化 · 结构化 · 隐私优先</p>
         <div class="social-links">
-          <a href="https://github.com/opok-ops/MindForge" target="_blank" aria-label="GitHub">
+          <a href="https://github.com/opok-ops/ClawMemory" target="_blank" aria-label="GitHub">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
           </a>
         </div>
@@ -689,18 +1008,18 @@ openclaw restart</code></pre>
         <h5>文档</h5>
         <ul>
           <li><a href="#docs">快速开始</a></li>
-          <li><a href="#">API 参考</a></li>
-          <li><a href="#">适配器</a></li>
-          <li><a href="#">常见问题</a></li>
+          <li><a href="https://github.com/opok-ops/ClawMemory#python-sdk" target="_blank">API 参考</a></li>
+          <li><a href="https://github.com/opok-ops/ClawMemory/tree/master/adapters" target="_blank">适配器</a></li>
+          <li><a href="https://github.com/opok-ops/ClawMemory/discussions" target="_blank">常见问题</a></li>
         </ul>
       </div>
       <div class="footer-col">
         <h5>社区</h5>
         <ul>
-          <li><a href="https://github.com/opok-ops/MindForge/discussions" target="_blank">讨论区</a></li>
-<li><a href="https://github.com/opok-ops/MindForge/issues" target="_blank">提交 Issue</a></li>
-          <li><a href="#">贡献指南</a></li>
-          <li><a href="#">更新日志</a></li>
+          <li><a href="https://github.com/opok-ops/ClawMemory/discussions" target="_blank">讨论区</a></li>
+          <li><a href="https://github.com/opok-ops/ClawMemory/issues" target="_blank">提交 Issue</a></li>
+          <li><a href="https://github.com/opok-ops/ClawMemory/pulls" target="_blank">贡献代码</a></li>
+          <li><a href="#changelog">更新日志</a></li>
         </ul>
       </div>
     </div>
