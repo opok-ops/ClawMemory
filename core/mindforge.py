@@ -1,5 +1,5 @@
 """
-MindForge v5.3.2 主入口类
+MindForge v5.3.3 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,7 +31,7 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.3.2"
+    __version__ = "5.3.3"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -98,7 +98,7 @@ def _safe_path(path_str, must_exist=False, allow_symlinks=False,
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.3.2"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.3.3"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -1918,6 +1918,89 @@ class MindForge:
         if mode not in valid_modes:
             mode = "unwatched"
         return self._storage.drama_recommend_v2(genre, min_rating, mode, limit)
+
+    # ===== v5.3.3 新增 =====
+
+    def agent_timeline(self,
+                       agent_id: str,
+                       days: int = 30) -> Dict[str, Any]:
+        """Agent 记忆时间线分析（v5.3.3 新增）
+
+        按天/小时统计记忆创建趋势，识别活跃时段和趋势方向。
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            时间线分析：按天计数、按小时分布、活跃峰、趋势(rising/declining/stable)
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        # v5.3.3 安全加固：Unicode 控制字符过滤 + 长度上限
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        days = max(1, min(365, int(days)))
+        return self._storage.agent_timeline(agent_id, days)
+
+    def agent_heatmap(self,
+                      agent_id: str,
+                      days: int = 30) -> Dict[str, Any]:
+        """Agent 记忆热力图矩阵（v5.3.3 新增）
+
+        生成 分类 × 重要度 的记忆密度矩阵。
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            热力图矩阵：分类行 × 重要度列的计数矩阵 + 行列总计 + 密度最高单元格
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        # v5.3.3 安全加固：Unicode 控制字符过滤 + 长度上限
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        days = max(1, min(365, int(days)))
+        return self._storage.agent_heatmap(agent_id, days)
+
+    def drama_binge(self,
+                    drama_id: Optional[str] = None) -> Dict[str, Any]:
+        """追剧统计（v5.3.3 新增）
+
+        统计观看进度记录，包括完成率、评分分布、最近观看 Top-5。
+
+        Args:
+            drama_id: 指定短剧（可选，None=全部）
+
+        Returns:
+            追剧统计结果
+        """
+        did = drama_id[:64] if (isinstance(drama_id, str) and drama_id) else None
+        return self._storage.drama_binge_stats(drama_id)
+
+    def char_network(self,
+                     drama_id: str) -> Dict[str, Any]:
+        """角色关系网络分析（v5.3.3 新增）
+
+        分析短剧中角色间的共同出场频率，构建角色关系网络。
+
+        Args:
+            drama_id: 短剧 ID
+
+        Returns:
+            角色关系网络：节点列表 + 边列表（含共同出场次数权重）
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        # v5.3.3 安全加固：Unicode 控制字符过滤 + 长度上限
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        return self._storage.character_network(drama_id)
 
     def analyze_similarity(self,
                            memory_id: str,

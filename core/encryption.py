@@ -121,25 +121,46 @@ class EncryptionEngine:
             return plaintext.decode("utf-8")
 
     def _simple_encrypt(self, data: bytes, nonce: bytes) -> bytes:
-        """简易加密（无 cryptography 库时的降级方案）"""
-        derived = hashlib.sha256(self._key + nonce).digest()
+        """简易加密（无 cryptography 库时的降级方案）
+
+        v5.3.3 安全加固：改用 HMAC-SHA256 计数器模式生成密钥流，
+        替代此前固定 32 字节重复 XOR 的弱方案。每 32 字节使用不同密钥流块，
+        消除密钥流重复导致的明文泄露风险。
+        """
         result = bytearray()
+        block_idx = 0
         for i, b in enumerate(data):
-            result.append(b ^ derived[i % len(derived)])
+            if i % 32 == 0:
+                # v5.3.3：计数器模式，每块使用不同密钥流
+                counter = block_idx.to_bytes(8, "big")
+                derived = hmac.new(
+                    self._key, nonce + counter, hashlib.sha256
+                ).digest()
+                block_idx += 1
+            result.append(b ^ derived[i % 32])
         tag = hmac.new(self._key, bytes(result), hashlib.sha256).digest()
         return bytes(result) + tag
 
     def _simple_decrypt(self, data: bytes, nonce: bytes) -> bytes:
-        """简易解密"""
+        """简易解密
+
+        v5.3.3 安全加固：与 _simple_encrypt 对称的计数器模式解密。
+        """
         tag = data[-32:]
         ciphertext = data[:-32]
         expected_tag = hmac.new(self._key, ciphertext, hashlib.sha256).digest()
         if not hmac.compare_digest(tag, expected_tag):
             raise SecurityError("完整性校验失败")
-        derived = hashlib.sha256(self._key + nonce).digest()
         result = bytearray()
+        block_idx = 0
         for i, b in enumerate(ciphertext):
-            result.append(b ^ derived[i % len(derived)])
+            if i % 32 == 0:
+                counter = block_idx.to_bytes(8, "big")
+                derived = hmac.new(
+                    self._key, nonce + counter, hashlib.sha256
+                ).digest()
+                block_idx += 1
+            result.append(b ^ derived[i % 32])
         return bytes(result)
 
     def hash(self, data: str) -> str:

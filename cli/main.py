@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.3.2 CLI - 命令行工具
+MindForge v5.3.3 CLI - 命令行工具
 =================================
 
 Usage:
@@ -60,7 +60,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.2.8"
+    __version__ = "5.3.3"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -2755,6 +2755,22 @@ def main():
                               help="推荐模式（默认 unwatched=优先未看）")
     p_drama_rec2.add_argument("--limit", "-n", type=int, default=20, help="数量限制（1-200）")
 
+    # ===== v5.3.3 新增命令 =====
+
+    p_agent_timeline = sub.add_parser("agent-timeline", help="Agent 记忆时间线分析（v5.3.3 新增）")
+    p_agent_timeline.add_argument("agent_id", help="Agent ID")
+    p_agent_timeline.add_argument("--days", "-d", type=int, default=30, help="回溯天数（1-365）")
+
+    p_agent_heatmap = sub.add_parser("agent-heatmap", help="Agent 记忆热力图（v5.3.3 新增）")
+    p_agent_heatmap.add_argument("agent_id", help="Agent ID")
+    p_agent_heatmap.add_argument("--days", "-d", type=int, default=30, help="回溯天数（1-365）")
+
+    p_drama_binge = sub.add_parser("drama-binge", help="追剧统计（v5.3.3 新增）")
+    p_drama_binge.add_argument("--drama-id", help="指定短剧 ID（不指定则统计全部）")
+
+    p_char_network = sub.add_parser("char-network", help="角色关系网络（v5.3.3 新增）")
+    p_char_network.add_argument("drama_id", help="短剧 ID")
+
     p_quality = sub.add_parser("quality", help="记忆质量评分（v5.2.2 新增）")
     p_quality.add_argument("memory_id", nargs="?", help="记忆 ID（不指定则批量评分）")
     p_quality.add_argument("--category", "-c", help="批量评分时按分类过滤")
@@ -3033,6 +3049,10 @@ def main():
         "agent-purge": cmd_agent_purge,
         "drama-progress-update": cmd_drama_progress,
         "drama-rec2": cmd_drama_rec2,
+        "agent-timeline": cmd_agent_timeline,
+        "agent-heatmap": cmd_agent_heatmap,
+        "drama-binge": cmd_drama_binge,
+        "char-network": cmd_char_network,
         "quality": cmd_quality,
         "similar": cmd_similar,
         "backup": cmd_backup,
@@ -6029,6 +6049,222 @@ def cmd_drama_rec2(args):
         ws = d['watch_status'] or "-"
         print(f"{i:<4}{d['title'][:18]:<20}{d['genre']:<10}{d['rating']:<8}"
               f"{ws:<12}{ep_label:<6}{ur:<6}")
+
+    cm.close()
+    return 0
+
+
+def cmd_agent_timeline(args):
+    """Agent 记忆时间线分析（v5.3.3 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n📊 Agent 记忆时间线分析（v5.3.3）", "bold"))
+    print("=" * 60)
+    print(f"  Agent:   {args.agent_id}")
+    print(f"  天数:    {args.days}")
+
+    try:
+        result = cm.agent_timeline(args.agent_id, days=args.days)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    if result["total_memories"] == 0:
+        print(c(f"\n⚠️  该 Agent 在 {args.days} 天内无记忆记录", "yellow"))
+        cm.close()
+        return 0
+
+    print(f"\n  总记忆数:    {result['total_memories']}")
+    print(f"  日均记忆:    {result['avg_per_day']}")
+
+    trend_label = {"rising": "📈 上升", "declining": "📉 下降",
+                   "stable": "➡️ 稳定", "no_data": "无数据",
+                   "insufficient_data": "数据不足"}.get(result["trend"], result["trend"])
+    print(f"  趋势:        {trend_label}")
+
+    if result.get("peak_day"):
+        print(f"  最活跃日期:  {result['peak_day']['date']}（{result['peak_day']['count']} 条）")
+    if result.get("peak_hour") is not None:
+        print(f"  最活跃时段:  {result['peak_hour']['hour']:02d}:00（{result['peak_hour']['count']} 条）")
+
+    if result.get("top_active_hours"):
+        hours_str = ", ".join(f"{h:02d}:00" for h in result["top_active_hours"])
+        print(f"  活跃时段Top3: {hours_str}")
+
+    # 按天分布（最近 10 天）
+    by_day = result.get("by_day", {})
+    if by_day:
+        print(c(f"\n📅 按天分布（最近 {min(len(by_day), 10)} 天）", "cyan"))
+        sorted_days = sorted(by_day.keys(), reverse=True)[:10]
+        for day in sorted_days:
+            count = by_day[day]
+            bar = "█" * min(count, 30)
+            print(f"  {day} | {bar} {count}")
+
+    cm.close()
+    return 0
+
+
+def cmd_agent_heatmap(args):
+    """Agent 记忆热力图（v5.3.3 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🔥 Agent 记忆热力图（v5.3.3）", "bold"))
+    print("=" * 60)
+    print(f"  Agent:   {args.agent_id}")
+    print(f"  天数:    {args.days}")
+
+    try:
+        result = cm.agent_heatmap(args.agent_id, days=args.days)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    if result["total_memories"] == 0:
+        print(c(f"\n⚠️  该 Agent 在 {args.days} 天内无记忆记录", "yellow"))
+        cm.close()
+        return 0
+
+    print(f"\n  总记忆数:  {result['total_memories']}")
+    print(f"  分类数:    {len(result['categories'])}")
+
+    if result.get("max_density_cell"):
+        mc = result["max_density_cell"]
+        print(f"  密度最高:  [{mc['category']} × {mc['importance']}] = {mc['count']}")
+
+    # 矩阵表
+    matrix = result.get("matrix", {})
+    imp_levels = result.get("importance_levels", ["LOW", "MEDIUM", "HIGH", "CRITICAL"])
+
+    print(c(f"\n📊 密度矩阵（分类 × 重要度）", "cyan"))
+    print(f"  {'分类':<20}", end="")
+    for lv in imp_levels:
+        print(f"{lv:<10}", end="")
+    print(f"{'总计':<8}")
+    print("  " + "-" * 60)
+
+    for cat in sorted(matrix.keys()):
+        print(f"  {cat[:18]:<20}", end="")
+        for lv in imp_levels:
+            val = matrix[cat].get(lv, 0)
+            cell = str(val) if val > 0 else "-"
+            print(f"{cell:<10}", end="")
+        print(f"{result['row_totals'].get(cat, 0):<8}")
+
+    print("  " + "-" * 60)
+    print(f"  {'总计':<20}", end="")
+    for lv in imp_levels:
+        print(f"{result['col_totals'].get(lv, 0):<10}", end="")
+    print(f"{result['total_memories']:<8}")
+
+    cm.close()
+    return 0
+
+
+def cmd_drama_binge(args):
+    """追剧统计（v5.3.3 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n📺 追剧统计（v5.3.3）", "bold"))
+    print("=" * 60)
+
+    try:
+        result = cm.drama_binge(drama_id=args.drama_id)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    if result["total_dramas"] == 0:
+        print(c(f"\n⚠️  暂无短剧数据", "yellow"))
+        cm.close()
+        return 0
+
+    print(f"\n  总短剧数:      {result['total_dramas']}")
+    print(f"  追剧中:        {result['watching']}")
+    print(f"  已完成:        {result['completed']}")
+    print(f"  已弃剧:        {result['dropped']}")
+    print(f"  计划中:        {result['planned']}")
+    print(f"\n  已观看集数:    {result['total_episodes_watched']}")
+    print(f"  计划总集数:    {result['total_episodes_planned']}")
+    print(f"  完成率:        {result['completion_rate']}%")
+    if result.get("average_rating"):
+        print(f"  平均评分:      {result['average_rating']}（{result['rated_count']} 部已评分）")
+
+    if result.get("recent_watched"):
+        print(c(f"\n🕐 最近观看 Top-5", "cyan"))
+        print("-" * 60)
+        for i, w in enumerate(result["recent_watched"], 1):
+            status_label = {"watching": "追剧中", "completed": "已完成",
+                           "dropped": "已弃剧", "planned": "计划中"}.get(w["status"], w["status"])
+            print(f"  {i}. {w['title'][:20]:<22} {status_label:<8} "
+                  f"E{w['current_episode']}/{w['total_episodes']} "
+                  f"评分:{w['rating']}")
+
+    cm.close()
+    return 0
+
+
+def cmd_char_network(args):
+    """角色关系网络（v5.3.3 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🕸️  角色关系网络（v5.3.3）", "bold"))
+    print("=" * 60)
+    print(f"  短剧 ID: {args.drama_id}")
+
+    try:
+        result = cm.char_network(args.drama_id)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    if result["total_characters"] == 0:
+        print(c(f"\n⚠️  该短剧暂无角色数据", "yellow"))
+        cm.close()
+        return 0
+
+    print(f"\n  角色总数:    {result['total_characters']}")
+    print(f"  关系边数:    {result['total_edges']}")
+    print(f"  分析场次数:  {result['total_scenes_analyzed']}")
+
+    # 角色节点（按关联数排序）
+    nodes = result.get("nodes", [])
+    if nodes:
+        print(c(f"\n👥 角色节点（按关联数排序）", "cyan"))
+        print("-" * 60)
+        print(f"  {'#':<4}{'角色名':<16}{'角色类型':<12}{'出场场次':<10}{'关联数':<8}")
+        for i, n in enumerate(nodes[:15], 1):
+            print(f"  {i:<4}{n['name'][:14]:<16}{n['role']:<12}"
+                  f"{n['scene_count']:<10}{n['connections']:<8}")
+
+    # 关系边（按权重排序，Top-10）
+    edges = result.get("edges", [])
+    if edges:
+        print(c(f"\n🔗 角色关系 Top-10（按共同出场次数）", "cyan"))
+        print("-" * 60)
+        for i, e in enumerate(edges[:10], 1):
+            print(f"  {i}. {e['source_name'][:12]} ↔ {e['target_name'][:12]}  "
+                  f"共同出场: {e['weight']} 次")
 
     cm.close()
     return 0

@@ -64,6 +64,69 @@ def _safe_path(path_str, must_exist=False, allow_symlinks=False,
     return resolved
 
 
+# v5.3.3 安全加固：LIKE 通配符转义，防止 % 和 _ 被解释为 SQL LIKE 通配符
+def _escape_like(value: str) -> str:
+    """转义 LIKE 模式中的通配符 % 和 _，防止通配符注入"""
+    if not isinstance(value, str):
+        return ""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+# v5.3.3 安全加固：HTML/XSS 消毒，防止存储型 XSS 攻击
+_XSS_RE = __import__("re").compile(
+    r'<[^>]*>|javascript:|on\w+\s*=|<script|</script|<iframe|</iframe|<object|<embed',
+    __import__("re").IGNORECASE
+)
+
+def _sanitize_html(value: str, max_len: int = 10000) -> str:
+    """清洗 HTML 内容，防止存储型 XSS
+
+    移除 HTML 标签和危险的事件处理器属性。
+    """
+    if not isinstance(value, str):
+        return ""
+    if len(value) > max_len:
+        value = value[:max_len]
+    # 移除 HTML 标签和危险内容
+    cleaned = _XSS_RE.sub("", value)
+    return cleaned
+
+
+# v5.3.3 安全加固：敏感操作频率限制器
+class _RateLimiter:
+    """简单的内存频率限制器，防止暴力攻击"""
+
+    def __init__(self):
+        self._windows: Dict[str, List[float]] = {}
+
+    def check(self, key: str, max_calls: int = 10, window_seconds: int = 60) -> bool:
+        """检查是否超过频率限制
+
+        Args:
+            key: 限制键（如 agent_id + operation）
+            max_calls: 窗口内最大调用次数
+            window_seconds: 时间窗口（秒）
+
+        Returns:
+            True=允许，False=超限
+        """
+        now = time.time()
+        if key not in self._windows:
+            self._windows[key] = []
+
+        # 清理过期记录
+        self._windows[key] = [t for t in self._windows[key] if now - t < window_seconds]
+
+        if len(self._windows[key]) >= max_calls:
+            return False
+
+        self._windows[key].append(now)
+        return True
+
+
+_rate_limiter = _RateLimiter()
+
+
 @dataclass
 class MemoryEntry:
     """记忆条目"""
@@ -1099,8 +1162,10 @@ class StorageEngine:
         仅在边界情况下（tags 字段非合法 JSON）跳过该项。
         """
         conn = self._get_conn()
-        query = "SELECT * FROM memories WHERE tags LIKE ?"
-        params = [f'%"{tag}"%']
+        # v5.3.3 安全加固：LIKE 通配符转义
+        safe_tag = tag[:128] if isinstance(tag, str) else ""
+        query = "SELECT * FROM memories WHERE tags LIKE ? ESCAPE '\\'"
+        params = [f'%"{_escape_like(safe_tag)}"%']
 
         if category:
             query += " AND category = ?"
@@ -2768,10 +2833,11 @@ class StorageEngine:
         offset = max(0, int(offset))
 
         # v5.3.1 安全加固：参数化查询防 SQL 注入；软删除通过 category='trash' 标记
-        pattern = f"%{kw}%"
+        # v5.3.3 安全加固：LIKE 通配符转义，防 % 和 _ 注入
+        pattern = f"%{_escape_like(kw)}%"
         rows = conn.execute(
             "SELECT * FROM memories WHERE source_agent = ? AND category != 'trash' "
-            "AND (content LIKE ? OR category LIKE ? OR tags LIKE ?) "
+            "AND (content LIKE ? ESCAPE '\\' OR category LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\') "
             "ORDER BY importance DESC, created_at DESC LIMIT ? OFFSET ?",
             (aid, pattern, pattern, pattern, limit, offset)
         ).fetchall()
@@ -2890,9 +2956,10 @@ class StorageEngine:
         offset = max(0, int(offset))
         min_rating = max(0.0, min(10.0, float(min_rating)))
 
-        pattern = f"%{kw}%"
+        # v5.3.3 安全加固：LIKE 通配符转义，防 % 和 _ 注入
+        pattern = f"%{_escape_like(kw)}%"
         query = ("SELECT * FROM drama_series WHERE "
-                 "(title LIKE ? OR description LIKE ? OR tags LIKE ?)")
+                 "(title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')")
         params = [pattern, pattern, pattern]
 
         if genre:
@@ -3054,6 +3121,8 @@ class StorageEngine:
                     dry_run: bool = True) -> Dict[str, Any]:
         """清空指定 Agent 的全部记忆（v5.3.2 新增，高危操作）
 
+        v5.3.3 安全加固：添加频率限制，防止暴力清空攻击。
+
         Args:
             agent_id: 目标 Agent ID
             actor: 操作者（审计日志）
@@ -3067,6 +3136,12 @@ class StorageEngine:
         aid = agent_id[:128] if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
+
+        # v5.3.3 安全加固：频率限制，实际执行时每分钟最多 3 次
+        if not dry_run:
+            rate_key = f"purge:{aid}"
+            if not _rate_limiter.check(rate_key, max_calls=3, window_seconds=60):
+                return {"error": "操作过于频繁，请 60 秒后重试（频率限制）"}
 
         # 找出所有目标记忆（含软删除也一并清，因为是 purge）
         rows = conn.execute(
@@ -3330,6 +3405,401 @@ class StorageEngine:
         candidates.sort(key=_score, reverse=True)
         return candidates[:limit]
 
+    # ===== v5.3.3 新增：Agent 记忆时间线 & 热力图 =====
+
+    def agent_timeline(self,
+                       agent_id: str,
+                       days: int = 30) -> Dict[str, Any]:
+        """Agent 记忆时间线分析（v5.3.3 新增）
+
+        按天/小时统计记忆创建趋势，识别 Agent 活跃时段。
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            时间线分析结果：按天计数、按小时分布、活跃峰、趋势
+        """
+        conn = self._get_conn()
+        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+
+        days = max(1, min(365, int(days)))
+        now = time.time()
+        since = now - days * 86400
+
+        # v5.3.3 安全加固：参数化 SQL
+        rows = conn.execute(
+            "SELECT created_at FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND created_at >= ?",
+            (aid, since)
+        ).fetchall()
+
+        if not rows:
+            return {
+                "agent_id": aid,
+                "days": days,
+                "total_memories": 0,
+                "by_day": {},
+                "by_hour": {},
+                "peak_day": None,
+                "peak_hour": None,
+                "trend": "no_data",
+            }
+
+        from datetime import datetime as _dt
+
+        by_day: Dict[str, int] = {}
+        by_hour: Dict[int, int] = {h: 0 for h in range(24)}
+
+        for r in rows:
+            ts = r[0] or 0
+            if ts <= 0:
+                continue
+            dt = _dt.fromtimestamp(ts)
+            day_key = dt.strftime("%Y-%m-%d")
+            by_day[day_key] = by_day.get(day_key, 0) + 1
+            by_hour[dt.hour] = by_hour.get(dt.hour, 0) + 1
+
+        # 找活跃峰
+        peak_day = max(by_day, key=by_day.get) if by_day else None
+        peak_hour = max(by_hour, key=by_hour.get) if by_hour else None
+
+        # 趋势分析：后半段 vs 前半段
+        sorted_days = sorted(by_day.keys())
+        mid = len(sorted_days) // 2
+        if mid > 0:
+            first_half = sum(by_day[d] for d in sorted_days[:mid])
+            second_half = sum(by_day[d] for d in sorted_days[mid:])
+            if second_half > first_half * 1.1:
+                trend = "rising"
+            elif first_half > second_half * 1.1:
+                trend = "declining"
+            else:
+                trend = "stable"
+        else:
+            trend = "insufficient_data"
+
+        # 活跃时段标签
+        active_hours = sorted(by_hour.items(), key=lambda x: x[1], reverse=True)
+        top_hours = [h for h, c in active_hours[:3] if c > 0]
+
+        return {
+            "agent_id": aid,
+            "days": days,
+            "total_memories": len(rows),
+            "by_day": by_day,
+            "by_hour": {str(h): by_hour[h] for h in range(24) if by_hour[h] > 0},
+            "peak_day": {"date": peak_day, "count": by_day[peak_day]} if peak_day else None,
+            "peak_hour": {"hour": peak_hour, "count": by_hour[peak_hour]} if peak_hour is not None else None,
+            "top_active_hours": top_hours,
+            "trend": trend,
+            "avg_per_day": round(len(rows) / days, 2) if days > 0 else 0,
+        }
+
+    def agent_heatmap(self,
+                      agent_id: str,
+                      days: int = 30) -> Dict[str, Any]:
+        """Agent 记忆热力图矩阵（v5.3.3 新增）
+
+        生成 分类 × 重要度 的记忆密度矩阵，可视化 Agent 记忆分布。
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            热力图矩阵：分类行 × 重要度列的计数矩阵
+        """
+        conn = self._get_conn()
+        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+
+        days = max(1, min(365, int(days)))
+        now = time.time()
+        since = now - days * 86400
+
+        # v5.3.3 安全加固：参数化 SQL
+        rows = conn.execute(
+            "SELECT category, importance FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND created_at >= ?",
+            (aid, since)
+        ).fetchall()
+
+        importance_levels = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+        matrix: Dict[str, Dict[str, int]] = {}
+
+        for r in rows:
+            cat = (r[0] or "general")[:128]
+            imp = (r[1] or "MEDIUM").upper()
+            if imp not in importance_levels:
+                imp = "MEDIUM"
+            if cat not in matrix:
+                matrix[cat] = {lv: 0 for lv in importance_levels}
+            matrix[cat][imp] += 1
+
+        # 计算行/列总计和密度
+        row_totals = {cat: sum(vals.values()) for cat, vals in matrix.items()}
+        col_totals = {lv: sum(matrix[cat][lv] for cat in matrix) for lv in importance_levels}
+        grand_total = sum(row_totals.values())
+
+        # 找密度最高的单元格
+        max_cell = None
+        max_count = 0
+        for cat, vals in matrix.items():
+            for imp, cnt in vals.items():
+                if cnt > max_count:
+                    max_count = cnt
+                    max_cell = {"category": cat, "importance": imp, "count": cnt}
+
+        return {
+            "agent_id": aid,
+            "days": days,
+            "total_memories": grand_total,
+            "matrix": matrix,
+            "row_totals": row_totals,
+            "col_totals": col_totals,
+            "importance_levels": importance_levels,
+            "categories": sorted(matrix.keys()),
+            "max_density_cell": max_cell,
+        }
+
+    # ===== v5.3.3 新增：AI 短剧追剧统计 & 角色关系网络 =====
+
+    def drama_binge_stats(self,
+                          drama_id: Optional[str] = None) -> Dict[str, Any]:
+        """追剧统计（v5.3.3 新增）
+
+        统计观看进度记录，包括连续观看天数、最长追剧周期、平均完成时长。
+
+        Args:
+            drama_id: 指定短剧（可选，None=全部）
+
+        Returns:
+            追剧统计结果
+        """
+        conn = self._get_conn()
+        import json as _json
+
+        # v5.3.3 安全加固：参数化 SQL + ID 长度限制
+        if drama_id:
+            did = drama_id[:64] if isinstance(drama_id, str) else ""
+            rows = conn.execute(
+                "SELECT id, title, total_episodes, current_episode, status, "
+                "updated_at, last_watched_at, metadata, rating "
+                "FROM drama_series WHERE id = ?",
+                (did,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, title, total_episodes, current_episode, status, "
+                "updated_at, last_watched_at, metadata, rating "
+                "FROM drama_series"
+            ).fetchall()
+
+        if not rows:
+            return {
+                "total_dramas": 0,
+                "watching": 0,
+                "completed": 0,
+                "dropped": 0,
+                "planned": 0,
+                "binge_stats": {},
+            }
+
+        total = len(rows)
+        watching = 0
+        completed = 0
+        dropped = 0
+        planned = 0
+        total_episodes_watched = 0
+        total_episodes_planned = 0
+        watch_records = []
+
+        for r in rows:
+            status = r[4] or "planned"
+            cur_ep = r[3] or 0
+            total_ep = r[2] or 0
+            rating = r[8] or 0.0
+            last_watched = r[6] or 0
+            updated = r[5] or 0
+
+            if status == "watching":
+                watching += 1
+            elif status == "completed":
+                completed += 1
+            elif status == "dropped":
+                dropped += 1
+            else:
+                planned += 1
+
+            total_episodes_watched += cur_ep
+            total_episodes_planned += total_ep
+
+            # 从 metadata 解析进度历史
+            watch_history = []
+            try:
+                md_raw = r[7]
+                if isinstance(md_raw, str) and md_raw.strip():
+                    md = _json.loads(md_raw)
+                elif isinstance(md_raw, dict):
+                    md = md_raw
+                else:
+                    md = {}
+                watch_history = md.get("user_progress", {}).get("history", [])
+            except Exception:
+                pass
+
+            watch_records.append({
+                "drama_id": r[0],
+                "title": r[1],
+                "status": status,
+                "current_episode": cur_ep,
+                "total_episodes": total_ep,
+                "rating": rating,
+                "last_watched_at": last_watched,
+                "updated_at": updated,
+                "watch_history_count": len(watch_history),
+            })
+
+        # 完成率
+        completion_rate = round(
+            (total_episodes_watched / total_episodes_planned * 100)
+            if total_episodes_planned > 0 else 0.0, 2
+        )
+
+        # 最近观看的短剧 Top-5
+        recent_watched = sorted(
+            [w for w in watch_records if w["last_watched_at"] > 0],
+            key=lambda x: x["last_watched_at"], reverse=True
+        )[:5]
+
+        # 评分分布
+        rated = [w for w in watch_records if w["rating"] > 0]
+        avg_rating = round(sum(w["rating"] for w in rated) / len(rated), 2) if rated else 0.0
+
+        return {
+            "total_dramas": total,
+            "watching": watching,
+            "completed": completed,
+            "dropped": dropped,
+            "planned": planned,
+            "total_episodes_watched": total_episodes_watched,
+            "total_episodes_planned": total_episodes_planned,
+            "completion_rate": completion_rate,
+            "average_rating": avg_rating,
+            "rated_count": len(rated),
+            "recent_watched": recent_watched,
+        }
+
+    def character_network(self,
+                          drama_id: str) -> Dict[str, Any]:
+        """角色关系网络分析（v5.3.3 新增）
+
+        分析短剧中角色间的共同出场频率，构建角色关系网络数据。
+
+        Args:
+            drama_id: 短剧 ID
+
+        Returns:
+            角色关系网络：节点列表 + 边列表（含共同出场次数）
+        """
+        conn = self._get_conn()
+        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+
+        # 获取所有角色
+        char_rows = conn.execute(
+            "SELECT id, name, role FROM drama_characters WHERE drama_id = ?",
+            (did,)
+        ).fetchall()
+
+        if not char_rows:
+            return {
+                "drama_id": did,
+                "nodes": [],
+                "edges": [],
+                "total_characters": 0,
+            }
+
+        characters = {r[0]: {"id": r[0], "name": r[1], "role": r[2]} for r in char_rows}
+
+        # 获取所有场次的台词，按场次统计角色出场
+        scene_chars: Dict[str, set] = {}
+        line_rows = conn.execute(
+            "SELECT scene_id, character_id FROM drama_lines "
+            "WHERE drama_id = ? AND character_id != ''",
+            (did,)
+        ).fetchall()
+
+        for r in line_rows:
+            scene_id = r[0] or ""
+            char_id = r[1] or ""
+            if scene_id and char_id and char_id in characters:
+                if scene_id not in scene_chars:
+                    scene_chars[scene_id] = set()
+                scene_chars[scene_id].add(char_id)
+
+        # 构建共现矩阵
+        co_occurrence: Dict[str, Dict[str, int]] = {}
+        for scene_id, char_set in scene_chars.items():
+            char_list = list(char_set)
+            for i in range(len(char_list)):
+                for j in range(i + 1, len(char_list)):
+                    a, b = char_list[i], char_list[j]
+                    if a not in co_occurrence:
+                        co_occurrence[a] = {}
+                    if b not in co_occurrence[a]:
+                        co_occurrence[a][b] = 0
+                    co_occurrence[a][b] += 1
+
+        # 构建边列表
+        edges = []
+        seen_pairs = set()
+        for a, partners in co_occurrence.items():
+            for b, count in partners.items():
+                pair_key = tuple(sorted([a, b]))
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+                edges.append({
+                    "source": a,
+                    "source_name": characters.get(a, {}).get("name", a),
+                    "target": b,
+                    "target_name": characters.get(b, {}).get("name", b),
+                    "weight": count,
+                })
+
+        edges.sort(key=lambda e: e["weight"], reverse=True)
+
+        # 节点：附加出场次数和关联数
+        nodes = []
+        for char_id, info in characters.items():
+            scene_count = sum(1 for s in scene_chars.values() if char_id in s)
+            connections = sum(1 for e in edges if e["source"] == char_id or e["target"] == char_id)
+            nodes.append({
+                "id": char_id,
+                "name": info["name"],
+                "role": info["role"],
+                "scene_count": scene_count,
+                "connections": connections,
+            })
+
+        nodes.sort(key=lambda n: n["connections"], reverse=True)
+
+        return {
+            "drama_id": did,
+            "nodes": nodes,
+            "edges": edges,
+            "total_characters": len(nodes),
+            "total_edges": len(edges),
+            "total_scenes_analyzed": len(scene_chars),
+        }
+
     def analyze_similarity(self,
                            memory_id: str,
                            limit: int = 10,
@@ -3373,8 +3843,9 @@ class StorageEngine:
             params = [memory_id]
             conditions = []
             for kw in keywords[:3]:
-                conditions.append("content LIKE ?")
-                params.append(f"%{kw}%")
+                # v5.3.3 安全加固：LIKE 通配符转义
+                conditions.append("content LIKE ? ESCAPE '\\'")
+                params.append(f"%{_escape_like(kw)}%")
             query += " OR ".join(conditions) + ") LIMIT ?"
             params.append(limit * 2)
 
@@ -4824,14 +5295,15 @@ class StorageEngine:
                   tags: Optional[List[str]] = None,
                   cover_url: str = "",
                   metadata: Optional[Dict[str, Any]] = None) -> DramaSeries:
-        """添加短剧（v5.2.1 新增）"""
+        """添加短剧（v5.2.1 新增，v5.3.3 安全加固：XSS 消毒）"""
         now = time.time()
         drama_id = str(uuid.uuid4())
 
-        title = self._validate_str(title, "title", max_len=200)
-        platform = self._validate_str(platform, "platform", max_len=100)
+        # v5.3.3 安全加固：XSS 消毒
+        title = _sanitize_html(self._validate_str(title, "title", max_len=200))
+        platform = _sanitize_html(self._validate_str(platform, "platform", max_len=100))
         rating = self._validate_float(rating, "rating", min_val=0.0, max_val=10.0)
-        description = self._validate_str(description, "description", max_len=5000)
+        description = _sanitize_html(self._validate_str(description, "description", max_len=5000))
         cover_url = self._validate_str(cover_url, "cover_url", max_len=500)
         total_episodes = self._validate_int(total_episodes, "total_episodes", min_val=0, max_val=10000)
 
@@ -5543,8 +6015,10 @@ class StorageEngine:
                      limit: int = 20) -> List[DramaLine]:
         """搜索台词（v5.2.1 新增）"""
         conn = self._get_conn()
-        sql = "SELECT * FROM drama_lines WHERE line_text LIKE ?"
-        params = [f"%{query}%"]
+        # v5.3.3 安全加固：LIKE 通配符转义
+        safe_query = query[:200] if isinstance(query, str) else ""
+        sql = "SELECT * FROM drama_lines WHERE line_text LIKE ? ESCAPE '\\'"
+        params = [f"%{_escape_like(safe_query)}%"]
 
         if drama_id:
             sql += " AND drama_id = ?"

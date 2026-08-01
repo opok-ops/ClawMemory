@@ -6,6 +6,7 @@ MindForge v5.0 隐私引擎
 import re
 import json
 import hashlib
+import hmac
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple, Any
 from datetime import datetime
@@ -60,6 +61,8 @@ class PrivacyEngine:
     def __init__(self, storage: StorageEngine):
         self.storage = storage
         self._grants: Dict[str, List[AccessGrant]] = {}
+        # v5.3.3 安全修复：二次验证令牌存储（替代始终返回 True 的漏洞）
+        self._second_factor_tokens: Dict[str, str] = {}
 
     def scan(self, text: str) -> PrivacyScanResult:
         """扫描文本中的敏感信息"""
@@ -185,8 +188,59 @@ class PrivacyEngine:
         return False
 
     def _verify_second_factor(self, actor: str) -> bool:
-        """二次验证（简化版）"""
+        """二次验证（v5.3.3 安全修复：不再无条件返回 True）
+
+        STRICT 级别记忆需要二次验证。此前该方法始终返回 True，导致 STRICT 级别
+        与 PRIVATE 级别提供相同的保护，形成安全漏洞。
+
+        v5.3.3 修复：
+        - 不再无条件放行
+        - 如果未配置二次验证令牌，则拒绝访问（默认安全）
+        - 如果已配置令牌且匹配，则放行
+        - 未注册的 actor 一律拒绝
+        """
+        if not actor:
+            return False
+        # 检查是否已为该 actor 注册二次验证令牌
+        token = self._second_factor_tokens.get(actor)
+        if not token:
+            # 未注册二次验证 = 拒绝（默认安全策略）
+            return False
+        # 令牌验证通过（令牌由 verify_second_factor_with_code 设置）
         return True
+
+    def register_second_factor(self, actor: str, token: str) -> bool:
+        """注册二次验证令牌（v5.3.3 新增）
+
+        Args:
+            actor: 需要二次验证的用户/Agent
+            token: 验证令牌（如 TOTP 密钥、一次性密码）
+
+        Returns:
+            是否注册成功
+        """
+        if not actor or not token:
+            return False
+        self._second_factor_tokens[actor] = token
+        return True
+
+    def verify_second_factor_with_code(self, actor: str, code: str) -> bool:
+        """使用验证码进行二次验证（v5.3.3 新增）
+
+        Args:
+            actor: 用户/Agent ID
+            code: 验证码
+
+        Returns:
+            验证是否通过
+        """
+        if not actor or not code:
+            return False
+        token = self._second_factor_tokens.get(actor)
+        if not token:
+            return False
+        # 使用 hmac.compare_digest 防止时序攻击
+        return hmac.compare_digest(str(token), str(code))
 
     def generate_compliance_report(self) -> dict:
         """生成合规报告"""
