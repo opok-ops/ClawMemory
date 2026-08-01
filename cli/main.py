@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.3.1 CLI - 命令行工具
+MindForge v5.3.2 CLI - 命令行工具
 =================================
 
 Usage:
@@ -2728,6 +2728,33 @@ def main():
                                 choices=["lines", "classic", "scenes"], help="排序维度（lines=总台词数/classic=经典台词数/scenes=出场场次数）")
     p_char_ranking.add_argument("--limit", "-n", type=int, default=20, help="数量限制（1-100）")
 
+    # ===== v5.3.2 新增 Agent 记忆命令 =====
+    p_agent_diff = sub.add_parser("agent-diff", help="对比同一 Agent 在不同时间段的记忆差异（v5.3.2 新增）")
+    p_agent_diff.add_argument("agent", help="Agent ID")
+    p_agent_diff.add_argument("--days-a", "-a", type=int, default=7, help="时间段 A 回溯天数（较早）")
+    p_agent_diff.add_argument("--days-b", "-b", type=int, default=1, help="时间段 B 回溯天数（较近）")
+
+    p_agent_purge = sub.add_parser("agent-purge", help="清空指定 Agent 的全部记忆（v5.3.2 新增，高危）")
+    p_agent_purge.add_argument("agent", help="目标 Agent ID")
+    p_agent_purge.add_argument("--force", "-f", action="store_true", help="实际执行（不加为 dry-run 预览）")
+
+    # ===== v5.3.2 新增 AI 短剧命令 =====
+    p_drama_progress_upd = sub.add_parser("drama-progress-update", help="更新短剧观看进度（v5.3.2 新增）")
+    p_drama_progress_upd.add_argument("drama", help="短剧 ID")
+    p_drama_progress_upd.add_argument("episode", type=int, help="当前集数（≥1）")
+    p_drama_progress_upd.add_argument("--status", "-s",
+                                      choices=["WATCHING", "COMPLETED", "DROPPED", "PLANNING"],
+                                      help="观看状态")
+    p_drama_progress_upd.add_argument("--rating", "-r", type=float, help="用户评分（0-10）")
+
+    p_drama_rec2 = sub.add_parser("drama-rec2", help="短剧智能推荐 v2（v5.3.2 新增）")
+    p_drama_rec2.add_argument("--genre", "-g", help="类型过滤（ROMANCE/ACTION 等）")
+    p_drama_rec2.add_argument("--min-rating", "-r", type=float, default=0.0, help="最低评分（0-10）")
+    p_drama_rec2.add_argument("--mode", "-m", default="unwatched",
+                              choices=["unwatched", "watching", "dropped", "all"],
+                              help="推荐模式（默认 unwatched=优先未看）")
+    p_drama_rec2.add_argument("--limit", "-n", type=int, default=20, help="数量限制（1-200）")
+
     p_quality = sub.add_parser("quality", help="记忆质量评分（v5.2.2 新增）")
     p_quality.add_argument("memory_id", nargs="?", help="记忆 ID（不指定则批量评分）")
     p_quality.add_argument("--category", "-c", help="批量评分时按分类过滤")
@@ -3002,6 +3029,10 @@ def main():
         "agent-compare": cmd_agent_compare,
         "drama-search": cmd_drama_search,
         "char-ranking": cmd_char_ranking,
+        "agent-diff": cmd_agent_diff,
+        "agent-purge": cmd_agent_purge,
+        "drama-progress-update": cmd_drama_progress,
+        "drama-rec2": cmd_drama_rec2,
         "quality": cmd_quality,
         "similar": cmd_similar,
         "backup": cmd_backup,
@@ -5826,6 +5857,178 @@ def cmd_char_ranking(args):
     for r in results:
         print(f"{r['rank']:<5}{r['name'][:12]:<15}{r['total_lines']:<8}"
               f"{r['classic_lines']:<8}{r['classic_ratio']}%{'':<5}{r['scene_count']:<8}{r['avg_line_length']:<10}")
+
+    cm.close()
+    return 0
+
+
+def cmd_agent_diff(args):
+    """对比同一 Agent 在不同时间段的记忆差异（v5.3.2 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n📈 Agent 记忆时间段对比（v5.3.2）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:   {args.agent}")
+    print(f"  时间段 A:   {args.days_a} 天前 ~ {args.days_b} 天前")
+    print(f"  时间段 B:   {args.days_b} 天前 ~ 现在")
+
+    try:
+        result = cm.agent_diff(args.agent, args.days_a, args.days_b)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    pa = result["period_a"]
+    pb = result["period_b"]
+    print(c(f"\n📊 时间段对比", "cyan"))
+    print(f"  {pa['time_range']}: {pa['count']} 条")
+    print(f"  {pb['time_range']}: {pb['count']} 条")
+    print(f"  增量: {c(str(result['total_diff']), 'green' if result['total_diff'] >= 0 else 'yellow')}")
+
+    print(c(f"\n📈 重要度分布（A 时间段）", "cyan"))
+    for imp, cnt in pa["by_importance"].items():
+        print(f"  {imp:<10} {cnt}")
+
+    print(c(f"\n📈 重要度分布（B 时间段）", "cyan"))
+    for imp, cnt in pb["by_importance"].items():
+        print(f"  {imp:<10} {cnt}")
+
+    if result["new_categories"]:
+        print(c(f"\n✨ 新增分类（B 新增，A 没有）", "green"))
+        for cat in result["new_categories"][:15]:
+            cnt = pb["by_category"].get(cat, 0)
+            print(f"  • {cat}  ({cnt} 条)")
+
+    if result["dropped_categories"]:
+        print(c(f"\n💨 消失分类（A 有，B 没有）", "yellow"))
+        for cat in result["dropped_categories"][:15]:
+            cnt = pa["by_category"].get(cat, 0)
+            print(f"  • {cat}  ({cnt} 条)")
+
+    cm.close()
+    return 0
+
+
+def cmd_agent_purge(args):
+    """清空指定 Agent 的全部记忆（v5.3.2 新增，高危操作）"""
+    cm = _get_memory(args)
+    dry_run = not args.force
+    print(c(f"\n⚠️  Agent 记忆清空（v5.3.2）", "bold" if not dry_run else "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:   {args.agent}")
+    print(f"  模式:       {'❌ 实际执行！会永久删除！' if not dry_run else '🔍 预览模式 (加 --force 实际执行)'}")
+
+    if not dry_run:
+        print(c("\n  高危操作：将永久删除该 Agent 的全部记忆！", "red"))
+
+    try:
+        result = cm.agent_purge(args.agent, dry_run=dry_run)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(f"\n  匹配记忆:   {result['total_found']} 条")
+
+    if dry_run and result.get("by_category"):
+        print(c("\n📋 分类明细（预览）", "cyan"))
+        for cat, cnt in sorted(result["by_category"].items(), key=lambda x: -x[1]):
+            print(f"  • {cat:<25} {cnt}")
+        if result.get("note"):
+            print(c(f"\n💡 {result['note']}", "yellow"))
+
+    if not dry_run:
+        print(c(f"\n✅ 已永久删除 {result['purged']} 条记忆", "green"))
+
+    cm.close()
+    return 0
+
+
+def cmd_drama_progress(args):
+    """更新短剧观看进度（v5.3.2 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🎬 短剧观看进度更新（v5.3.2）", "bold"))
+    print("=" * 60)
+    print(f"  短剧 ID:    {args.drama}")
+    print(f"  当前集数:   第 {args.episode} 集")
+    if args.status:
+        print(f"  观看状态:   {args.status}")
+    if args.rating is not None:
+        print(f"  用户评分:   {args.rating}")
+
+    try:
+        result = cm.drama_progress(
+            args.drama, args.episode, args.status, args.rating)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(c(f"\n✅ 进度已更新", "green"))
+    print(f"  短剧:       {result['drama_id']}")
+    print(f"  集数:       {result['current_episode']}")
+    if result.get("status"):
+        print(f"  状态:       {result['status']}")
+    if result.get("user_rating") is not None:
+        print(f"  评分:       {result['user_rating']}")
+
+    cm.close()
+    return 0
+
+
+def cmd_drama_rec2(args):
+    """短剧智能推荐 v2（v5.3.2 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🎬 短剧智能推荐 v2（v5.3.2）", "bold"))
+    print("=" * 60)
+    if args.genre:
+        print(f"  类型:       {args.genre}")
+    if args.min_rating > 0:
+        print(f"  最低评分:   {args.min_rating}")
+    print(f"  模式:       {args.mode}")
+    print(f"  Top 数:     {args.limit}")
+
+    try:
+        results = cm.drama_recommend_v2(
+            genre=args.genre,
+            min_rating=args.min_rating,
+            mode=args.mode,
+            limit=args.limit,
+        )
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if not results:
+        print(c(f"\n⚠️  暂无匹配短剧，请尝试调整过滤条件", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n🏆 推荐 Top {len(results)}", "green"))
+    print("-" * 75)
+    print(f"{'#':<4}{'剧名':<20}{'类型':<10}{'官方分':<8}{'状态':<12}{'看到':<6}{'用户分':<6}")
+    for i, d in enumerate(results, 1):
+        ep_label = f"E{d['current_episode']}" if d['current_episode'] else "-"
+        ur = f"{d['user_rating']}" if d['user_rating'] is not None else "-"
+        ws = d['watch_status'] or "-"
+        print(f"{i:<4}{d['title'][:18]:<20}{d['genre']:<10}{d['rating']:<8}"
+              f"{ws:<12}{ep_label:<6}{ur:<6}")
 
     cm.close()
     return 0

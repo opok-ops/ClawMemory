@@ -1,5 +1,5 @@
 """
-MindForge v5.3.1 主入口类
+MindForge v5.3.2 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,7 +31,7 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.3.1"
+    __version__ = "5.3.2"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -98,7 +98,7 @@ def _safe_path(path_str, must_exist=False, allow_symlinks=False,
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.3.1"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.3.2"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -1804,6 +1804,120 @@ class MindForge:
             sort_by = "lines"
         did = drama_id[:64] if (isinstance(drama_id, str) and drama_id) else None
         return self._storage.character_ranking(drama_id=did, sort_by=sort_by, limit=limit)
+
+    # ===== v5.3.2 新增 =====
+
+    def agent_diff(self,
+                   agent_id: str,
+                   days_a: int = 7,
+                   days_b: int = 1) -> Dict[str, Any]:
+        """对比同一 Agent 在不同时间段的记忆差异（v5.3.2 新增）
+
+        Args:
+            agent_id: Agent ID
+            days_a: 时间段 A 回溯天数
+            days_b: 时间段 B 回溯天数
+
+        Returns:
+            差异报告字典
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        # v5.3.2 安全：Unicode 控制字符过滤 + 长度上限
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128] if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        days_a = max(1, min(3650, int(days_a)))
+        days_b = max(1, min(3650, int(days_b)))
+        return self._storage.agent_diff_memories(agent_id, days_a, days_b)
+
+    def agent_purge(self,
+                    agent_id: str,
+                    actor: str = "system",
+                    session_id: str = "",
+                    dry_run: bool = True) -> Dict[str, Any]:
+        """清空指定 Agent 的全部记忆（v5.3.2 新增，高危操作）
+
+        Args:
+            agent_id: 目标 Agent ID
+            actor: 操作者（审计日志）
+            session_id: 会话 ID
+            dry_run: True=仅预览，False=实际执行
+
+        Returns:
+            清理结果字典
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128] if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        actor = (actor or "system")[:64]
+        session_id = (session_id or "")[:64]
+        return self._storage.agent_purge(agent_id, actor, session_id, dry_run)
+
+    def drama_progress(self,
+                       drama_id: str,
+                       current_episode: int,
+                       status: Optional[str] = None,
+                       user_rating: Optional[float] = None,
+                       actor: str = "system") -> Dict[str, Any]:
+        """更新短剧观看进度（v5.3.2 新增）
+
+        Args:
+            drama_id: 短剧 ID
+            current_episode: 当前看到第几集（≥1）
+            status: WATCHING/COMPLETED/DROPPED/PLANNING
+            user_rating: 用户评分 0-10
+            actor: 操作者
+
+        Returns:
+            更新结果字典
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64] if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        current_episode = max(1, min(10000, int(current_episode)))
+        if user_rating is not None:
+            user_rating = max(0.0, min(10.0, float(user_rating)))
+        # v5.3.2 安全：枚举白名单
+        valid_status = {"WATCHING", "COMPLETED", "DROPPED", "PLANNING"}
+        if status:
+            status = status.upper()
+            if status not in valid_status:
+                status = None
+        actor = (actor or "system")[:64]
+        return self._storage.drama_update_progress(
+            drama_id, current_episode, status, user_rating, actor)
+
+    def drama_recommend_v2(self,
+                           genre: Optional[str] = None,
+                           min_rating: float = 0.0,
+                           mode: str = "unwatched",
+                           limit: int = 20) -> List[Dict[str, Any]]:
+        """短剧智能推荐 v2（v5.3.2 新增）
+
+        Args:
+            genre: 类型过滤
+            min_rating: 最低评分（0-10）
+            mode: unwatched/watching/dropped/all
+            limit: 返回数量上限（1-200）
+
+        Returns:
+            推荐短剧列表
+        """
+        limit = max(1, min(200, int(limit)))
+        min_rating = max(0.0, min(10.0, float(min_rating)))
+        # v5.3.2 安全：双枚举白名单
+        valid_genres = {"ROMANCE", "ACTION", "COMEDY", "THRILLER", "SCIFI",
+                        "HISTORICAL", "URBAN", "FANTASY", "MYSTERY", "DRAMA"}
+        if genre:
+            genre = genre.upper()
+            if genre not in valid_genres:
+                genre = None
+        valid_modes = {"unwatched", "watching", "dropped", "all"}
+        if mode not in valid_modes:
+            mode = "unwatched"
+        return self._storage.drama_recommend_v2(genre, min_rating, mode, limit)
 
     def analyze_similarity(self,
                            memory_id: str,

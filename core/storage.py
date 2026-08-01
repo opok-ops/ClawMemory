@@ -2973,6 +2973,363 @@ class StorageEngine:
             })
         return result
 
+    # ===== v5.3.2 新增 =====
+
+    def agent_diff_memories(self,
+                            agent_id: str,
+                            days_a: int = 7,
+                            days_b: int = 1) -> Dict[str, Any]:
+        """对比同一 Agent 在不同时间段的记忆差异（v5.3.2 新增）
+
+        Args:
+            agent_id: Agent ID
+            days_a: 时间段 A 回溯天数（较早，如 7 天前至今）
+            days_b: 时间段 B 回溯天数（较近，如 1 天前至今）
+
+        Returns:
+            差异报告字典
+        """
+        conn = self._get_conn()
+        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+
+        days_a = max(1, min(3650, int(days_a)))
+        days_b = max(1, min(3650, int(days_b)))
+        if days_b > days_a:
+            days_a, days_b = days_b, days_a
+
+        now = __import__("time").time()
+        ts_a = now - days_a * 86400
+        ts_b = now - days_b * 86400
+
+        # v5.3.2 安全加固：参数化 SQL
+        # A 时间段（从 ts_a 到 ts_b 的增量）
+        period_a_rows = conn.execute(
+            "SELECT id, content, category, importance, created_at FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND created_at >= ? AND created_at < ?",
+            (aid, ts_a, ts_b)
+        ).fetchall()
+
+        # B 时间段（从 ts_b 到现在）
+        period_b_rows = conn.execute(
+            "SELECT id, content, category, importance, created_at FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND created_at >= ?",
+            (aid, ts_b)
+        ).fetchall()
+
+        # 分类聚合
+        def _agg(rows):
+            cats = {}
+            imp_sum = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
+            for r in rows:
+                cat = r[2] or "general"
+                cats[cat] = cats.get(cat, 0) + 1
+                imp = r[3] or "MEDIUM"
+                imp_sum[imp] = imp_sum.get(imp, 0) + 1
+            return {"count": len(rows), "by_category": cats, "by_importance": imp_sum}
+
+        period_a = _agg(period_a_rows)
+        period_b = _agg(period_b_rows)
+
+        # 分类差集
+        cats_a = set(period_a["by_category"].keys())
+        cats_b = set(period_b["by_category"].keys())
+        new_cats = sorted(cats_b - cats_a)
+        dropped_cats = sorted(cats_a - cats_b)
+
+        return {
+            "agent_id": aid,
+            "period_a": {"days": days_a, **period_a, "time_range": f"[{days_a}天前 ~ {days_b}天前)"},
+            "period_b": {"days": days_b, **period_b, "time_range": f"[{days_b}天前 ~ 现在]"},
+            "new_categories": new_cats,
+            "dropped_categories": dropped_cats,
+            "total_diff": period_b["count"] - period_a["count"],
+        }
+
+    def agent_purge(self,
+                    agent_id: str,
+                    actor: str = "system",
+                    session_id: str = "",
+                    dry_run: bool = True) -> Dict[str, Any]:
+        """清空指定 Agent 的全部记忆（v5.3.2 新增，高危操作）
+
+        Args:
+            agent_id: 目标 Agent ID
+            actor: 操作者（审计日志）
+            session_id: 会话 ID
+            dry_run: True=仅预览，False=实际执行
+
+        Returns:
+            清理结果字典
+        """
+        conn = self._get_conn()
+        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+
+        # 找出所有目标记忆（含软删除也一并清，因为是 purge）
+        rows = conn.execute(
+            "SELECT id, rowid FROM memories WHERE source_agent = ?",
+            (aid,)
+        ).fetchall()
+
+        total = len(rows)
+        if total == 0:
+            return {"agent_id": aid, "total_found": 0, "purged": 0, "dry_run": dry_run}
+
+        if dry_run:
+            # 预览各分类数量
+            cat_stats = {}
+            for r in conn.execute(
+                "SELECT category, COUNT(*) FROM memories WHERE source_agent = ? GROUP BY category",
+                (aid,)
+            ).fetchall():
+                cat_stats[r[0] or "general"] = r[1]
+            return {
+                "agent_id": aid,
+                "total_found": total,
+                "by_category": cat_stats,
+                "purged": 0,
+                "dry_run": True,
+                "note": "加 --force 参数执行实际删除",
+            }
+
+        # 实际删除（v5.3.2 安全：批量 id 列表参数化）
+        ids = [r[0] for r in rows]
+        rowids = [r[1] for r in rows]
+        placeholders = ",".join(["?"] * len(ids))
+
+        # 清理关联表：memory_versions、memory_links、memory_notes（以记忆 id 为外键）
+        for table, col in [("memory_versions", "memory_id"),
+                           ("memory_links", "source_id"),
+                           ("memory_links", "target_id"),
+                           ("memory_notes", "memory_id")]:
+            try:
+                conn.execute(
+                    f"DELETE FROM {table} WHERE {col} IN ({placeholders})", ids
+                )
+            except Exception:
+                pass
+
+        # 清理 FTS（contentless FTS5 特殊语法）
+        for rid in rowids:
+            try:
+                conn.execute(
+                    "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                    "VALUES('delete', ?, ?, ?, ?)",
+                    (rid, "", "", "[]")
+                )
+            except Exception:
+                pass
+
+        conn.execute(f"DELETE FROM memories WHERE id IN ({placeholders})", ids)
+
+        # 审计日志
+        try:
+            conn.execute(
+                "INSERT INTO audit_log(action, actor, session_id, details, created_at) "
+                "VALUES(?, ?, ?, ?, ?)",
+                ("agent_purge", actor[:64], session_id[:64],
+                 f'{{"agent_id": "{aid}", "count": {total}}}',
+                 __import__("time").time())
+            )
+        except Exception:
+            pass
+
+        conn.commit()
+        return {"agent_id": aid, "total_found": total, "purged": total, "dry_run": False}
+
+    def drama_update_progress(self,
+                               drama_id: str,
+                               current_episode: int,
+                               status: Optional[str] = None,
+                               user_rating: Optional[float] = None,
+                               actor: str = "system") -> Dict[str, Any]:
+        """更新短剧观看进度（v5.3.2 新增）
+
+        利用 drama_series 表的 metadata 字段存储用户个性化进度，
+        无需新增数据库列即可实现该功能。
+
+        Args:
+            drama_id: 短剧 ID
+            current_episode: 当前看到第几集（≥1）
+            status: 观看状态 WATCHING/COMPLETED/DROPPED/PLANNING（可选）
+            user_rating: 用户评分 0-10（可选）
+            actor: 操作者
+
+        Returns:
+            更新结果字典
+        """
+        conn = self._get_conn()
+        did = drama_id[:64] if isinstance(drama_id, str) else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+
+        current_episode = max(1, min(10000, int(current_episode)))
+
+        # v5.3.2 安全：status 枚举白名单
+        valid_status = {"WATCHING", "COMPLETED", "DROPPED", "PLANNING"}
+        if status:
+            status = status.upper()
+            if status not in valid_status:
+                status = None
+
+        if user_rating is not None:
+            user_rating = max(0.0, min(10.0, float(user_rating)))
+
+        # 检查短剧是否存在
+        row = conn.execute(
+            "SELECT id, metadata FROM drama_series WHERE id = ?",
+            (did,)
+        ).fetchone()
+        if not row:
+            return {"error": f"短剧不存在: {did}"}
+
+        # 解析现有 metadata（v5.3.2 安全：统一 safe json 加载）
+        import json as _json
+        try:
+            metadata = _json.loads(row[1]) if (row[1] and row[1].strip()) else {}
+        except Exception:
+            metadata = {}
+
+        # 写入进度字段（前缀 user_progress 避免与官方字段冲突）
+        prog = metadata.get("user_progress", {})
+        prog["current_episode"] = current_episode
+        prog["updated_at"] = __import__("time").time()
+        if status:
+            prog["status"] = status
+        if user_rating is not None:
+            prog["user_rating"] = user_rating
+        metadata["user_progress"] = prog
+
+        try:
+            meta_json = _json.dumps(metadata, ensure_ascii=False)[:10000]
+        except Exception:
+            meta_json = "{}"
+
+        conn.execute(
+            "UPDATE drama_series SET metadata = ?, updated_at = ? WHERE id = ?",
+            (meta_json, __import__("time").time(), did)
+        )
+        conn.commit()
+
+        # 返回完整当前进度
+        return {
+            "drama_id": did,
+            "current_episode": current_episode,
+            "status": prog.get("status"),
+            "user_rating": prog.get("user_rating"),
+            "updated_at": prog.get("updated_at"),
+        }
+
+    def drama_recommend_v2(self,
+                            genre: Optional[str] = None,
+                            min_rating: float = 0.0,
+                            mode: str = "unwatched",
+                            limit: int = 20) -> List[Dict[str, Any]]:
+        """短剧智能推荐 v2（v5.3.2 新增）
+
+        支持按观看状态过滤：优先推荐未观看 / 正在追 / 已弃剧。
+
+        Args:
+            genre: 类型过滤（枚举白名单）
+            min_rating: 最低评分
+            mode: 推荐模式 unwatched/watching/dropped/all
+            limit: 返回数量上限
+
+        Returns:
+            推荐短剧列表
+        """
+        conn = self._get_conn()
+        import json as _json
+
+        limit = max(1, min(200, int(limit)))
+        min_rating = max(0.0, min(10.0, float(min_rating)))
+
+        # v5.3.2 安全：白名单
+        valid_genres = {"ROMANCE", "ACTION", "COMEDY", "THRILLER", "SCIFI",
+                        "HISTORICAL", "URBAN", "FANTASY", "MYSTERY", "DRAMA"}
+        if genre:
+            genre = genre.upper()
+            if genre not in valid_genres:
+                genre = None
+
+        valid_modes = {"unwatched", "watching", "dropped", "all"}
+        if mode not in valid_modes:
+            mode = "unwatched"
+
+        rows = conn.execute("SELECT * FROM drama_series ORDER BY rating DESC").fetchall()
+
+        candidates = []
+        for r in rows:
+            d = self._row_to_drama(r)
+            if genre and (getattr(d, "genre", "") or "").upper() != genre:
+                continue
+            rating_val = getattr(d, "rating", 0) or 0
+            if rating_val < min_rating:
+                continue
+
+            # 从 metadata 解析进度
+            status = ""
+            cur_ep = 0
+            try:
+                md = getattr(d, "metadata", {}) or {}
+                if isinstance(md, str):
+                    md = _json.loads(md) if md.strip() else {}
+                prog = md.get("user_progress", {})
+                status = prog.get("status", "") or ""
+                cur_ep = prog.get("current_episode", 0) or 0
+            except Exception:
+                pass
+
+            # 模式过滤
+            total_eps = getattr(d, "total_episodes", 0) or 0
+            if mode == "unwatched":
+                if status == "COMPLETED" or (cur_ep > 0 and cur_ep >= total_eps and total_eps > 0):
+                    continue
+                if status == "WATCHING":  # 追剧中不算未观看
+                    continue
+                if cur_ep > 0:
+                    continue
+            elif mode == "watching":
+                if status != "WATCHING" and not (0 < cur_ep < (total_eps or 9999)):
+                    continue
+            elif mode == "dropped":
+                if status != "DROPPED":
+                    continue
+
+            meta_safe = getattr(d, "metadata", {})
+            if isinstance(meta_safe, str):
+                try:
+                    meta_safe = _json.loads(meta_safe) if meta_safe.strip() else {}
+                except Exception:
+                    meta_safe = {}
+            prog = (meta_safe or {}).get("user_progress", {})
+            candidates.append({
+                "drama_id": getattr(d, "id", ""),
+                "title": getattr(d, "title", ""),
+                "genre": getattr(d, "genre", ""),
+                "rating": rating_val,
+                "status": getattr(d, "status", ""),
+                "total_episodes": total_eps,
+                "watch_status": prog.get("status", ""),
+                "current_episode": prog.get("current_episode", 0),
+                "user_rating": prog.get("user_rating"),
+            })
+
+        # 按综合分排序：官方评分 * 0.7 + （未看加权 1.3）
+        def _score(c):
+            s = c["rating"] * 0.7
+            if not c["current_episode"]:
+                s *= 1.3
+            if c["watch_status"] != "DROPPED":
+                s += 0.5
+            return s
+
+        candidates.sort(key=_score, reverse=True)
+        return candidates[:limit]
+
     def analyze_similarity(self,
                            memory_id: str,
                            limit: int = 10,

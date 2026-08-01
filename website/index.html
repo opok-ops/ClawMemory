@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="MindForge v5.3.1 - AI Agent 终身记忆系统，多层记忆架构、知识图谱、多模态支持、多Agent记忆空间、Agent画像与短剧分析，100% 本地加密">
+<meta name="description" content="MindForge v5.3.2 - AI Agent 终身记忆系统，多层记忆架构、知识图谱、多模态支持、多Agent记忆空间、Agent画像与短剧分析，100% 本地加密">
 <meta name="keywords" content="MindForge, AI Memory, Agent Memory, 知识图谱, 终身记忆, AI Agent, 记忆系统, 本地加密">
 <meta name="author" content="MindForge Project">
 <meta name="robots" content="index, follow">
@@ -26,7 +26,7 @@
 <meta name="twitter:description" content="四层记忆架构模拟人类认知，知识图谱自动关联推理，100% 本地端侧加密">
 <meta name="twitter:image" content="https://opok-ops.github.io/ClawMemory/assets/og-image.png">
 
-<title>MindForge v5.3.1 — AI Agent 终身记忆系统</title>
+<title>MindForge v5.3.2 — AI Agent 终身记忆系统</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@500;600;700;800;900&display=swap" rel="stylesheet">
@@ -55,7 +55,7 @@
           </defs>
         </svg>
       </div>
-      <span class="logo-text">MindForge <em>v5.3.1</em></span>
+      <span class="logo-text">MindForge <em>v5.3.2</em></span>
     </a>
     <ul class="nav-links">
       <li><a href="#features">功能</a></li>
@@ -84,7 +84,7 @@
   <div class="hero-content">
     <div class="hero-badge">
       <span class="badge-dot"></span>
-      v5.3.1 全新发布 · Agent 记忆搜索 · Agent 对比 · 短剧搜索 · 角色排行榜 · 安全加固
+      v5.3.2 全新发布 · 记忆差异对比 · 记忆清空(级联/审计) · 短剧进度 · 推荐 v2 · 安全加固
     </div>
     <h1 class="hero-title">
       让 AI Agent 拥有
@@ -139,9 +139,9 @@
   <div class="container">
     <div class="section-header reveal">
       <span class="section-tag">核心能力</span>
-      <h2 class="section-title">v5.3.1 带来<span class="gradient-text"> 全新升级</span></h2>
+      <h2 class="section-title">v5.3.2 带来<span class="gradient-text"> 全新升级</span></h2>
       <p class="section-desc">
-        Agent 记忆画像、合并与导出，AI 短剧深度分析与随机灵感抽取，全方位安全加固与路径遍历防护。
+        记忆差异对比与清空级联删除，AI 短剧进度更新与智能推荐 v2，全方位安全加固。
       </p>
     </div>
 
@@ -727,6 +727,22 @@ openclaw restart</code></pre>
     </div>
 
     <div class="changelog-timeline reveal">
+      <div class="changelog-item">
+        <div class="cl-version">
+          <span class="cl-num">v5.3.2</span>
+          <span class="cl-date">2026-08-01</span>
+        </div>
+        <div class="cl-content">
+          <h4>🧠 Agent 记忆增强 + 🎬 AI 短剧增强 + 🔐 安全加固</h4>
+          <ul>
+            <li>agent-diff：同一 Agent 不同时间段记忆差异对比（分类/重要度聚合/新增消失分类）</li>
+            <li>agent-purge：清空 Agent 记忆（dry-run 预览、级联删除关联表与 FTS、审计日志）</li>
+            <li>drama-progress：短剧观看进度更新（集数/状态/评分，复用 metadata 免迁移）</li>
+            <li>drama-rec2：推荐 v2（unwatched/watching/dropped 过滤，观看状态加权排序）</li>
+            <li>安全：参数化 SQL、Unicode 控制字符过滤、枚举白名单、数值边界、级联一致性</li>
+          </ul>
+        </div>
+      </div>
       <div class="changelog-item">
         <div class="cl-version">
           <span class="cl-num">v5.3.1</span>
