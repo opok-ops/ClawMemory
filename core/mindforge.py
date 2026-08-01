@@ -1,5 +1,5 @@
 """
-MindForge v5.3.3 主入口类
+MindForge v5.3.4 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,7 +31,7 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.3.3"
+    __version__ = "5.3.4"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -98,7 +98,7 @@ def _safe_path(path_str, must_exist=False, allow_symlinks=False,
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.3.3"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.3.4"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -2001,6 +2001,97 @@ class MindForge:
         drama_id = "".join(c for c in drama_id[:64]
                            if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
         return self._storage.character_network(drama_id)
+
+    # ===== v5.3.4 新增 =====
+
+    def agent_sentiment(self,
+                        agent_id: str,
+                        days: int = 30) -> Dict[str, Any]:
+        """Agent 记忆情感分析（v5.3.4 新增）
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            情感分析结果
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        # v5.3.4 安全：Unicode 控制字符过滤 + 长度上限
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        days = max(1, min(365, int(days)))
+        return self._storage.agent_sentiment(agent_id, days)
+
+    def memory_decay(self,
+                     agent_id: str,
+                     days: int = 30) -> Dict[str, Any]:
+        """记忆衰减评分（v5.3.4 新增）
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            衰减分析结果
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        days = max(1, min(365, int(days)))
+        return self._storage.memory_decay(agent_id, days)
+
+    def drama_compare(self,
+                      drama_ids: List[str]) -> Dict[str, Any]:
+        """短剧对比分析（v5.3.4 新增）
+
+        Args:
+            drama_ids: 短剧 ID 列表（最多 5 部）
+
+        Returns:
+            对比分析结果
+        """
+        if not drama_ids or not isinstance(drama_ids, list):
+            return {"error": "短剧 ID 列表不能为空"}
+        # v5.3.4 安全：每个 ID 消毒 + 数量限制
+        import unicodedata
+        clean_ids = []
+        for did in drama_ids:
+            if isinstance(did, str) and did:
+                clean = "".join(c for c in did[:64]
+                                if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+                if clean:
+                    clean_ids.append(clean)
+        if not clean_ids:
+            return {"error": "无有效短剧 ID"}
+        return self._storage.drama_compare(clean_ids[:5])
+
+    def character_arc(self,
+                      drama_id: str,
+                      character_id: str) -> Dict[str, Any]:
+        """角色成长弧线分析（v5.3.4 新增）
+
+        Args:
+            drama_id: 短剧 ID
+            character_id: 角色 ID
+
+        Returns:
+            角色成长弧线数据
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        if not character_id or not isinstance(character_id, str):
+            return {"error": "角色 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        character_id = "".join(c for c in character_id[:64]
+                               if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        return self._storage.character_arc(drama_id, character_id)
 
     def analyze_similarity(self,
                            memory_id: str,

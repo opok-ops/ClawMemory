@@ -3800,6 +3800,376 @@ class StorageEngine:
             "total_scenes_analyzed": len(scene_chars),
         }
 
+    # ===== v5.3.4 新增：Agent 记忆情感分析 + 记忆衰减评分 =====
+
+    def agent_sentiment(self,
+                        agent_id: str,
+                        days: int = 30) -> Dict[str, Any]:
+        """Agent 记忆情感分析（v5.3.4 新增）
+
+        基于关键词匹配分析 Agent 记忆的整体情感倾向。
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            情感分析结果：正面/负面/中性计数、情感分布、主导情感
+        """
+        conn = self._get_conn()
+        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+
+        days = max(1, min(365, int(days)))
+        now = time.time()
+        since = now - days * 86400
+
+        # v5.3.4 安全：参数化 SQL
+        rows = conn.execute(
+            "SELECT content, importance FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND created_at >= ?",
+            (aid, since)
+        ).fetchall()
+
+        if not rows:
+            return {
+                "agent_id": aid,
+                "days": days,
+                "total_memories": 0,
+                "positive": 0,
+                "negative": 0,
+                "neutral": 0,
+                "dominant_sentiment": "no_data",
+            }
+
+        # 情感关键词词典
+        positive_words = {
+            "好", "棒", "优秀", "成功", "完成", "解决", "开心", "满意", "喜欢",
+            "good", "great", "excellent", "success", "happy", "love", "perfect",
+            "完成", "突破", "提升", "优化", "改进", "有效", "正确", "赞同",
+        }
+        negative_words = {
+            "坏", "差", "失败", "错误", "问题", "bug", "崩溃", "讨厌", "不满",
+            "bad", "fail", "error", "broken", "crash", "hate", "wrong", "issue",
+            "缺失", "丢失", "异常", "警告", "危险", "漏洞", "冲突", "阻塞",
+        }
+
+        positive_count = 0
+        negative_count = 0
+        neutral_count = 0
+        sentiment_by_imp: Dict[str, Dict[str, int]] = {}
+
+        for r in rows:
+            content = (r[0] or "").lower()
+            imp = (r[1] or "MEDIUM").upper()
+
+            pos_hits = sum(1 for w in positive_words if w in content)
+            neg_hits = sum(1 for w in negative_words if w in content)
+
+            if pos_hits > neg_hits:
+                sentiment = "positive"
+                positive_count += 1
+            elif neg_hits > pos_hits:
+                sentiment = "negative"
+                negative_count += 1
+            else:
+                sentiment = "neutral"
+                neutral_count += 1
+
+            if imp not in sentiment_by_imp:
+                sentiment_by_imp[imp] = {"positive": 0, "negative": 0, "neutral": 0}
+            sentiment_by_imp[imp][sentiment] += 1
+
+        total = len(rows)
+        if positive_count > negative_count and positive_count > neutral_count:
+            dominant = "positive"
+        elif negative_count > positive_count and negative_count > neutral_count:
+            dominant = "negative"
+        else:
+            dominant = "neutral"
+
+        return {
+            "agent_id": aid,
+            "days": days,
+            "total_memories": total,
+            "positive": positive_count,
+            "negative": negative_count,
+            "neutral": neutral_count,
+            "positive_ratio": round(positive_count / total, 4) if total else 0,
+            "negative_ratio": round(negative_count / total, 4) if total else 0,
+            "neutral_ratio": round(neutral_count / total, 4) if total else 0,
+            "dominant_sentiment": dominant,
+            "by_importance": sentiment_by_imp,
+        }
+
+    def memory_decay(self,
+                     agent_id: str,
+                     days: int = 30) -> Dict[str, Any]:
+        """记忆衰减评分（v5.3.4 新增）
+
+        基于艾宾浩斯遗忘曲线模型，评估 Agent 记忆的衰减状态。
+        衰减评分 = 重要性权重 × recency_factor × retention_rate
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            衰减分析结果：平均衰减率、高危记忆数、各衰减级别分布
+        """
+        conn = self._get_conn()
+        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+
+        days = max(1, min(365, int(days)))
+        now = time.time()
+        since = now - days * 86400
+
+        # v5.3.4 安全：参数化 SQL
+        rows = conn.execute(
+            "SELECT id, content, importance, created_at, access_count "
+            "FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND created_at >= ?",
+            (aid, since)
+        ).fetchall()
+
+        if not rows:
+            return {
+                "agent_id": aid,
+                "days": days,
+                "total_memories": 0,
+                "avg_retention": 0,
+                "critical_decay": 0,
+                "decay_distribution": {},
+            }
+
+        # 重要性权重
+        imp_weights = {"LOW": 0.5, "MEDIUM": 0.7, "HIGH": 0.85, "CRITICAL": 1.0}
+
+        total_retention = 0.0
+        decay_levels = {"strong": 0, "stable": 0, "fading": 0, "critical": 0}
+        critical_memories = []
+
+        for r in rows:
+            mid = r[0]
+            content = (r[1] or "")[:80]
+            imp = (r[2] or "MEDIUM").upper()
+            created = r[3] or now
+            access_count = r[4] or 0
+
+            imp_weight = imp_weights.get(imp, 0.7)
+
+            # 艾宾浩斯遗忘曲线：retention = e^(-t/S)
+            # S = 稳定性，受重要性和访问次数影响
+            days_elapsed = max(0.01, (now - created) / 86400)
+            stability = imp_weight * (1 + min(access_count, 10) * 0.1) * 7  # 基础7天
+            retention = __import__("math").exp(-days_elapsed / stability)
+
+            total_retention += retention
+
+            if retention >= 0.7:
+                decay_levels["strong"] += 1
+            elif retention >= 0.4:
+                decay_levels["stable"] += 1
+            elif retention >= 0.15:
+                decay_levels["fading"] += 1
+            else:
+                decay_levels["critical"] += 1
+                if len(critical_memories) < 20:
+                    critical_memories.append({
+                        "id": mid,
+                        "content_preview": content,
+                        "importance": imp,
+                        "retention": round(retention, 4),
+                        "days_elapsed": round(days_elapsed, 1),
+                        "access_count": access_count,
+                    })
+
+        total = len(rows)
+        avg_retention = round(total_retention / total, 4) if total else 0
+
+        return {
+            "agent_id": aid,
+            "days": days,
+            "total_memories": total,
+            "avg_retention": avg_retention,
+            "critical_decay": decay_levels["critical"],
+            "decay_distribution": decay_levels,
+            "critical_memories": critical_memories,
+        }
+
+    # ===== v5.3.4 新增：AI 短剧对比 + 角色成长弧线 =====
+
+    def drama_compare(self,
+                      drama_ids: List[str]) -> Dict[str, Any]:
+        """短剧对比分析（v5.3.4 新增）
+
+        对比多部短剧的评分、集数、角色数、经典台词数等维度。
+
+        Args:
+            drama_ids: 短剧 ID 列表（最多 5 部）
+
+        Returns:
+            对比分析结果
+        """
+        conn = self._get_conn()
+        # v5.3.4 安全：数量限制 + ID 长度截断
+        if not drama_ids or not isinstance(drama_ids, list):
+            return {"error": "短剧 ID 列表不能为空"}
+        ids = [d[:64] for d in drama_ids if isinstance(d, str) and d][:5]
+        if not ids:
+            return {"error": "无有效短剧 ID"}
+
+        dramas = []
+        for did in ids:
+            row = conn.execute(
+                "SELECT id, title, genre, total_episodes, current_episode, "
+                "status, rating, metadata "
+                "FROM drama_series WHERE id = ?",
+                (did,)
+            ).fetchone()
+            if not row:
+                dramas.append({"id": did, "error": "未找到"})
+                continue
+
+            # 统计角色数
+            char_count = conn.execute(
+                "SELECT COUNT(*) FROM drama_characters WHERE drama_id = ?",
+                (did,)
+            ).fetchone()[0]
+
+            # 统计台词数和经典台词数
+            line_stats = conn.execute(
+                "SELECT COUNT(*), SUM(CASE WHEN is_classic = 1 THEN 1 ELSE 0 END) "
+                "FROM drama_lines WHERE drama_id = ?",
+                (did,)
+            ).fetchone()
+
+            dramas.append({
+                "id": row[0],
+                "title": row[1] or "未命名",
+                "genre": row[2] or "未知",
+                "total_episodes": row[3] or 0,
+                "current_episode": row[4] or 0,
+                "status": row[5] or "planned",
+                "rating": row[6] or 0.0,
+                "character_count": char_count,
+                "total_lines": line_stats[0] or 0,
+                "classic_lines": line_stats[1] or 0,
+            })
+
+        # 计算对比维度
+        valid = [d for d in dramas if "error" not in d]
+        if len(valid) >= 2:
+            best_rating = max(valid, key=lambda x: x["rating"])
+            most_episodes = max(valid, key=lambda x: x["total_episodes"])
+            most_characters = max(valid, key=lambda x: x["character_count"])
+            most_classic = max(valid, key=lambda x: x["classic_lines"])
+        else:
+            best_rating = most_episodes = most_characters = most_classic = None
+
+        return {
+            "dramas": dramas,
+            "comparison": {
+                "best_rated": best_rating["title"] if best_rating else None,
+                "most_episodes": most_episodes["title"] if most_episodes else None,
+                "most_characters": most_characters["title"] if most_characters else None,
+                "most_classic_lines": most_classic["title"] if most_classic else None,
+            },
+            "total_compared": len(valid),
+        }
+
+    def character_arc(self,
+                      drama_id: str,
+                      character_id: str) -> Dict[str, Any]:
+        """角色成长弧线分析（v5.3.4 新增）
+
+        分析角色在不同场景中的台词量变化，识别角色的成长轨迹。
+
+        Args:
+            drama_id: 短剧 ID
+            character_id: 角色 ID
+
+        Returns:
+            角色成长弧线数据：按场景的台词量变化、活跃峰值、成长阶段
+        """
+        conn = self._get_conn()
+        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        cid = character_id[:64] if isinstance(character_id, str) and character_id else ""
+        if not did or not cid:
+            return {"error": "短剧 ID 和角色 ID 不能为空"}
+
+        # 获取角色信息
+        char_row = conn.execute(
+            "SELECT id, name, role FROM drama_characters WHERE id = ? AND drama_id = ?",
+            (cid, did)
+        ).fetchone()
+        if not char_row:
+            return {"error": "角色不存在"}
+
+        # 获取该角色在各个场景中的台词数
+        scene_rows = conn.execute(
+            "SELECT scene_id, COUNT(*) as line_count "
+            "FROM drama_lines WHERE drama_id = ? AND character_id = ? "
+            "GROUP BY scene_id ORDER BY scene_id",
+            (did, cid)
+        ).fetchall()
+
+        if not scene_rows:
+            return {
+                "drama_id": did,
+                "character_id": cid,
+                "character_name": char_row[1],
+                "total_scenes": 0,
+                "total_lines": 0,
+                "arc_points": [],
+                "peak_scene": None,
+                "growth_stage": "no_data",
+            }
+
+        arc_points = []
+        for sr in scene_rows:
+            arc_points.append({
+                "scene_id": sr[0],
+                "line_count": sr[1],
+            })
+
+        total_lines = sum(p["line_count"] for p in arc_points)
+        total_scenes = len(arc_points)
+
+        # 找活跃峰值场景
+        peak = max(arc_points, key=lambda x: x["line_count"])
+
+        # 成长阶段分析：将场景分为前中后三段
+        third = max(1, total_scenes // 3)
+        early = sum(p["line_count"] for p in arc_points[:third])
+        mid = sum(p["line_count"] for p in arc_points[third:third * 2])
+        late = sum(p["line_count"] for p in arc_points[third * 2:])
+
+        if late > early * 1.2:
+            growth_stage = "rising"  # 后期崛起
+        elif early > late * 1.2:
+            growth_stage = "falling"  # 前期活跃，后期淡出
+        elif mid > early * 1.1 and mid > late * 1.1:
+            growth_stage = "peak_middle"  # 中期高峰
+        else:
+            growth_stage = "stable"  # 稳定出场
+
+        return {
+            "drama_id": did,
+            "character_id": cid,
+            "character_name": char_row[1],
+            "character_role": char_row[2],
+            "total_scenes": total_scenes,
+            "total_lines": total_lines,
+            "arc_points": arc_points,
+            "peak_scene": {"scene_id": peak["scene_id"], "line_count": peak["line_count"]},
+            "growth_stage": growth_stage,
+            "stage_distribution": {"early": early, "mid": mid, "late": late},
+        }
+
     def analyze_similarity(self,
                            memory_id: str,
                            limit: int = 10,

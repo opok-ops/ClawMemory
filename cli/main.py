@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.3.3 CLI - 命令行工具
+MindForge v5.3.4 CLI - 命令行工具
 =================================
 
 Usage:
@@ -60,7 +60,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.3.3"
+    __version__ = "5.3.4"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -2771,6 +2771,23 @@ def main():
     p_char_network = sub.add_parser("char-network", help="角色关系网络（v5.3.3 新增）")
     p_char_network.add_argument("drama_id", help="短剧 ID")
 
+    # ===== v5.3.4 新增 Agent 记忆命令 =====
+    p_agent_sentiment = sub.add_parser("agent-sentiment", help="Agent 记忆情感分析（v5.3.4 新增）")
+    p_agent_sentiment.add_argument("agent", help="Agent ID")
+    p_agent_sentiment.add_argument("--days", "-d", type=int, default=30, help="回溯天数（1-365）")
+
+    p_memory_decay = sub.add_parser("memory-decay", help="记忆衰减评分（v5.3.4 新增）")
+    p_memory_decay.add_argument("agent", help="Agent ID")
+    p_memory_decay.add_argument("--days", "-d", type=int, default=30, help="回溯天数（1-365）")
+
+    # ===== v5.3.4 新增 AI 短剧命令 =====
+    p_drama_compare = sub.add_parser("drama-compare", help="短剧对比分析（v5.3.4 新增）")
+    p_drama_compare.add_argument("dramas", nargs="+", help="短剧 ID 列表（2-5 部）")
+
+    p_char_arc = sub.add_parser("char-arc", help="角色成长弧线分析（v5.3.4 新增）")
+    p_char_arc.add_argument("drama_id", help="短剧 ID")
+    p_char_arc.add_argument("character_id", help="角色 ID")
+
     p_quality = sub.add_parser("quality", help="记忆质量评分（v5.2.2 新增）")
     p_quality.add_argument("memory_id", nargs="?", help="记忆 ID（不指定则批量评分）")
     p_quality.add_argument("--category", "-c", help="批量评分时按分类过滤")
@@ -3053,6 +3070,10 @@ def main():
         "agent-heatmap": cmd_agent_heatmap,
         "drama-binge": cmd_drama_binge,
         "char-network": cmd_char_network,
+        "agent-sentiment": cmd_agent_sentiment,
+        "memory-decay": cmd_memory_decay,
+        "drama-compare": cmd_drama_compare,
+        "char-arc": cmd_char_arc,
         "quality": cmd_quality,
         "similar": cmd_similar,
         "backup": cmd_backup,
@@ -6265,6 +6286,205 @@ def cmd_char_network(args):
         for i, e in enumerate(edges[:10], 1):
             print(f"  {i}. {e['source_name'][:12]} ↔ {e['target_name'][:12]}  "
                   f"共同出场: {e['weight']} 次")
+
+    cm.close()
+    return 0
+
+
+def cmd_agent_sentiment(args):
+    """Agent 记忆情感分析（v5.3.4 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🧠 Agent 记忆情感分析（v5.3.4）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:   {args.agent}")
+    print(f"  回溯天数:   {args.days}")
+
+    try:
+        result = cm.agent_sentiment(args.agent, args.days)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    total = result["total_memories"]
+    if total == 0:
+        print(c(f"\n⚠️  该 Agent 在 {args.days} 天内无记忆", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n📊 情感分布（共 {total} 条记忆）", "cyan"))
+    bar_pos = "█" * int(result["positive_ratio"] * 20)
+    bar_neg = "█" * int(result["negative_ratio"] * 20)
+    bar_neu = "█" * int(result["neutral_ratio"] * 20)
+    print(f"  {c('正面', 'green')}: {result['positive']:>5} ({result['positive_ratio']:.1%}) {bar_pos}")
+    print(f"  {c('负面', 'red')}: {result['negative']:>5} ({result['negative_ratio']:.1%}) {bar_neg}")
+    print(f"  {c('中性', 'yellow')}: {result['neutral']:>5} ({result['neutral_ratio']:.1%}) {bar_neu}")
+
+    dom = result["dominant_sentiment"]
+    dom_label = {"positive": "正面主导 😊", "negative": "负面主导 😟", "neutral": "中性主导 😐"}.get(dom, dom)
+    print(c(f"\n  主导情感: {dom_label}", "bold"))
+
+    if result.get("by_importance"):
+        print(c(f"\n📈 按重要度细分", "cyan"))
+        for imp, vals in sorted(result["by_importance"].items()):
+            print(f"  {imp:<10} 正:{vals['positive']}  负:{vals['negative']}  中:{vals['neutral']}")
+
+    cm.close()
+    return 0
+
+
+def cmd_memory_decay(args):
+    """记忆衰减评分（v5.3.4 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🧠 记忆衰减评分（v5.3.4）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:   {args.agent}")
+    print(f"  回溯天数:   {args.days}")
+
+    try:
+        result = cm.memory_decay(args.agent, args.days)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    total = result["total_memories"]
+    if total == 0:
+        print(c(f"\n⚠️  该 Agent 在 {args.days} 天内无记忆", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n📊 衰减分布（共 {total} 条记忆）", "cyan"))
+    dd = result["decay_distribution"]
+    print(f"  {c('💪 强固', 'green')}:  {dd.get('strong', 0):>5}  (retention ≥ 70%)")
+    print(f"  {c('✅ 稳定', 'cyan')}:  {dd.get('stable', 0):>5}  (40% ~ 70%)")
+    print(f"  {c('⚠️  衰减', 'yellow')}:  {dd.get('fading', 0):>5}  (15% ~ 40%)")
+    print(f"  {c('❗ 危急', 'red')}:  {dd.get('critical', 0):>5}  (< 15%)")
+
+    avg_ret = f"{result['avg_retention']:.1%}"
+    print(f"\n  平均保留率: {c(avg_ret, 'bold')}")
+    print(f"  危急记忆数: {result['critical_decay']}")
+
+    if result.get("critical_memories"):
+        print(c(f"\n❗ 危急记忆 Top {len(result['critical_memories'])}", "red"))
+        print("-" * 70)
+        for m in result["critical_memories"][:10]:
+            preview = m["content_preview"][:40] or "(空)"
+            print(f"  [{m['importance']:<8}] 保留率:{m['retention']:.1%}  "
+                  f"天数:{m['days_elapsed']:.0f}d  访问:{m['access_count']}  {preview}")
+
+    cm.close()
+    return 0
+
+
+def cmd_drama_compare(args):
+    """短剧对比分析（v5.3.4 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🎬 短剧对比分析（v5.3.4）", "bold"))
+    print("=" * 60)
+    print(f"  对比数量:   {len(args.dramas)} 部")
+
+    try:
+        result = cm.drama_compare(args.dramas)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    dramas = result["dramas"]
+    print(c(f"\n📊 对比明细（{result['total_compared']} 部有效）", "cyan"))
+    print("-" * 85)
+    print(f"{'#':<4}{'剧名':<16}{'类型':<8}{'集数':<6}{'角色':<6}{'台词':<6}{'经典':<6}{'评分':<6}{'状态':<10}")
+    print("-" * 85)
+    for i, d in enumerate(dramas, 1):
+        if "error" in d:
+            print(f"{i:<4}{d['id'][:14]:<16}{c('未找到', 'red')}")
+            continue
+        print(f"{i:<4}{d['title'][:14]:<16}{d['genre'][:6]:<8}{d['total_episodes']:<6}"
+              f"{d['character_count']:<6}{d['total_lines']:<6}{d['classic_lines']:<6}"
+              f"{d['rating']:<6}{d['status']:<10}")
+
+    comp = result.get("comparison", {})
+    if comp:
+        print(c(f"\n🏆 各维度领先", "green"))
+        if comp.get("best_rated"):
+            print(f"  评分最高:   {comp['best_rated']}")
+        if comp.get("most_episodes"):
+            print(f"  集数最多:   {comp['most_episodes']}")
+        if comp.get("most_characters"):
+            print(f"  角色最多:   {comp['most_characters']}")
+        if comp.get("most_classic_lines"):
+            print(f"  经典最多:   {comp['most_classic_lines']}")
+
+    cm.close()
+    return 0
+
+
+def cmd_char_arc(args):
+    """角色成长弧线分析（v5.3.4 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🎬 角色成长弧线分析（v5.3.4）", "bold"))
+    print("=" * 60)
+    print(f"  短剧 ID:    {args.drama_id}")
+    print(f"  角色 ID:    {args.character_id}")
+
+    try:
+        result = cm.character_arc(args.drama_id, args.character_id)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(f"\n  角色名:     {result['character_name']}")
+    print(f"  角色定位:   {result.get('character_role', '未知')}")
+    print(f"  出场场景:   {result['total_scenes']}")
+    print(f"  总台词数:   {result['total_lines']}")
+
+    if result["total_scenes"] == 0:
+        print(c(f"\n⚠️  该角色无台词记录", "yellow"))
+        cm.close()
+        return 0
+
+    peak = result["peak_scene"]
+    print(f"  峰值场景:   {peak['scene_id']}  ({peak['line_count']} 句)")
+
+    stage = result["growth_stage"]
+    stage_label = {
+        "rising": "后期崛起 📈",
+        "falling": "前期活跃 📉",
+        "peak_middle": "中期高峰 ⛰️",
+        "stable": "稳定出场 ➡️",
+        "no_data": "数据不足",
+    }.get(stage, stage)
+    print(c(f"\n  成长阶段:   {stage_label}", "bold"))
+
+    sd = result["stage_distribution"]
+    print(c(f"\n📊 三段分布", "cyan"))
+    total = sd["early"] + sd["mid"] + sd["late"]
+    if total > 0:
+        print(f"  前期:  {sd['early']:>4} 句  ({sd['early']/total:.1%})")
+        print(f"  中期:  {sd['mid']:>4} 句  ({sd['mid']/total:.1%})")
+        print(f"  后期:  {sd['late']:>4} 句  ({sd['late']/total:.1%})")
 
     cm.close()
     return 0
