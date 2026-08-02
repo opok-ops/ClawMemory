@@ -22,6 +22,21 @@ from .encryption import EncryptionEngine, EncryptedBlob
 
 # ===== 路径安全校验（v5.2.9 新增：存储层统一防护）=====
 
+# v5.3.5 安全加固：检测 Windows 短文件名（8.3）绕过尝试
+def _is_suspicious_windows_path(comp: str) -> bool:
+    """检测 Windows 短文件名绕过模式（如 PROGRA~1、FILE~1.TXT）"""
+    if not comp or len(comp) == 0:
+        return False
+    # 匹配 短名模式：基础名 + ~N + 可选扩展名
+    import re as _re
+    if _re.match(r'^[^~]{1,6}~\d(\..{1,3})?$', comp, _re.IGNORECASE):
+        return True
+    # 包含 / 或 \ 在不应该的位置
+    if any(s in comp for s in ('..', '/', '\\', '\x00', ':')):
+        return True
+    return False
+
+
 def _safe_path(path_str, must_exist=False, allow_symlinks=False,
                max_size=None, allowed_exts=None, max_len=4096):
     """校验文件路径安全性，防止路径遍历攻击"""
@@ -29,10 +44,20 @@ def _safe_path(path_str, must_exist=False, allow_symlinks=False,
         raise ValueError("路径不能为空")
     if len(path_str) > max_len:
         raise ValueError(f"路径过长（上限 {max_len} 字符）")
-
+    # v5.3.5 安全：过滤 Unicode 双向和控制字符
+    import unicodedata
+    for ch in path_str:
+        cat = unicodedata.category(ch)
+        # 过滤双向控制字符（RLO/LRO 等）和 NUL，防止显示欺骗
+        if cat in ('Cf', 'Cc') and ch not in '\n\r\t':
+            raise ValueError("路径中包含非法控制字符")
+    # v5.3.5 安全：逐组件检测 Windows 短文件名绕过
     target = Path(path_str)
     if not target.is_absolute():
         target = Path.cwd() / target
+    for comp in target.parts:
+        if comp and _is_suspicious_windows_path(comp):
+            raise ValueError(f"路径组件不安全: {comp}")
 
     try:
         resolved = target.resolve()
@@ -62,6 +87,60 @@ def _safe_path(path_str, must_exist=False, allow_symlinks=False,
             raise ValueError(f"文件过大: {size} 字节（上限 {max_size}）")
 
     return resolved
+
+
+# v5.3.5 安全加固：JSON 反序列化深度限制，防止深度攻击
+def _safe_json_loads(data: str, max_depth: int = 32, max_size: int = 10_000_000):
+    """安全加载 JSON，限制嵌套深度和总大小"""
+    if not isinstance(data, str):
+        raise ValueError("JSON 数据类型错误")
+    if len(data) > max_size:
+        raise ValueError(f"JSON 数据过大（{len(data)} > {max_size} 字节）")
+
+    import re as _re
+
+    def _check_depth(s: str) -> int:
+        """用括号匹配粗检查深度（在 json.loads 之前快速失败）"""
+        cur = 0
+        mx = 0
+        in_str = False
+        esc = False
+        for ch in s:
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == '\\':
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+                continue
+            if ch == '"':
+                in_str = True
+            elif ch in ('{', '['):
+                cur += 1
+                if cur > mx:
+                    mx = cur
+                    if mx > max_depth:
+                        return mx
+            elif ch in ('}', ']'):
+                cur = max(0, cur - 1)
+        return mx
+
+    if _check_depth(data) > max_depth:
+        raise ValueError(f"JSON 嵌套过深（上限 {max_depth} 层）")
+    try:
+        return json.loads(data)
+    except json.JSONDecodeError:
+        raise ValueError("JSON 解析失败")
+
+
+# v5.3.5 安全加固：限制 SQL 查询返回行数，防止大数据量 DoS
+def _limited_fetch(cursor, limit: int = 10000):
+    """带行数上限的 fetch 辅助函数，防止数据量过大"""
+    rows = cursor.fetchmany(limit + 1)
+    if len(rows) > limit:
+        raise ValueError(f"查询结果超过行数上限 {limit}")
+    return rows
 
 
 # v5.3.3 安全加固：LIKE 通配符转义，防止 % 和 _ 被解释为 SQL LIKE 通配符
@@ -98,6 +177,9 @@ class _RateLimiter:
 
     def __init__(self):
         self._windows: Dict[str, List[float]] = {}
+        # v5.3.5 安全：记录最后清理时间，防止内存泄漏
+        self._last_purge: float = time.time()
+        self._purge_interval: int = 3600  # 每小时清理一次
 
     def check(self, key: str, max_calls: int = 10, window_seconds: int = 60) -> bool:
         """检查是否超过频率限制
@@ -111,17 +193,36 @@ class _RateLimiter:
             True=允许，False=超限
         """
         now = time.time()
+        # v5.3.5 安全：定期清理全部过期条目，防止内存泄漏
+        self._maybe_purge(now)
+
         if key not in self._windows:
             self._windows[key] = []
 
         # 清理过期记录
         self._windows[key] = [t for t in self._windows[key] if now - t < window_seconds]
 
+        # v5.3.5 安全：该键窗口清空后直接移除，减少字典体积
+        if not self._windows[key]:
+            del self._windows[key]
+            self._windows[key] = []
+
         if len(self._windows[key]) >= max_calls:
             return False
 
         self._windows[key].append(now)
         return True
+
+    def _maybe_purge(self, now: float):
+        """定期清理全表过期条目"""
+        if now - self._last_purge < self._purge_interval:
+            return
+        self._last_purge = now
+        max_age = max(self._purge_interval * 2, 86400)
+        dead_keys = [k for k, ts in self._windows.items()
+                     if not ts or now - ts[-1] > max_age]
+        for k in dead_keys:
+            del self._windows[k]
 
 
 _rate_limiter = _RateLimiter()
@@ -4168,6 +4269,683 @@ class StorageEngine:
             "peak_scene": {"scene_id": peak["scene_id"], "line_count": peak["line_count"]},
             "growth_stage": growth_stage,
             "stage_distribution": {"early": early, "mid": mid, "late": late},
+        }
+
+    # ===== v5.3.5 新增：Agent 记忆主题聚类 + 行为洞察 =====
+
+    def memory_cluster(self,
+                       agent_id: str,
+                       days: int = 30,
+                       max_clusters: int = 10) -> Dict[str, Any]:
+        """记忆主题聚类（v5.3.5 新增）
+
+        基于关键词和标签相似度，将 Agent 记忆聚合成主题组，
+        识别核心话题和知识结构。
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+            max_clusters: 最大聚类数（1-50）
+
+        Returns:
+            主题聚类结果：各主题簇列表、核心词、主题标签
+        """
+        conn = self._get_conn()
+        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+
+        days = max(1, min(365, int(days)))
+        max_clusters = max(1, min(50, int(max_clusters)))
+        now = time.time()
+        since = now - days * 86400
+
+        # v5.3.5 安全：参数化 SQL + 行数限制
+        cur = conn.execute(
+            "SELECT id, content, tags, category, importance, created_at "
+            "FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND created_at >= ? "
+            "ORDER BY importance DESC, created_at DESC",
+            (aid, since)
+        )
+        rows = _limited_fetch(cur, limit=5000)
+
+        if not rows:
+            return {
+                "agent_id": aid,
+                "days": days,
+                "total_memories": 0,
+                "clusters": [],
+                "unclustered": 0,
+            }
+
+        # 解析标签 + 抽取关键词（停用词过滤）
+        stop_words = {
+            "的", "了", "和", "是", "就", "都", "而", "及", "与", "着",
+            "或", "一个", "没有", "我们", "你们", "他们", "这个", "那个",
+            "the", "a", "an", "and", "or", "is", "are", "was", "were",
+            "to", "of", "in", "for", "on", "with", "at", "by",
+        }
+
+        mem_vectors: List[Tuple[str, set, float]] = []
+        for r in rows:
+            mid = r[0]
+            content = (r[1] or "").lower()
+            tags = []
+            try:
+                if r[2]:
+                    tags = json.loads(r[2]) if isinstance(r[2], str) else list(r[2])
+            except Exception:
+                tags = []
+            imp = (r[3] or "MEDIUM").upper()
+            imp_w = {"LOW": 0.5, "MEDIUM": 1.0, "HIGH": 1.5, "CRITICAL": 2.0}.get(imp, 1.0)
+            # 分词关键词：取 >=2 字的非停用词 tokens
+            words = set()
+            # 英文单词
+            import re as _re
+            for w in _re.findall(r'[a-zA-Z]{2,}', content):
+                if w not in stop_words:
+                    words.add(w)
+            # 中文字符：2-4 字片段（简单滑动窗口）
+            for w in _re.findall(r'[\u4e00-\u9fff]{2,4}', content):
+                if w not in stop_words:
+                    words.add(w)
+            # 叠加标签
+            for t in tags:
+                tl = str(t).lower()
+                if tl and tl not in stop_words:
+                    words.add(tl)
+            if words:
+                mem_vectors.append((mid, words, imp_w))
+
+        # 贪心聚类：Jaccard 相似度阈值
+        clusters: List[Dict[str, Any]] = []
+        clustered = set()
+        SIM_THRESHOLD = 0.2
+
+        for (mid, words, w) in mem_vectors:
+            if mid in clustered:
+                continue
+            # 寻找最匹配的既有簇
+            best_idx = -1
+            best_sim = 0.0
+            for i, cl in enumerate(clusters):
+                if len(cl["members"]) == 0:
+                    continue
+                # 与簇核心词的 Jaccard
+                core = cl["core_words"]
+                inter = len(words & core)
+                union = len(words | core)
+                sim = (inter / union) if union > 0 else 0.0
+                if sim > best_sim:
+                    best_sim = sim
+                    best_idx = i
+            if best_idx >= 0 and best_sim >= SIM_THRESHOLD:
+                # 加入簇
+                cl = clusters[best_idx]
+                cl["members"].append({"id": mid, "weight": w})
+                cl["core_words"] |= words
+                cl["total_weight"] += w
+            else:
+                # 新簇
+                if len(clusters) >= max_clusters:
+                    continue
+                clusters.append({
+                    "cluster_id": len(clusters) + 1,
+                    "members": [{"id": mid, "weight": w}],
+                    "core_words": set(words),
+                    "total_weight": w,
+                })
+            clustered.add(mid)
+
+        # 计算簇标签（高频核心词 Top-5）
+        result_clusters = []
+        for cl in clusters:
+            word_scores: Dict[str, float] = {}
+            # 成员中的词频（加权）
+            for (mid, words, w) in mem_vectors:
+                if mid in {m["id"] for m in cl["members"]}:
+                    for wd in words:
+                        word_scores[wd] = word_scores.get(wd, 0.0) + w
+            # 也加一次 core_words 的贡献
+            for wd in cl["core_words"]:
+                word_scores[wd] = word_scores.get(wd, 0.0) + 0.1
+            top_words = sorted(word_scores.items(), key=lambda x: -x[1])[:8]
+            label = " / ".join(w for w, _ in top_words[:5]) or "(通用)"
+            result_clusters.append({
+                "cluster_id": cl["cluster_id"],
+                "label": label,
+                "size": len(cl["members"]),
+                "total_weight": round(cl["total_weight"], 2),
+                "top_words": [w for w, _ in top_words],
+                "sample_members": [m["id"] for m in cl["members"][:10]],
+            })
+
+        result_clusters.sort(key=lambda c: -c["size"])
+        for i, cl in enumerate(result_clusters):
+            cl["cluster_id"] = i + 1
+
+        return {
+            "agent_id": aid,
+            "days": days,
+            "total_memories": len(rows),
+            "clustered_memories": len(clustered),
+            "clusters": result_clusters,
+            "unclustered": max(0, len(rows) - len(clustered)),
+        }
+
+    def agent_insight(self,
+                      agent_id: str,
+                      days: int = 30) -> Dict[str, Any]:
+        """Agent 行为洞察（v5.3.5 新增）
+
+        综合分析 Agent 记忆的活跃度趋势、标签偏好、
+        记忆层分布变化、访问频率等行为模式。
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            行为洞察报告
+        """
+        conn = self._get_conn()
+        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+
+        days = max(1, min(365, int(days)))
+        now = time.time()
+        since = now - days * 86400
+
+        # v5.3.5 安全：参数化 SQL
+        cur = conn.execute(
+            "SELECT id, content, tags, category, importance, layer, "
+            "created_at, access_count, privacy "
+            "FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND created_at >= ?",
+            (aid, since)
+        )
+        rows = _limited_fetch(cur, limit=10000)
+
+        if not rows:
+            return {
+                "agent_id": aid,
+                "days": days,
+                "total_memories": 0,
+                "activity_trend": {},
+                "tag_preferences": [],
+                "layer_distribution": {},
+                "insights": [],
+            }
+
+        total = len(rows)
+        layers: Dict[str, int] = {}
+        importances: Dict[str, int] = {}
+        categories: Dict[str, int] = {}
+        privacies: Dict[str, int] = {}
+        tag_counts: Dict[str, int] = {}
+        # 每周活跃度（按周切片）
+        week_buckets: Dict[str, int] = {}
+        W = 7 * 86400
+        total_access = 0
+        creation_timestamps: List[float] = []
+
+        for r in rows:
+            layer = (r[5] or "SHORT_TERM").upper()
+            imp = (r[3] or "MEDIUM").upper()
+            cat = (r[3] or "general").lower()
+            priv = (r[7] if len(r) > 7 else "INTERNAL") or "INTERNAL"
+            priv = priv.upper()
+            layers[layer] = layers.get(layer, 0) + 1
+            importances[imp] = importances.get(imp, 0) + 1
+            categories[cat] = categories.get(cat, 0) + 1
+            privacies[priv] = privacies.get(priv, 0) + 1
+            # 访问计数
+            ac = r[6] if isinstance(r[6], int) else 0
+            total_access += ac
+            # 创建时间
+            created = r[5] if isinstance(r[5], (int, float)) else now
+            if isinstance(r[5], (int, float)) and r[5] > 1e9:
+                created = r[5]
+            else:
+                # 回退：按列索引判断 created_at
+                created = r[5] if isinstance(r[5], (int, float)) and r[5] > 1e8 else now
+            # created_at 索引修正：SELECT 中是第 6 列（index=5）？重新按顺序
+            # 顺序是: id[0],content[1],tags[2],category[3],importance[4],layer[5],created_at[6],access_count[7],privacy[8]
+            # 所以应该修正：
+            pass
+
+        # 重新整理统计，修正列索引
+        layers.clear()
+        importances.clear()
+        categories.clear()
+        privacies.clear()
+        tag_counts.clear()
+        week_buckets.clear()
+        total_access = 0
+        creation_timestamps = []
+        avg_len = 0.0
+
+        for r in rows:
+            mid, content, tags, category, importance, layer, created_at, access_count, privacy = r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]
+            layer = (layer or "SHORT_TERM").upper()
+            imp = (importance or "MEDIUM").upper()
+            cat = (category or "general").lower()
+            priv = (privacy or "INTERNAL").upper()
+            layers[layer] = layers.get(layer, 0) + 1
+            importances[imp] = importances.get(imp, 0) + 1
+            categories[cat] = categories.get(cat, 0) + 1
+            privacies[priv] = privacies.get(priv, 0) + 1
+            ac = access_count if isinstance(access_count, int) else 0
+            total_access += ac
+            created = created_at if isinstance(created_at, (int, float)) else now
+            creation_timestamps.append(created)
+            bucket_idx = int((now - created) / W) if created < now else 0
+            bucket_label = f"W-{bucket_idx}" if bucket_idx > 0 else "本周"
+            week_buckets[bucket_label] = week_buckets.get(bucket_label, 0) + 1
+            # 标签统计
+            try:
+                tag_list = json.loads(tags) if isinstance(tags, str) else (tags or [])
+                for t in tag_list:
+                    ts = str(t).strip()
+                    if ts:
+                        tag_counts[ts] = tag_counts.get(ts, 0) + 1
+            except Exception:
+                pass
+            # 内容长度
+            avg_len += len(content or "") / max(1, total)
+
+        # 活跃度趋势：比较最近一半 vs 前一半
+        sorted_ts = sorted(creation_timestamps)
+        half = len(sorted_ts) // 2
+        insights: List[str] = []
+        if half > 0:
+            first_half_count = half
+            second_half_count = total - half
+            if second_half_count > first_half_count * 1.2:
+                insights.append("近期活跃度上升 📈（后段记忆多于前段）")
+            elif first_half_count > second_half_count * 1.2:
+                insights.append("近期活跃度下降 📉（前段记忆多于后段）")
+            else:
+                insights.append("活跃度保持平稳 ➡️")
+
+        # 记忆层洞察
+        pct = lambda n: (n / total * 100) if total > 0 else 0.0
+        long_pct = pct(layers.get("LONG_TERM", 0) + layers.get("PERMANENT", 0))
+        if long_pct >= 60:
+            insights.append(f"长期记忆占比偏高（{long_pct:.0f}%），知识沉淀良好")
+        elif long_pct <= 15:
+            insights.append(f"长期记忆占比偏低（{long_pct:.0f}%），建议强化记忆持久化")
+
+        # 重要度洞察
+        high_pct = pct(importances.get("HIGH", 0) + importances.get("CRITICAL", 0))
+        if high_pct >= 40:
+            insights.append(f"重要记忆占比较高（{high_pct:.0f}%），记忆质量优")
+        elif high_pct <= 5:
+            insights.append(f"重要记忆稀少（{high_pct:.0f}%），可考虑标注重要记忆")
+
+        # 隐私洞察
+        secret_pct = pct(privacies.get("SECRET", 0) + privacies.get("CONFIDENTIAL", 0))
+        if secret_pct >= 30:
+            insights.append(f"敏感记忆占比 {secret_pct:.0f}%，注意加密备份")
+
+        # 平均访问频次
+        avg_access = round(total_access / total, 2) if total > 0 else 0
+        if avg_access >= 3.0:
+            insights.append(f"记忆复用率高（平均访问 {avg_access} 次），价值密度好")
+
+        # Top 标签偏好
+        top_tags = sorted(tag_counts.items(), key=lambda x: -x[1])[:10]
+        tag_preferences = [
+            {"tag": t, "count": c, "ratio": round(c / total, 4)}
+            for t, c in top_tags
+        ]
+
+        return {
+            "agent_id": aid,
+            "days": days,
+            "total_memories": total,
+            "activity": {
+                "trend_by_week": week_buckets,
+                "total_accesses": total_access,
+                "avg_access_per_memory": avg_access,
+                "avg_content_length": round(avg_len, 1),
+            },
+            "layer_distribution": layers,
+            "importance_distribution": importances,
+            "category_distribution": categories,
+            "privacy_distribution": privacies,
+            "tag_preferences": tag_preferences,
+            "insights": insights,
+        }
+
+    # ===== v5.3.5 新增：AI 短剧剧情摘要 + 场景张力分析 =====
+
+    def drama_summary(self,
+                      drama_id: str,
+                      max_length: int = 500) -> Dict[str, Any]:
+        """短剧剧情摘要（v5.3.5 新增）
+
+        基于场景描述和经典台词，生成短剧核心剧情摘要。
+
+        Args:
+            drama_id: 短剧 ID
+            max_length: 摘要最大字符数（100-2000）
+
+        Returns:
+            剧情摘要、核心角色、关键场景索引
+        """
+        conn = self._get_conn()
+        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+        max_length = max(100, min(2000, int(max_length)))
+
+        # 获取短剧元数据
+        drow = conn.execute(
+            "SELECT id, title, genre, total_episodes, current_episode, "
+            "status, rating, description, metadata "
+            "FROM drama_series WHERE id = ?",
+            (did,)
+        ).fetchone()
+        if not drow:
+            return {"error": "短剧不存在"}
+
+        title = drow[1] or "未命名"
+        genre = drow[2] or "未知"
+        stored_summary = (drow[7] or "").strip()
+
+        # 获取场景列表（按场景顺序）
+        scene_rows = conn.execute(
+            "SELECT id, episode, scene_number, title, content, metadata "
+            "FROM drama_scenes WHERE drama_id = ? "
+            "ORDER BY episode ASC, scene_number ASC",
+            (did,)
+        ).fetchall()
+
+        # 获取经典台词
+        classic_lines = conn.execute(
+            "SELECT dl.line_text, dc.name, ds.episode "
+            "FROM drama_lines dl "
+            "LEFT JOIN drama_characters dc ON dl.character_id = dc.id "
+            "LEFT JOIN drama_scenes ds ON dl.scene_id = ds.id "
+            "WHERE dl.drama_id = ? AND dl.is_classic = 1 "
+            "ORDER BY COALESCE(ds.episode, 0) ASC, COALESCE(ds.scene_number, 0) ASC, dl.created_at ASC",
+            (did,)
+        ).fetchall()
+
+        # 获取主要角色（按台词量排序 Top-5）
+        top_chars = conn.execute(
+            "SELECT dc.name, COUNT(dl.id) as line_count "
+            "FROM drama_characters dc "
+            "LEFT JOIN drama_lines dl ON dc.id = dl.character_id "
+            "WHERE dc.drama_id = ? "
+            "GROUP BY dc.id ORDER BY line_count DESC LIMIT 5",
+            (did,)
+        ).fetchall()
+
+        scenes = []
+        key_scene_ids = []
+        for sr in scene_rows:
+            # v5.3.5: is_key_scene 存储在 metadata JSON 中
+            meta_raw = sr[5] or "{}"
+            try:
+                meta = _safe_json_loads(meta_raw)
+                is_key = bool(meta.get("is_key_scene", False))
+            except Exception:
+                is_key = False
+            sc = {
+                "id": sr[0],
+                "episode": sr[1],
+                "order": sr[2],
+                "title": sr[3] or "",
+                "description": (sr[4] or "")[:200],
+                "is_key": is_key,
+            }
+            scenes.append(sc)
+            if is_key:
+                key_scene_ids.append(sc["id"])
+
+        # 生成摘要（优先级：已有 summary > 关键场景描述拼接 > 普通场景拼接）
+        parts = []
+        if stored_summary:
+            parts.append(stored_summary)
+        else:
+            # 优先关键场景
+            key_scenes = [s for s in scenes if s["is_key"] and s["description"]]
+            # 若关键场景太少，取首尾 + 中间分布
+            if len(key_scenes) < 3:
+                key_scenes = (
+                    scenes[:1]
+                    + scenes[len(scenes) // 3 : len(scenes) // 3 + 1]
+                    + scenes[2 * len(scenes) // 3 : 2 * len(scenes) // 3 + 1]
+                    + scenes[-1:]
+                )
+                key_scenes = [s for s in key_scenes if s.get("description")]
+            for s in key_scenes:
+                ep = f"第{s['episode']}集" if s.get("episode") else ""
+                st = s.get("title") or f"场景{s.get('order') or ''}"
+                desc = s["description"].strip().rstrip(".。")
+                if desc:
+                    parts.append(f"{ep}{st}：{desc}")
+
+        # 添加经典台词（最多3句）
+        quotes = []
+        for cl in classic_lines[:3]:
+            content, cname, ep = cl
+            content = (content or "").strip()
+            if len(content) > 80:
+                content = content[:80] + "…"
+            if content:
+                who = cname or "角色"
+                tag = f"（第{ep}集）" if ep else ""
+                quotes.append(f"{who}{tag}：“{content}”")
+
+        # 组装摘要，限制长度
+        summary_text = "。".join(p for p in parts if p)
+        if not summary_text:
+            summary_text = f"{title}：暂无剧情描述数据"
+        # 截断到 max_length（中文按字符截断更友好）
+        if len(summary_text) > max_length:
+            summary_text = summary_text[:max_length].rstrip() + "…"
+
+        # 角色列表
+        characters = [{"name": c[0], "lines": c[1] or 0} for c in top_chars if c[0]]
+
+        return {
+            "drama_id": did,
+            "title": title,
+            "genre": genre,
+            "episodes": drow[3] or 0,
+            "current_episode": drow[4] or 0,
+            "status": drow[5] or "planned",
+            "rating": drow[6] or 0.0,
+            "summary": summary_text,
+            "summary_source": "stored" if stored_summary else "derived",
+            "characters": characters,
+            "classic_quotes": quotes,
+            "total_scenes": len(scenes),
+            "key_scene_count": len(key_scene_ids),
+        }
+
+    def scene_tension(self,
+                      drama_id: str,
+                      top_k: int = 10) -> Dict[str, Any]:
+        """场景张力分析（v5.3.5 新增）
+
+        基于台词量、冲突词、角色数量等，识别高张力场景（冲突/高潮）。
+        张力评分 = 台词量分 + 冲突关键词分 + 角色互动分 + 关键场景加成
+
+        Args:
+            drama_id: 短剧 ID
+            top_k: 返回 Top-K 高张力场景（1-50）
+
+        Returns:
+            张力排行、各场景张力曲线、高潮场景索引
+        """
+        conn = self._get_conn()
+        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+        top_k = max(1, min(50, int(top_k)))
+
+        # 获取短剧信息
+        drow = conn.execute(
+            "SELECT id, title, total_episodes FROM drama_series WHERE id = ?",
+            (did,)
+        ).fetchone()
+        if not drow:
+            return {"error": "短剧不存在"}
+        title = drow[1] or "未命名"
+
+        # 获取所有场景及其基础信息
+        scene_rows = conn.execute(
+            "SELECT id, episode, scene_number, title, content, metadata "
+            "FROM drama_scenes WHERE drama_id = ? "
+            "ORDER BY episode ASC, scene_number ASC",
+            (did,)
+        ).fetchall()
+
+        if not scene_rows:
+            return {
+                "drama_id": did,
+                "title": title,
+                "total_scenes": 0,
+                "tension_curve": [],
+                "top_tension_scenes": [],
+            }
+
+        # 冲突关键词词典
+        conflict_words = {
+            "不", "别", "没", "错", "反对", "拒绝", "但是", "可是", "然而", "偏偏",
+            "竟然", "居然", "为什么", "凭什么", "滚", "闭嘴", "打", "杀", "死",
+            "no", "not", "never", "but", "however", "yet", "stop", "hate",
+            "fight", "kill", "die", "attack", "angry", "rage", "damn",
+            "冲突", "争吵", "吵架", "矛盾", "对抗", "崩溃", "爆炸", "危险",
+            "陷阱", "阴谋", "背叛", "欺骗", "威胁", "警告", "逼迫", "绝境",
+        }
+
+        # 情感激烈词（提升张力）
+        intensity_words = {
+            "最", "非常", "极", "绝对", "立刻", "马上", "必须", "一定",
+            "恨", "爱", "绝望", "希望", "真相", "秘密", "永远", "最后",
+            "very", "most", "absolutely", "always", "forever", "final",
+            "truth", "secret", "last", "never", "love", "hate",
+            "惊喜", "震惊", "震撼", "奇迹", "命运", "抉择", "牺牲",
+        }
+
+        tension_curve = []
+        scene_stats = []
+        max_lines = 1
+
+        # 对每个场景，统计台词、冲突词、角色数
+        for sr in scene_rows:
+            sid = sr[0]
+            # 台词量
+            line_data = conn.execute(
+                "SELECT COUNT(*), COUNT(DISTINCT character_id) "
+                "FROM drama_lines WHERE scene_id = ?",
+                (sid,)
+            ).fetchone()
+            line_count = line_data[0] or 0
+            char_count = line_data[1] or 0
+            if line_count > max_lines:
+                max_lines = line_count
+
+            # 获取场景内台词文本 + 描述 合并做冲突检测
+            texts = [sr[3] or "", sr[4] or ""]
+            cur_l = conn.execute(
+                "SELECT line_text FROM drama_lines WHERE scene_id = ? ORDER BY created_at ASC",
+                (sid,)
+            )
+            for lr in _limited_fetch(cur_l, limit=500):
+                texts.append(lr[0] or "")
+            blob = " ".join(texts).lower()
+
+            conflict_hits = sum(1 for w in conflict_words if w in blob)
+            intensity_hits = sum(1 for w in intensity_words if w in blob)
+
+            # 读取 is_key_scene 从 metadata
+            meta_raw = sr[5] or "{}"
+            try:
+                meta_s = _safe_json_loads(meta_raw)
+                is_key = 1 if meta_s.get("is_key_scene") else 0
+            except Exception:
+                is_key = 0
+
+            # 张力分
+            line_score = (line_count / max_lines) * 40.0
+            char_score = min(char_count, 8) / 8.0 * 20.0
+            conflict_score = min(conflict_hits, 10) / 10.0 * 25.0
+            intensity_score = min(intensity_hits, 10) / 10.0 * 15.0
+            key_bonus = 5.0 if is_key else 0.0
+
+            tension = round(line_score + char_score + conflict_score + intensity_score + key_bonus, 2)
+            entry = {
+                "scene_id": sid,
+                "episode": sr[1],
+                "order": sr[2],
+                "scene_title": sr[3] or f"场景{sr[2] or ''}",
+                "is_key_scene": is_key,
+                "line_count": line_count,
+                "character_count": char_count,
+                "conflict_hits": conflict_hits,
+                "intensity_hits": intensity_hits,
+                "tension": tension,
+            }
+            scene_stats.append(entry)
+            tension_curve.append({
+                "scene_id": sid,
+                "episode": sr[1],
+                "order": sr[2],
+                "tension": tension,
+            })
+
+        # Top-K 高张力场景
+        top_scenes = sorted(scene_stats, key=lambda s: -s["tension"])[:top_k]
+
+        # 找高潮区间：连续 >=60 分的场景段
+        threshold = 60.0 if len(scene_stats) >= 5 else 40.0
+        climax_ranges = []
+        cur_start = None
+        for i, s in enumerate(scene_stats):
+            if s["tension"] >= threshold:
+                if cur_start is None:
+                    cur_start = i
+            else:
+                if cur_start is not None:
+                    climax_ranges.append((cur_start, i - 1))
+                    cur_start = None
+        if cur_start is not None:
+            climax_ranges.append((cur_start, len(scene_stats) - 1))
+        # 合并成摘要
+        climax_summary = []
+        for a, b in climax_ranges:
+            ep_start = scene_stats[a].get("episode")
+            ep_end = scene_stats[b].get("episode")
+            scenes_str = f"{scene_stats[a]['scene_title']} → {scene_stats[b]['scene_title']}"
+            climax_summary.append({
+                "from_index": a,
+                "to_index": b,
+                "episodes": f"{ep_start}-{ep_end}" if ep_start != ep_end else str(ep_start),
+                "description": scenes_str,
+                "peak_tension": max(scene_stats[i]["tension"] for i in range(a, b + 1)),
+            })
+        # 取最长/峰值最高的一段为主高潮
+        main_climax = None
+        if climax_summary:
+            main_climax = max(climax_summary, key=lambda c: c["peak_tension"])
+
+        return {
+            "drama_id": did,
+            "title": title,
+            "total_scenes": len(scene_stats),
+            "avg_tension": round(sum(s["tension"] for s in scene_stats) / max(1, len(scene_stats)), 2),
+            "tension_curve": tension_curve,
+            "top_tension_scenes": top_scenes,
+            "climax_segments": climax_summary,
+            "main_climax": main_climax,
         }
 
     def analyze_similarity(self,

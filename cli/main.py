@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.3.4 CLI - 命令行工具
+MindForge v5.3.5 CLI - 命令行工具
 =================================
 
 Usage:
@@ -60,7 +60,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.3.4"
+    __version__ = "5.3.5"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -2788,6 +2788,25 @@ def main():
     p_char_arc.add_argument("drama_id", help="短剧 ID")
     p_char_arc.add_argument("character_id", help="角色 ID")
 
+    # ===== v5.3.5 新增 Agent 记忆命令 =====
+    p_mem_cluster = sub.add_parser("memory-cluster", help="记忆主题聚类（v5.3.5 新增）")
+    p_mem_cluster.add_argument("agent", help="Agent ID")
+    p_mem_cluster.add_argument("--days", "-d", type=int, default=30, help="回溯天数（1-365）")
+    p_mem_cluster.add_argument("--max-clusters", "-k", type=int, default=10, help="最大聚类数（1-50）")
+
+    p_agent_insight = sub.add_parser("agent-insight", help="Agent 行为洞察（v5.3.5 新增）")
+    p_agent_insight.add_argument("agent", help="Agent ID")
+    p_agent_insight.add_argument("--days", "-d", type=int, default=30, help="回溯天数（1-365）")
+
+    # ===== v5.3.5 新增 AI 短剧命令 =====
+    p_drama_summary = sub.add_parser("drama-summary", help="短剧剧情摘要（v5.3.5 新增）")
+    p_drama_summary.add_argument("drama_id", help="短剧 ID")
+    p_drama_summary.add_argument("--max-length", "-l", type=int, default=500, help="摘要最大字符数（100-2000）")
+
+    p_scene_tension = sub.add_parser("scene-tension", help="场景张力分析（v5.3.5 新增）")
+    p_scene_tension.add_argument("drama_id", help="短剧 ID")
+    p_scene_tension.add_argument("--top-k", "-k", type=int, default=10, help="返回 Top-K 高张力场景（1-50）")
+
     p_quality = sub.add_parser("quality", help="记忆质量评分（v5.2.2 新增）")
     p_quality.add_argument("memory_id", nargs="?", help="记忆 ID（不指定则批量评分）")
     p_quality.add_argument("--category", "-c", help="批量评分时按分类过滤")
@@ -3074,6 +3093,10 @@ def main():
         "memory-decay": cmd_memory_decay,
         "drama-compare": cmd_drama_compare,
         "char-arc": cmd_char_arc,
+        "memory-cluster": cmd_memory_cluster,
+        "agent-insight": cmd_agent_insight,
+        "drama-summary": cmd_drama_summary,
+        "scene-tension": cmd_scene_tension,
         "quality": cmd_quality,
         "similar": cmd_similar,
         "backup": cmd_backup,
@@ -6485,6 +6508,272 @@ def cmd_char_arc(args):
         print(f"  前期:  {sd['early']:>4} 句  ({sd['early']/total:.1%})")
         print(f"  中期:  {sd['mid']:>4} 句  ({sd['mid']/total:.1%})")
         print(f"  后期:  {sd['late']:>4} 句  ({sd['late']/total:.1%})")
+
+    cm.close()
+    return 0
+
+
+def cmd_memory_cluster(args):
+    """记忆主题聚类（v5.3.5 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🧠 记忆主题聚类（v5.3.5）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:   {args.agent}")
+    print(f"  回溯天数:   {args.days}")
+    print(f"  最大簇数:   {args.max_clusters}")
+
+    try:
+        result = cm.memory_cluster(args.agent, args.days, args.max_clusters)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    total = result["total_memories"]
+    if total == 0:
+        print(c(f"\n⚠️  该 Agent 在 {args.days} 天内无记忆", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n📊 总览", "cyan"))
+    print(f"  总记忆数:    {total}")
+    print(f"  已聚类:      {result['clustered_memories']}")
+    print(f"  未聚类:      {result['unclustered']}")
+    print(f"  主题簇数:    {len(result['clusters'])}")
+
+    clusters = result.get("clusters", [])
+    if not clusters:
+        print(c(f"\n⚠️  未识别出明确主题簇", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n🏷️  主题簇列表（按规模排序）", "cyan"))
+    print("-" * 75)
+    print(f"{'#':<4}{'规模':<6}{'权重':<8}{'主题标签'}")
+    print("-" * 75)
+    for cl in clusters:
+        print(f"{cl['cluster_id']:<4}{cl['size']:<6}{cl['total_weight']:<8}"
+              f"{cl['label'][:55]}")
+
+    # 最大簇的 Top 词
+    largest = clusters[0]
+    print(c(f"\n📌 最大簇 Top-8 关键词：{largest['label'][:30]}", "green"))
+    print("  " + " · ".join(largest["top_words"][:8]))
+
+    cm.close()
+    return 0
+
+
+def cmd_agent_insight(args):
+    """Agent 行为洞察（v5.3.5 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🧠 Agent 行为洞察（v5.3.5）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:   {args.agent}")
+    print(f"  回溯天数:   {args.days}")
+
+    try:
+        result = cm.agent_insight(args.agent, args.days)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    total = result["total_memories"]
+    if total == 0:
+        print(c(f"\n⚠️  该 Agent 在 {args.days} 天内无记忆", "yellow"))
+        cm.close()
+        return 0
+
+    act = result["activity"]
+    print(c(f"\n📊 活跃度统计", "cyan"))
+    print(f"  总记忆数:    {total}")
+    print(f"  总访问次数:  {act['total_accesses']}")
+    avg_access = f"{act['avg_access_per_memory']} 次/条"
+    print(f"  平均访问:    {avg_access}")
+    print(f"  平均内容长:  {act['avg_content_length']} 字")
+
+    # 按周趋势
+    wb = act.get("trend_by_week", {})
+    if wb:
+        print(c(f"\n📈 按周趋势（近 {args.days} 天）", "cyan"))
+        sorted_w = sorted(wb.items(), key=lambda x: x[0])
+        max_v = max(wb.values()) or 1
+        for wk, cnt in sorted_w:
+            bar = "█" * max(1, int(cnt / max_v * 20))
+            print(f"  {wk:<8}  {cnt:>5} 条  {bar}")
+
+    print(c(f"\n📦 记忆层分布", "cyan"))
+    for layer, cnt in sorted(result["layer_distribution"].items(), key=lambda x: -x[1]):
+        pct = cnt / total * 100
+        bar = "█" * int(pct / 5)
+        print(f"  {layer:<16} {cnt:>5}  ({pct:>5.1f}%)  {bar}")
+
+    print(c(f"\n⭐ 重要度分布", "cyan"))
+    for imp, cnt in sorted(result["importance_distribution"].items(), key=lambda x: -x[1]):
+        pct = cnt / total * 100
+        print(f"  {imp:<10} {cnt:>5}  ({pct:>5.1f}%)")
+
+    tags = result.get("tag_preferences", [])
+    if tags:
+        print(c(f"\n🏷️  Top 标签偏好", "cyan"))
+        for t in tags[:8]:
+            pct_s = f"{t['ratio'] * 100:.1f}%"
+            print(f"  {t['tag']:<20} {t['count']:>5} 次  ({pct_s:>6})")
+
+    insights = result.get("insights", [])
+    if insights:
+        print(c(f"\n💡 智能洞察", "bold", "green"))
+        for s in insights:
+            print(f"  ✨ {s}")
+
+    cm.close()
+    return 0
+
+
+def cmd_drama_summary(args):
+    """短剧剧情摘要（v5.3.5 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🎬 短剧剧情摘要（v5.3.5）", "bold"))
+    print("=" * 60)
+    print(f"  短剧 ID:    {args.drama_id}")
+    print(f"  摘要长度:   {args.max_length} 字")
+
+    try:
+        result = cm.drama_summary(args.drama_id, args.max_length)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(f"\n  剧名:       {result['title']}")
+    print(f"  类型:       {result['genre']}")
+    print(f"  集数:       {result['current_episode']}/{result['episodes']}")
+    print(f"  状态:       {result['status']}")
+    rating_s = f"{result['rating']:.1f}" if result.get("rating") else "-"
+    print(f"  评分:       {rating_s}")
+    src = {"stored": "官方", "derived": "自动生成"}.get(result.get("summary_source"), "未知")
+    print(f"  摘要来源:   {src}")
+    print(f"  场景总数:   {result['total_scenes']}")
+    print(f"  关键场景:   {result['key_scene_count']}")
+
+    chars = result.get("characters", [])
+    if chars:
+        print(c(f"\n👥 核心角色（Top-{len(chars)}）", "cyan"))
+        for ch in chars:
+            print(f"  · {ch['name']:<14} 台词 {ch['lines']} 句")
+
+    print(c(f"\n📖 剧情摘要", "cyan"))
+    print("-" * 60)
+    summary = result.get("summary", "(无)")
+    # 格式化换行（每 60 字左右）
+    import re as _re
+    wrapped = []
+    for line in summary.split("\n"):
+        cur = ""
+        for ch in line:
+            cur += ch
+            if len(cur) >= 60:
+                wrapped.append(cur)
+                cur = ""
+        if cur:
+            wrapped.append(cur)
+    for ln in wrapped:
+        print(f"  {ln}")
+
+    quotes = result.get("classic_quotes", [])
+    if quotes:
+        print(c(f"\n🎭 经典台词", "green"))
+        for q in quotes:
+            print(f"  💬 {q}")
+
+    cm.close()
+    return 0
+
+
+def cmd_scene_tension(args):
+    """场景张力分析（v5.3.5 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🎬 场景张力分析（v5.3.5）", "bold"))
+    print("=" * 60)
+    print(f"  短剧 ID:    {args.drama_id}")
+    print(f"  Top-K:      {args.top_k}")
+
+    try:
+        result = cm.scene_tension(args.drama_id, args.top_k)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    total = result["total_scenes"]
+    if total == 0:
+        print(c(f"\n⚠️  该短剧无场景数据", "yellow"))
+        cm.close()
+        return 0
+
+    print(f"\n  剧名:       {result['title']}")
+    print(f"  场景总数:   {total}")
+    avg_s = f"{result['avg_tension']:.1f}"
+    print(f"  平均张力:   {avg_s} / 100")
+
+    # 主高潮
+    mc = result.get("main_climax")
+    if mc:
+        print(c(f"\n🌋 主高潮段", "red"))
+        peak_s = f"{mc['peak_tension']:.1f}"
+        print(f"  集数:       第 {mc['episodes']} 集")
+        print(f"  张力峰值:   {peak_s}")
+        print(f"  场景范围:   {mc['description']}")
+
+    # Top-K 高张力场景
+    top = result.get("top_tension_scenes", [])
+    if top:
+        print(c(f"\n🔥 Top-{len(top)} 高张力场景", "red"))
+        print("-" * 85)
+        print(f"{'#':<4}{'集':<5}{'场景标题':<22}{'台词':<6}{'角色':<6}{'冲突':<6}{'强度':<6}{'张力':<8}{'关键'}")
+        print("-" * 85)
+        for i, sc in enumerate(top, 1):
+            key_m = "★" if sc.get("is_key_scene") else ""
+            title = (sc.get("scene_title") or "")[:20]
+            ep = sc.get("episode") or "-"
+            print(f"{i:<4}{str(ep):<5}{title:<22}{sc['line_count']:<6}"
+                  f"{sc['character_count']:<6}{sc['conflict_hits']:<6}"
+                  f"{sc['intensity_hits']:<6}{sc['tension']:<8.1f}{key_m}")
+
+    # 张力曲线：ASCII 可视化（按顺序）
+    curve = result.get("tension_curve", [])
+    if curve and len(curve) <= 80:
+        print(c(f"\n📉 张力曲线（按场景顺序）", "cyan"))
+        # 每场景一行精简
+        max_t = max((c["tension"] for c in curve), default=1) or 1
+        for cp in curve:
+            idx = cp.get("order") or "-"
+            # 30 格柱状
+            bar_len = int(cp["tension"] / max(max_t, 0.01) * 30)
+            bar = "█" * bar_len
+            color = "red" if cp["tension"] >= 60 else ("yellow" if cp["tension"] >= 35 else "cyan")
+            print(f"  S{str(idx):<4} {c(bar, color)}  {cp['tension']:.0f}")
 
     cm.close()
     return 0

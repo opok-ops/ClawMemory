@@ -1,5 +1,5 @@
 """
-MindForge v5.3.4 主入口类
+MindForge v5.3.5 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,10 +31,23 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.3.4"
+    __version__ = "5.3.5"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
+
+# v5.3.5 安全加固：检测 Windows 短文件名（8.3）绕过尝试
+def _is_suspicious_windows_path_mf(comp: str) -> bool:
+    """检测 Windows 短文件名绕过模式"""
+    if not comp or len(comp) == 0:
+        return False
+    import re as _re
+    if _re.match(r'^[^~]{1,6}~\d(\..{1,3})?$', comp, _re.IGNORECASE):
+        return True
+    if any(s in comp for s in ('..', '/', '\\', '\x00', ':')):
+        return True
+    return False
+
 
 def _safe_path(path_str, must_exist=False, allow_symlinks=False,
                max_size=None, allowed_exts=None, max_len=4096):
@@ -58,10 +71,19 @@ def _safe_path(path_str, must_exist=False, allow_symlinks=False,
         raise ValueError("路径不能为空")
     if len(path_str) > max_len:
         raise ValueError(f"路径过长（上限 {max_len} 字符）")
-
+    # v5.3.5 安全：过滤 Unicode 双向和控制字符
+    import unicodedata
+    for ch in path_str:
+        cat = unicodedata.category(ch)
+        if cat in ('Cf', 'Cc') and ch not in '\n\r\t':
+            raise ValueError("路径中包含非法控制字符")
+    # v5.3.5 安全：逐组件检测 Windows 短文件名绕过
     target = Path(path_str)
     if not target.is_absolute():
         target = Path.cwd() / target
+    for comp in target.parts:
+        if comp and _is_suspicious_windows_path_mf(comp):
+            raise ValueError(f"路径组件不安全: {comp}")
 
     try:
         resolved = target.resolve()
@@ -98,7 +120,7 @@ def _safe_path(path_str, must_exist=False, allow_symlinks=False,
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.3.4"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.3.5"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -2092,6 +2114,99 @@ class MindForge:
         character_id = "".join(c for c in character_id[:64]
                                if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
         return self._storage.character_arc(drama_id, character_id)
+
+    # ===== v5.3.5 新增 =====
+
+    def memory_cluster(self,
+                       agent_id: str,
+                       days: int = 30,
+                       max_clusters: int = 10) -> Dict[str, Any]:
+        """记忆主题聚类（v5.3.5 新增）
+
+        基于关键词和标签相似度，将 Agent 记忆聚合成主题组。
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+            max_clusters: 最大聚类数（1-50）
+
+        Returns:
+            主题聚类结果
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        days = max(1, min(365, int(days)))
+        max_clusters = max(1, min(50, int(max_clusters)))
+        return self._storage.memory_cluster(agent_id, days, max_clusters)
+
+    def agent_insight(self,
+                      agent_id: str,
+                      days: int = 30) -> Dict[str, Any]:
+        """Agent 行为洞察（v5.3.5 新增）
+
+        综合分析 Agent 记忆的活跃度趋势、标签偏好、记忆层分布。
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            行为洞察报告
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        days = max(1, min(365, int(days)))
+        return self._storage.agent_insight(agent_id, days)
+
+    def drama_summary(self,
+                      drama_id: str,
+                      max_length: int = 500) -> Dict[str, Any]:
+        """短剧剧情摘要（v5.3.5 新增）
+
+        基于场景描述和经典台词，生成短剧核心剧情摘要。
+
+        Args:
+            drama_id: 短剧 ID
+            max_length: 摘要最大字符数（100-2000）
+
+        Returns:
+            剧情摘要、核心角色、关键场景索引
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        max_length = max(100, min(2000, int(max_length)))
+        return self._storage.drama_summary(drama_id, max_length)
+
+    def scene_tension(self,
+                      drama_id: str,
+                      top_k: int = 10) -> Dict[str, Any]:
+        """场景张力分析（v5.3.5 新增）
+
+        识别高张力场景（冲突/高潮），分析张力曲线。
+
+        Args:
+            drama_id: 短剧 ID
+            top_k: 返回 Top-K 高张力场景（1-50）
+
+        Returns:
+            张力排行、各场景张力曲线、高潮场景索引
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        top_k = max(1, min(50, int(top_k)))
+        return self._storage.scene_tension(drama_id, top_k)
 
     def analyze_similarity(self,
                            memory_id: str,
