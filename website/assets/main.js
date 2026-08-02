@@ -1,4 +1,4 @@
-﻿/* ========== MindForge v5.3.6 - Main JavaScript ========== */
+/* ========== MindForge v5.3.6 - Main JavaScript ========== */
 
 // Particle Background Animation
 (function() {
@@ -95,7 +95,7 @@
           ctx.beginPath();
           ctx.moveTo(particles[i].x, particles[i].y);
           ctx.lineTo(particles[j].x, particles[j].y);
-          ctx.strokeStyle = gba(0, 212, 255, );
+          ctx.strokeStyle = `rgba(0, 212, 255, ${alpha})`;
           ctx.lineWidth = 0.5;
           ctx.stroke();
         }

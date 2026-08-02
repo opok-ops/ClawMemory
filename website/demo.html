@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -424,7 +424,7 @@ function animateParticles() {
         ctx.beginPath();
         ctx.moveTo(p1.x, p1.y);
         ctx.lineTo(p2.x, p2.y);
-        ctx.strokeStyle = gba(0, 212, 255, );
+        ctx.strokeStyle = `rgba(0, 212, 255, ${0.1 * (1 - dist / 120)})`;
         ctx.lineWidth = 0.5;
         ctx.stroke();
       }
@@ -439,7 +439,7 @@ function showElement(id, delay = 0, duration = 1000) {
     setTimeout(() => {
       const el = document.getElementById(id);
       if (el) {
-        el.style.transition = opacity ms ease-out, transform ms ease-out;
+        el.style.transition = `opacity ${duration}ms ease-out, transform ${duration}ms ease-out`;
         el.style.opacity = '1';
         el.style.transform = 'translateY(0)';
       }
@@ -452,7 +452,7 @@ function hideElement(id, duration = 500) {
   return new Promise(resolve => {
     const el = document.getElementById(id);
     if (el) {
-      el.style.transition = opacity ms ease-out;
+      el.style.transition = `opacity ${duration}ms ease-out`;
       el.style.opacity = '0';
     }
     setTimeout(resolve, duration);
@@ -520,13 +520,13 @@ async function runDemo() {
     line1.style.left = x1 + 'px';
     line1.style.top = y1 + 'px';
     line1.style.width = Math.sqrt(dx1*dx1 + dy1*dy1) + 'px';
-    line1.style.transform = otate(rad);
+    line1.style.transform = `rotate(${Math.atan2(dy1, dx1)}rad)`;
     line1.style.opacity = '1';
 
     line2.style.left = x2 + 'px';
     line2.style.top = y2 + 'px';
     line2.style.width = Math.sqrt(dx2*dx2 + dy2*dy2) + 'px';
-    line2.style.transform = otate(rad);
+    line2.style.transform = `rotate(${Math.atan2(dy2, dx2)}rad)`;
     line2.style.opacity = '1';
   }, 1300);
 
