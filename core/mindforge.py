@@ -1,5 +1,5 @@
 """
-MindForge v5.3.5 主入口类
+MindForge v5.3.6 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,7 +31,7 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.3.5"
+    __version__ = "5.3.6"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -120,7 +120,7 @@ def _safe_path(path_str, must_exist=False, allow_symlinks=False,
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.3.5"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.3.6"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -2207,6 +2207,119 @@ class MindForge:
                            if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
         top_k = max(1, min(50, int(top_k)))
         return self._storage.scene_tension(drama_id, top_k)
+
+    # ===== v5.3.6 新增 =====
+
+    def memory_link(self,
+                    agent_id: str,
+                    memory_id: str,
+                    top_k: int = 10,
+                    days: int = 90) -> Dict[str, Any]:
+        """记忆关联推理（v5.3.6 新增）
+
+        基于关键词重叠、标签共享、时间邻近度，自动发现指定记忆
+        与同 Agent 其他记忆之间的隐式关联。
+
+        Args:
+            agent_id: Agent ID
+            memory_id: 目标记忆 ID
+            top_k: 返回 Top-K 关联记忆（1-50）
+            days: 回溯窗口天数（1-365）
+
+        Returns:
+            关联记忆列表（含关联类型与关联强度）、关联图谱摘要
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        if not memory_id or not isinstance(memory_id, str):
+            return {"error": "记忆 ID 不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        memory_id = "".join(c for c in memory_id[:64]
+                            if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        top_k = max(1, min(50, int(top_k)))
+        days = max(1, min(365, int(days)))
+        return self._storage.memory_link(agent_id, memory_id, top_k, days)
+
+    def memory_recall(self,
+                      agent_id: str,
+                      query: str,
+                      top_k: int = 10,
+                      days: int = 180) -> Dict[str, Any]:
+        """智能记忆召回（v5.3.6 新增）
+
+        基于查询关键词的语义召回，按重要度、访问频次、
+        时间衰减综合评分返回最相关记忆。
+
+        Args:
+            agent_id: Agent ID
+            query: 查询文本
+            top_k: 返回 Top-K 召回记忆（1-50）
+            days: 回溯窗口天数（1-365）
+
+        Returns:
+            召回记忆列表（含召回分、匹配关键词）、召回统计
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        if not query or not isinstance(query, str):
+            return {"error": "查询文本不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        # 查询文本：长度截断 + 剔除控制字符（保留换行/回车/制表）
+        query = "".join(c for c in query[:500]
+                        if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        top_k = max(1, min(50, int(top_k)))
+        days = max(1, min(365, int(days)))
+        return self._storage.memory_recall(agent_id, query, top_k, days)
+
+    def drama_pacing(self,
+                     drama_id: str,
+                     window: int = 3) -> Dict[str, Any]:
+        """剧集节奏分析（v5.3.6 新增）
+
+        按场景分析节奏分布（快/中/慢），识别拖沓段和密集段，
+        给出节奏健康度评分。
+
+        Args:
+            drama_id: 短剧 ID
+            window: 滑动窗口大小（场景数，1-10）
+
+        Returns:
+            节奏分布、拖沓/密集段、节奏健康度
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        window = max(1, min(10, int(window)))
+        return self._storage.drama_pacing(drama_id, window)
+
+    def char_interaction(self,
+                         drama_id: str,
+                         top_k: int = 15) -> Dict[str, Any]:
+        """角色互动分析（v5.3.6 新增）
+
+        分析角色两两之间的台词互动频率、冲突度，
+        构建角色互动矩阵，识别核心关系。
+
+        Args:
+            drama_id: 短剧 ID
+            top_k: 返回 Top-K 互动关系（1-50）
+
+        Returns:
+            互动矩阵、Top 互动关系、核心角色识别
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        top_k = max(1, min(50, int(top_k)))
+        return self._storage.char_interaction(drama_id, top_k)
 
     def analyze_similarity(self,
                            memory_id: str,

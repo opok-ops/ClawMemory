@@ -55,8 +55,8 @@
       <a href="#architecture" class="btn-secondary">查看架构</a>
     </div>
     <div class="hero-version">
-      <span class="version-badge">v5.3.5</span>
-      <span class="version-text">记忆主题聚类 · Agent 行为洞察 · 剧情摘要 · 场景张力</span>
+      <span class="version-badge">v5.3.6</span>
+      <span class="version-text">记忆关联推理 · 智能记忆召回 · 剧集节奏分析 · 角色互动矩阵</span>
     </div>
   </div>
 </header>
@@ -107,10 +107,10 @@
         自动发现记忆盲区与薄弱环节。
       </p>
       <ul class="bullet-list">
+        <li><strong>memory-link</strong> — 关键词+标签+时间三维关联推理</li>
+        <li><strong>memory-recall</strong> — 多因子综合评分智能召回</li>
         <li><strong>memory-cluster</strong> — 关键词/标签 Jaccard 贪心聚类</li>
         <li><strong>agent-insight</strong> — 按周趋势 + 标签偏好 + 智能建议</li>
-        <li><strong>agent-sentiment</strong> — 情感倾向三维分析</li>
-        <li><strong>memory-decay</strong> — 艾宾浩斯曲线 + 危急记忆预警</li>
       </ul>
     </div>
     <div class="showcase-visual">
@@ -164,10 +164,10 @@
         追剧从此不只是"看"。
       </p>
       <ul class="bullet-list">
+        <li><strong>drama-pacing</strong> — 节奏分布 + 拖沓/密集段识别</li>
+        <li><strong>char-interaction</strong> — 角色互动矩阵 + 核心关系</li>
         <li><strong>drama-summary</strong> — 关键场景 + 经典台词融合</li>
         <li><strong>scene-tension</strong> — 多维评分 + 高潮段识别</li>
-        <li><strong>char-arc</strong> — 角色成长曲线（rising/peak/stable）</li>
-        <li><strong>drama-compare</strong> — 多剧横向评分对比</li>
       </ul>
     </div>
     <div class="showcase-visual">
@@ -242,6 +242,22 @@
       <h2>每次迭代，<span class="italic">都在进化</span></h2>
     </div>
     <div class="changelog-list">
+      <div class="cl-item">
+        <div class="cl-left">
+          <span class="cl-ver">v5.3.6</span>
+          <span class="cl-date">2026-08-02</span>
+        </div>
+        <div class="cl-body">
+          <h4>🔗 记忆关联推理 · 🔎 智能召回 · 🎬 节奏/互动分析</h4>
+          <ul>
+            <li><code>memory-link</code> 记忆关联推理（关键词+标签+时间三维评分）</li>
+            <li><code>memory-recall</code> 智能记忆召回（多因子综合评分 Top-K）</li>
+            <li><code>drama-pacing</code> 剧集节奏分析（拖沓/密集段 + 健康度）</li>
+            <li><code>char-interaction</code> 角色互动矩阵（共现+交替+冲突）</li>
+            <li>安全：参数化 SQL + Unicode 过滤 + 行数上限</li>
+          </ul>
+        </div>
+      </div>
       <div class="cl-item">
         <div class="cl-left">
           <span class="cl-ver">v5.3.5</span>

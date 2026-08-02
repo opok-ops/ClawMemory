@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.3.5 CLI - 命令行工具
+MindForge v5.3.6 CLI - 命令行工具
 =================================
 
 Usage:
@@ -60,7 +60,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.3.5"
+    __version__ = "5.3.6"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -2807,6 +2807,28 @@ def main():
     p_scene_tension.add_argument("drama_id", help="短剧 ID")
     p_scene_tension.add_argument("--top-k", "-k", type=int, default=10, help="返回 Top-K 高张力场景（1-50）")
 
+    # ===== v5.3.6 新增 Agent 记忆命令 =====
+    p_mem_link = sub.add_parser("memory-link", help="记忆关联推理（v5.3.6 新增）")
+    p_mem_link.add_argument("agent", help="Agent ID")
+    p_mem_link.add_argument("memory_id", help="目标记忆 ID")
+    p_mem_link.add_argument("--top-k", "-k", type=int, default=10, help="返回 Top-K 关联记忆（1-50）")
+    p_mem_link.add_argument("--days", "-d", type=int, default=90, help="回溯窗口天数（1-365）")
+
+    p_mem_recall = sub.add_parser("memory-recall", help="智能记忆召回（v5.3.6 新增）")
+    p_mem_recall.add_argument("agent", help="Agent ID")
+    p_mem_recall.add_argument("query", help="查询文本")
+    p_mem_recall.add_argument("--top-k", "-k", type=int, default=10, help="返回 Top-K 召回记忆（1-50）")
+    p_mem_recall.add_argument("--days", "-d", type=int, default=180, help="回溯窗口天数（1-365）")
+
+    # ===== v5.3.6 新增 AI 短剧命令 =====
+    p_drama_pacing = sub.add_parser("drama-pacing", help="剧集节奏分析（v5.3.6 新增）")
+    p_drama_pacing.add_argument("drama_id", help="短剧 ID")
+    p_drama_pacing.add_argument("--window", "-w", type=int, default=3, help="滑动窗口大小（场景数 1-10）")
+
+    p_char_inter = sub.add_parser("char-interaction", help="角色互动分析（v5.3.6 新增）")
+    p_char_inter.add_argument("drama_id", help="短剧 ID")
+    p_char_inter.add_argument("--top-k", "-k", type=int, default=15, help="返回 Top-K 互动关系（1-50）")
+
     p_quality = sub.add_parser("quality", help="记忆质量评分（v5.2.2 新增）")
     p_quality.add_argument("memory_id", nargs="?", help="记忆 ID（不指定则批量评分）")
     p_quality.add_argument("--category", "-c", help="批量评分时按分类过滤")
@@ -3097,6 +3119,10 @@ def main():
         "agent-insight": cmd_agent_insight,
         "drama-summary": cmd_drama_summary,
         "scene-tension": cmd_scene_tension,
+        "memory-link": cmd_memory_link,
+        "memory-recall": cmd_memory_recall,
+        "drama-pacing": cmd_drama_pacing,
+        "char-interaction": cmd_char_interaction,
         "quality": cmd_quality,
         "similar": cmd_similar,
         "backup": cmd_backup,
@@ -6774,6 +6800,291 @@ def cmd_scene_tension(args):
             bar = "█" * bar_len
             color = "red" if cp["tension"] >= 60 else ("yellow" if cp["tension"] >= 35 else "cyan")
             print(f"  S{str(idx):<4} {c(bar, color)}  {cp['tension']:.0f}")
+
+    cm.close()
+    return 0
+
+
+def cmd_memory_link(args):
+    """记忆关联推理（v5.3.6 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🔗 记忆关联推理（v5.3.6）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:    {args.agent}")
+    print(f"  目标记忆:    {args.memory_id}")
+    print(f"  Top-K:       {args.top_k}")
+    print(f"  回溯天数:    {args.days}")
+
+    try:
+        result = cm.memory_link(args.agent, args.memory_id, args.top_k, args.days)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    total_cand = result["total_candidates"]
+    if total_cand == 0:
+        print(c(f"\n⚠️  该 Agent 在 {args.days} 天内无其他记忆", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n📊 总览", "cyan"))
+    print(f"  候选记忆:    {total_cand}")
+    print(f"  关联总数:    {result['total_links']}")
+    print(f"  返回数量:    {result['returned']}")
+
+    links = result.get("links", [])
+    if not links:
+        print(c(f"\n⚠️  未发现显著关联记忆", "yellow"))
+        cm.close()
+        return 0
+
+    # 关联类型分布
+    tdist = result.get("link_type_distribution", {})
+    if tdist:
+        print(c(f"\n🏷️  关联类型分布", "cyan"))
+        type_label = {"keyword": "关键词", "tag": "标签", "temporal": "时间", "weak": "弱关联"}
+        for t, cnt in sorted(tdist.items(), key=lambda x: -x[1]):
+            print(f"  {type_label.get(t, t):<10} {cnt:>5} 条")
+
+    # Top-K 关联记忆
+    print(c(f"\n🔗 Top-{len(links)} 关联记忆", "cyan"))
+    print("-" * 80)
+    print(f"{'#':<4}{'强度':<8}{'类型':<14}{'时间差(天)':<12}{'预览'}")
+    print("-" * 80)
+    for i, lk in enumerate(links, 1):
+        types_s = "/".join(lk["link_types"])[:12]
+        td = f"{lk['time_diff_days']:.1f}"
+        prev = (lk.get("content_preview") or "")[:38]
+        print(f"{i:<4}{lk['strength']:<8.3f}{types_s:<14}{td:<12}{prev}")
+
+    # 最强关联详情
+    strongest = result.get("strongest_link")
+    if strongest:
+        print(c(f"\n💪 最强关联", "green"))
+        print(f"  关联强度:    {strongest['strength']:.3f}")
+        print(f"  关联类型:    {' / '.join(strongest['link_types'])}")
+        sk = strongest.get("shared_keywords", [])
+        if sk:
+            print(f"  共享关键词:  {' · '.join(sk[:8])}")
+        st = strongest.get("shared_tags", [])
+        if st:
+            print(f"  共享标签:    {' · '.join(st[:6])}")
+
+    cm.close()
+    return 0
+
+
+def cmd_memory_recall(args):
+    """智能记忆召回（v5.3.6 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🔎 智能记忆召回（v5.3.6）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:    {args.agent}")
+    print(f"  查询:        {args.query}")
+    print(f"  Top-K:       {args.top_k}")
+    print(f"  回溯天数:    {args.days}")
+
+    try:
+        result = cm.memory_recall(args.agent, args.query, args.top_k, args.days)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    qk = result.get("query_keywords", [])
+    if qk:
+        print(c(f"\n🔑 查询关键词: {' · '.join(qk[:12])}", "cyan"))
+
+    scanned = result["total_scanned"]
+    matched = result["total_matched"]
+    print(f"\n  扫描记忆:    {scanned}")
+    print(f"  匹配记忆:    {matched}")
+
+    recalled = result.get("recalled", [])
+    if not recalled:
+        print(c(f"\n⚠️  无匹配记忆", "yellow"))
+        cm.close()
+        return 0
+
+    avg_s = f"{result.get('avg_score', 0):.1f}"
+    print(f"  平均召回分:  {avg_s}")
+
+    print(c(f"\n🏆 Top-{len(recalled)} 召回记忆", "cyan"))
+    print("-" * 90)
+    print(f"{'#':<4}{'分数':<8}{'覆盖':<8}{'重要度':<10}{'访问':<6}{'年龄(天)':<10}{'预览'}")
+    print("-" * 90)
+    for i, rc in enumerate(recalled, 1):
+        imp = rc["importance"][:8]
+        cov = f"{rc['coverage']:.0%}"
+        print(f"{i:<4}{rc['score']:<8.1f}{cov:<8}{imp:<10}{rc['access_count']:<6}"
+              f"{rc['age_days']:<10.1f}{(rc.get('content_preview') or '')[:36]}")
+
+    # Top 1 匹配关键词
+    if recalled:
+        top1 = recalled[0]
+        mk = top1.get("matched_keywords", [])
+        if mk:
+            star = " ⭐" if top1.get("starred") else ""
+            print(c(f"\n📌 Top-1 匹配关键词：{' · '.join(mk[:10])}{star}", "green"))
+
+    cm.close()
+    return 0
+
+
+def cmd_drama_pacing(args):
+    """剧集节奏分析（v5.3.6 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🎬 剧集节奏分析（v5.3.6）", "bold"))
+    print("=" * 60)
+    print(f"  短剧 ID:    {args.drama_id}")
+    print(f"  窗口大小:   {args.window}")
+
+    try:
+        result = cm.drama_pacing(args.drama_id, args.window)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    total = result["total_scenes"]
+    if total == 0:
+        print(c(f"\n⚠️  该短剧无场景数据", "yellow"))
+        cm.close()
+        return 0
+
+    print(f"\n  剧名:       {result['title']}")
+    print(f"  场景总数:   {total}")
+
+    # 节奏健康度
+    health = result["health_score"]
+    hcolor = "green" if health >= 60 else ("yellow" if health >= 30 else "red")
+    print(f"  节奏健康度: {c(f'{health:.1f} / 100', hcolor)}")
+
+    # 节奏分布
+    dist = result["pacing_distribution"]
+    print(c(f"\n📊 节奏分布", "cyan"))
+    pace_label = {"fast": "快节奏", "medium": "中节奏", "slow": "慢节奏"}
+    pace_color = {"fast": "red", "medium": "green", "slow": "yellow"}
+    for p in ["fast", "medium", "slow"]:
+        cnt = dist.get(p, 0)
+        pct = cnt / total * 100 if total > 0 else 0
+        bar = "█" * int(pct / 5)
+        print(f"  {pace_label[p]}  {cnt:>5}  ({pct:>5.1f}%)  {c(bar, pace_color[p])}")
+
+    # 拖沓段
+    slow_segs = result.get("slow_segments", [])
+    if slow_segs:
+        print(c(f"\n🐢 拖沓段（连续慢节奏）", "yellow"))
+        for seg in slow_segs:
+            print(f"  第 {seg['episodes']} 集  长度 {seg['length']} 场景  "
+                  f"平均密度 {seg['avg_density']:.2f}")
+
+    # 密集段
+    fast_segs = result.get("fast_segments", [])
+    if fast_segs:
+        print(c(f"\n🔥 密集段（连续快节奏）", "red"))
+        for seg in fast_segs:
+            print(f"  第 {seg['episodes']} 集  长度 {seg['length']} 场景  "
+                  f"平均密度 {seg['avg_density']:.2f}")
+
+    # 节奏曲线（ASCII 可视化）
+    curve = result.get("pacing_curve", [])
+    if curve and len(curve) <= 80:
+        print(c(f"\n📉 节奏曲线（按场景顺序）", "cyan"))
+        for cp in curve:
+            idx = cp.get("order") or "-"
+            density = cp.get("avg_density", 0)
+            bar_len = int(density * 30)
+            bar = "█" * bar_len
+            color = pace_color.get(cp["pace"], "cyan")
+            print(f"  S{str(idx):<4} {c(bar, color)}  {density:.2f}  [{cp['pace']}]")
+
+    # 洞察
+    insights = result.get("insights", [])
+    if insights:
+        print(c(f"\n💡 节奏洞察", "cyan"))
+        for ins in insights:
+            print(f"  • {ins}")
+
+    cm.close()
+    return 0
+
+
+def cmd_char_interaction(args):
+    """角色互动分析（v5.3.6 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🤝 角色互动分析（v5.3.6）", "bold"))
+    print("=" * 60)
+    print(f"  短剧 ID:    {args.drama_id}")
+    print(f"  Top-K:      {args.top_k}")
+
+    try:
+        result = cm.char_interaction(args.drama_id, args.top_k)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    total_chars = result["total_characters"]
+    if total_chars == 0:
+        print(c(f"\n⚠️  该短剧无角色数据", "yellow"))
+        cm.close()
+        return 0
+
+    print(f"\n  剧名:       {result['title']}")
+    print(f"  角色总数:   {total_chars}")
+    print(f"  互动对数:   {result['total_pairs']}")
+
+    # 核心角色
+    core = result.get("core_characters", [])
+    if core:
+        print(c(f"\n⭐ 核心角色（互动强度 Top-3）", "cyan"))
+        for cc in core:
+            print(f"  {cc['name']:<16} 总强度 {cc['total_strength']:.1f}")
+
+    # Top-K 互动关系
+    interactions = result.get("interactions", [])
+    if not interactions:
+        print(c(f"\n⚠️  无角色互动数据", "yellow"))
+        cm.close()
+        return 0
+
+    rel_label = {
+        "antagonist": "对抗", "close": "亲密",
+        "frequent": "频繁", "casual": "偶发",
+    }
+    print(c(f"\n🔗 Top-{len(interactions)} 互动关系", "cyan"))
+    print("-" * 85)
+    print(f"{'#':<4}{'角色A':<14}{'角色B':<14}{'共现':<6}{'交替':<6}{'冲突':<6}{'强度':<8}{'关系'}")
+    print("-" * 85)
+    for i, it in enumerate(interactions, 1):
+        na = (it.get("name_a") or "")[:12]
+        nb = (it.get("name_b") or "")[:12]
+        rel = rel_label.get(it["relation_type"], it["relation_type"])
+        print(f"{i:<4}{na:<14}{nb:<14}{it['co_scenes']:<6}"
+              f"{it['alternations']:<6}{it['conflict_hits']:<6}"
+              f"{it['strength']:<8.1f}{rel}")
 
     cm.close()
     return 0

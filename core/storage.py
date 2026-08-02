@@ -7760,3 +7760,633 @@ class StorageEngine:
             (limit,)
         ).fetchall()
         return [self._row_to_entry(row) for row in rows]
+
+    # ===== v5.3.6 新增：Agent 记忆关联推理 + 智能召回 + 短剧节奏/互动分析 =====
+
+    def memory_link(self,
+                    agent_id: str,
+                    memory_id: str,
+                    top_k: int = 10,
+                    days: int = 90) -> Dict[str, Any]:
+        """记忆关联推理（v5.3.6 新增）
+
+        基于关键词重叠、标签共享、时间邻近度，自动发现指定记忆
+        与同 Agent 其他记忆之间的隐式关联，构建记忆关联网络。
+
+        Args:
+            agent_id: Agent ID
+            memory_id: 目标记忆 ID
+            top_k: 返回 Top-K 关联记忆（1-50）
+            days: 回溯窗口天数（1-365）
+
+        Returns:
+            关联记忆列表（含关联类型与关联强度）、关联图谱摘要
+        """
+        conn = self._get_conn()
+        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        mid = memory_id[:64] if isinstance(memory_id, str) else ""
+        if not aid or not mid:
+            return {"error": "Agent ID 和记忆 ID 不能为空"}
+        top_k = max(1, min(50, int(top_k)))
+        days = max(1, min(365, int(days)))
+        now = time.time()
+        since = now - days * 86400
+
+        # 获取目标记忆
+        target = conn.execute(
+            "SELECT id, content, tags, category, importance, created_at "
+            "FROM memories WHERE id = ? AND source_agent = ?",
+            (mid, aid)
+        ).fetchone()
+        if not target:
+            return {"error": "目标记忆不存在或不属于该 Agent"}
+
+        t_content = (target[1] or "").lower()
+        t_tags_raw = target[2]
+        try:
+            t_tags = set(json.loads(t_tags_raw)) if isinstance(t_tags_raw, str) and t_tags_raw else set()
+        except Exception:
+            t_tags = set()
+        t_created = target[5] if isinstance(target[5], (int, float)) else now
+
+        import re as _re
+        # 提取目标关键词
+        t_words = set()
+        for w in _re.findall(r'[a-zA-Z]{2,}', t_content):
+            t_words.add(w)
+        for w in _re.findall(r'[\u4e00-\u9fff]{2,4}', t_content):
+            t_words.add(w)
+        for tg in t_tags:
+            t_words.add(str(tg).lower())
+
+        if not t_words:
+            return {
+                "agent_id": aid,
+                "memory_id": mid,
+                "links": [],
+                "total_candidates": 0,
+            }
+
+        # 获取同 Agent 候选记忆（v5.3.6 安全：参数化 + 行数限制）
+        cur = conn.execute(
+            "SELECT id, content, tags, category, importance, created_at "
+            "FROM memories "
+            "WHERE source_agent = ? AND id != ? AND category != 'trash' AND created_at >= ? "
+            "ORDER BY created_at DESC",
+            (aid, mid, since)
+        )
+        rows = _limited_fetch(cur, limit=5000)
+
+        links: List[Dict[str, Any]] = []
+        for r in rows:
+            cid = r[0]
+            c_content = (r[1] or "").lower()
+            c_tags_raw = r[2]
+            try:
+                c_tags = set(json.loads(c_tags_raw)) if isinstance(c_tags_raw, str) and c_tags_raw else set()
+            except Exception:
+                c_tags = set()
+            c_created = r[5] if isinstance(r[5], (int, float)) else now
+
+            c_words = set()
+            for w in _re.findall(r'[a-zA-Z]{2,}', c_content):
+                c_words.add(w)
+            for w in _re.findall(r'[\u4e00-\u9fff]{2,4}', c_content):
+                c_words.add(w)
+            for tg in c_tags:
+                c_words.add(str(tg).lower())
+
+            # 关键词重叠分（Jaccard）
+            inter = len(t_words & c_words)
+            union = len(t_words | c_words) or 1
+            kw_score = inter / union
+
+            # 标签共享分
+            shared_tags = t_tags & c_tags
+            tag_score = min(len(shared_tags) / 3.0, 1.0) if t_tags else 0.0
+
+            # 时间邻近度分（7 天内满分，30 天内线性衰减）
+            time_diff_days = abs(t_created - c_created) / 86400.0
+            if time_diff_days <= 7:
+                time_score = 1.0
+            elif time_diff_days <= 30:
+                time_score = 1.0 - (time_diff_days - 7) / 23.0
+            else:
+                time_score = 0.0
+
+            # 综合关联强度
+            strength = round(kw_score * 0.5 + tag_score * 0.3 + time_score * 0.2, 4)
+
+            if strength < 0.05:
+                continue
+
+            # 关联类型判定
+            link_types = []
+            if kw_score >= 0.25:
+                link_types.append("keyword")
+            if tag_score >= 0.34:
+                link_types.append("tag")
+            if time_score >= 0.7:
+                link_types.append("temporal")
+            if not link_types:
+                link_types.append("weak")
+
+            links.append({
+                "memory_id": cid,
+                "strength": strength,
+                "link_types": link_types,
+                "shared_keywords": sorted(list(t_words & c_words))[:10],
+                "shared_tags": sorted(list(shared_tags))[:8],
+                "time_diff_days": round(time_diff_days, 1),
+                "content_preview": (r[1] or "")[:80],
+            })
+
+        links.sort(key=lambda x: -x["strength"])
+        top_links = links[:top_k]
+
+        # 图谱摘要
+        type_counts: Dict[str, int] = {}
+        for lk in top_links:
+            for lt in lk["link_types"]:
+                type_counts[lt] = type_counts.get(lt, 0) + 1
+
+        return {
+            "agent_id": aid,
+            "memory_id": mid,
+            "total_candidates": len(rows),
+            "total_links": len(links),
+            "returned": len(top_links),
+            "links": top_links,
+            "link_type_distribution": type_counts,
+            "strongest_link": top_links[0] if top_links else None,
+        }
+
+    def memory_recall(self,
+                      agent_id: str,
+                      query: str,
+                      top_k: int = 10,
+                      days: int = 180) -> Dict[str, Any]:
+        """智能记忆召回（v5.3.6 新增）
+
+        基于查询关键词的语义召回，按重要度、访问频次、
+        时间衰减综合评分返回最相关记忆。
+
+        Args:
+            agent_id: Agent ID
+            query: 查询文本
+            top_k: 返回 Top-K 召回记忆（1-50）
+            days: 回溯窗口天数（1-365）
+
+        Returns:
+            召回记忆列表（含召回分、匹配关键词）、召回统计
+        """
+        conn = self._get_conn()
+        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        q = query[:500] if isinstance(query, str) else ""
+        if not aid or not q:
+            return {"error": "Agent ID 和查询文本不能为空"}
+        top_k = max(1, min(50, int(top_k)))
+        days = max(1, min(365, int(days)))
+        now = time.time()
+        since = now - days * 86400
+
+        import re as _re
+        q_lower = q.lower()
+        # 提取查询关键词
+        q_words = set()
+        for w in _re.findall(r'[a-zA-Z]{2,}', q_lower):
+            q_words.add(w)
+        for w in _re.findall(r'[\u4e00-\u9fff]{2,4}', q_lower):
+            q_words.add(w)
+
+        if not q_words:
+            return {
+                "agent_id": aid,
+                "query": q,
+                "recalled": [],
+                "total_scanned": 0,
+            }
+
+        # 获取候选记忆（v5.3.6 安全：参数化 + 行数限制）
+        cur = conn.execute(
+            "SELECT id, content, tags, category, importance, layer, "
+            "created_at, access_count, starred "
+            "FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND created_at >= ?",
+            (aid, since)
+        )
+        rows = _limited_fetch(cur, limit=10000)
+
+        recalled: List[Dict[str, Any]] = []
+        for r in rows:
+            mid, content, tags_raw, category, importance, layer, created_at, access_count, starred = (
+                r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]
+            )
+            c_lower = (content or "").lower()
+            # 匹配关键词
+            matched = sorted([w for w in q_words if w in c_lower])
+            if not matched:
+                # 检查标签
+                try:
+                    c_tags = json.loads(tags_raw) if isinstance(tags_raw, str) and tags_raw else []
+                except Exception:
+                    c_tags = []
+                tag_set = {str(t).lower() for t in c_tags}
+                matched = sorted([w for w in q_words if w in tag_set])
+                if not matched:
+                    continue
+
+            # 召回评分组件
+            # 1) 匹配覆盖率（匹配词 / 查询词）
+            coverage = len(matched) / len(q_words)
+            # 2) 重要度加权
+            imp = (importance or "MEDIUM").upper()
+            imp_w = {"LOW": 0.6, "MEDIUM": 1.0, "HIGH": 1.4, "CRITICAL": 1.8}.get(imp, 1.0)
+            # 3) 访问频次（对数压缩）
+            ac = access_count if isinstance(access_count, int) and access_count > 0 else 0
+            access_w = 1.0 + min(1.0, (ac / 10.0) * 0.5)
+            # 4) 时间衰减（30 天内满分，180 天内线性衰减到 0.2）
+            created = created_at if isinstance(created_at, (int, float)) else now
+            age_days = max(0.0, (now - created) / 86400.0)
+            if age_days <= 30:
+                recency = 1.0
+            elif age_days <= 180:
+                recency = 1.0 - (age_days - 30) / 150.0 * 0.8
+            else:
+                recency = 0.2
+            # 5) 置顶加成
+            star_bonus = 1.1 if starred else 1.0
+
+            # 综合召回分
+            score = round(coverage * 40.0 + imp_w * 20.0 + access_w * 15.0
+                          + recency * 20.0, 2)
+            score = round(score * star_bonus, 2)
+
+            recalled.append({
+                "memory_id": mid,
+                "score": score,
+                "coverage": round(coverage, 3),
+                "matched_keywords": matched[:12],
+                "importance": imp,
+                "access_count": ac,
+                "starred": bool(starred),
+                "age_days": round(age_days, 1),
+                "category": category or "general",
+                "layer": (layer or "SHORT_TERM").upper(),
+                "content_preview": (content or "")[:100],
+            })
+
+        recalled.sort(key=lambda x: -x["score"])
+        top_recalled = recalled[:top_k]
+
+        return {
+            "agent_id": aid,
+            "query": q,
+            "query_keywords": sorted(list(q_words)),
+            "total_scanned": len(rows),
+            "total_matched": len(recalled),
+            "returned": len(top_recalled),
+            "recalled": top_recalled,
+            "avg_score": round(sum(r["score"] for r in top_recalled) / max(1, len(top_recalled)), 2),
+        }
+
+    def drama_pacing(self,
+                     drama_id: str,
+                     window: int = 3) -> Dict[str, Any]:
+        """剧集节奏分析（v5.3.6 新增）
+
+        按集/场景分析节奏分布（快/中/慢），识别拖沓段和密集段，
+        给出节奏健康度评分。
+
+        Args:
+            drama_id: 短剧 ID
+            window: 滑动窗口大小（场景数，1-10）
+
+        Returns:
+            节奏分布、拖沓/密集段、节奏健康度
+        """
+        conn = self._get_conn()
+        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+        window = max(1, min(10, int(window)))
+
+        drow = conn.execute(
+            "SELECT id, title, total_episodes FROM drama_series WHERE id = ?",
+            (did,)
+        ).fetchone()
+        if not drow:
+            return {"error": "短剧不存在"}
+        title = drow[1] or "未命名"
+
+        scene_rows = conn.execute(
+            "SELECT id, episode, scene_number "
+            "FROM drama_scenes WHERE drama_id = ? "
+            "ORDER BY episode ASC, scene_number ASC",
+            (did,)
+        ).fetchall()
+
+        if not scene_rows:
+            return {
+                "drama_id": did,
+                "title": title,
+                "total_scenes": 0,
+                "pacing_curve": [],
+                "pacing_distribution": {"fast": 0, "medium": 0, "slow": 0},
+                "health_score": 0.0,
+            }
+
+        # 统计每个场景的台词量与角色数
+        scene_density: List[Dict[str, Any]] = []
+        max_lines = 1
+        for sr in scene_rows:
+            sid = sr[0]
+            ld = conn.execute(
+                "SELECT COUNT(*), COUNT(DISTINCT character_id) "
+                "FROM drama_lines WHERE scene_id = ?",
+                (sid,)
+            ).fetchone()
+            lc = ld[0] or 0
+            cc = ld[1] or 0
+            if lc > max_lines:
+                max_lines = lc
+            scene_density.append({
+                "scene_id": sid,
+                "episode": sr[1],
+                "order": sr[2],
+                "line_count": lc,
+                "character_count": cc,
+            })
+
+        # 归一化密度 = 台词量占比
+        for sd in scene_density:
+            sd["density"] = round(sd["line_count"] / max_lines, 3)
+
+        # 滑动窗口平均密度
+        n = len(scene_density)
+        pacing_curve = []
+        for i, sd in enumerate(scene_density):
+            lo = max(0, i - window + 1)
+            seg = scene_density[lo:i + 1]
+            avg_d = sum(s["density"] for s in seg) / len(seg)
+            # 节奏分类
+            if avg_d >= 0.6:
+                pace = "fast"
+            elif avg_d >= 0.3:
+                pace = "medium"
+            else:
+                pace = "slow"
+            pacing_curve.append({
+                "scene_id": sd["scene_id"],
+                "episode": sd["episode"],
+                "order": sd["order"],
+                "density": sd["density"],
+                "avg_density": round(avg_d, 3),
+                "pace": pace,
+            })
+
+        # 节奏分布
+        dist = {"fast": 0, "medium": 0, "slow": 0}
+        for p in pacing_curve:
+            dist[p["pace"]] = dist.get(p["pace"], 0) + 1
+
+        # 识别拖沓段（连续 >=3 个 slow）和密集段（连续 >=3 个 fast）
+        slow_segments = []
+        fast_segments = []
+        cur_pace = None
+        seg_start = 0
+        for i, p in enumerate(pacing_curve):
+            if p["pace"] != cur_pace:
+                if cur_pace == "slow" and i - seg_start >= 3:
+                    slow_segments.append((seg_start, i - 1))
+                elif cur_pace == "fast" and i - seg_start >= 3:
+                    fast_segments.append((seg_start, i - 1))
+                cur_pace = p["pace"]
+                seg_start = i
+        # 收尾
+        if cur_pace == "slow" and n - seg_start >= 3:
+            slow_segments.append((seg_start, n - 1))
+        elif cur_pace == "fast" and n - seg_start >= 3:
+            fast_segments.append((seg_start, n - 1))
+
+        def _seg_summary(segs):
+            out = []
+            for a, b in segs:
+                ep_s = pacing_curve[a].get("episode")
+                ep_e = pacing_curve[b].get("episode")
+                out.append({
+                    "from_index": a,
+                    "to_index": b,
+                    "length": b - a + 1,
+                    "episodes": f"{ep_s}-{ep_e}" if ep_s != ep_e else str(ep_s),
+                    "avg_density": round(sum(pacing_curve[i]["avg_density"] for i in range(a, b + 1)) / (b - a + 1), 3),
+                })
+            return out
+
+        # 节奏健康度评分：medium 占比越高越健康
+        total = n or 1
+        medium_ratio = dist["medium"] / total
+        fast_ratio = dist["fast"] / total
+        slow_ratio = dist["slow"] / total
+        # 惩罚拖沓段
+        slow_penalty = min(0.3, len(slow_segments) * 0.1)
+        health = round(max(0.0, min(100.0, medium_ratio * 100.0 * 1.2 + fast_ratio * 30.0 - slow_penalty * 100.0)), 1)
+
+        # 建议洞察
+        insights: List[str] = []
+        if slow_ratio > 0.4:
+            insights.append(f"拖沓场景占比 {slow_ratio:.0%}，建议精简低密度场景")
+        if fast_ratio > 0.5:
+            insights.append(f"密集场景占比 {fast_ratio:.0%}，节奏紧凑但可能疲劳")
+        if medium_ratio >= 0.5:
+            insights.append(f"中等节奏占比 {medium_ratio:.0%}，整体节奏稳定")
+        if not insights:
+            insights.append("节奏分布均衡")
+
+        return {
+            "drama_id": did,
+            "title": title,
+            "total_scenes": n,
+            "window": window,
+            "pacing_curve": pacing_curve,
+            "pacing_distribution": dist,
+            "slow_segments": _seg_summary(slow_segments),
+            "fast_segments": _seg_summary(fast_segments),
+            "health_score": health,
+            "insights": insights,
+        }
+
+    def char_interaction(self,
+                         drama_id: str,
+                         top_k: int = 15) -> Dict[str, Any]:
+        """角色互动分析（v5.3.6 新增）
+
+        分析角色两两之间的台词互动频率、冲突度，
+        构建角色互动矩阵，识别核心关系。
+
+        Args:
+            drama_id: 短剧 ID
+            top_k: 返回 Top-K 互动关系（1-50）
+
+        Returns:
+            互动矩阵、Top 互动关系、核心角色识别
+        """
+        conn = self._get_conn()
+        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+        top_k = max(1, min(50, int(top_k)))
+
+        drow = conn.execute(
+            "SELECT id, title FROM drama_series WHERE id = ?",
+            (did,)
+        ).fetchone()
+        if not drow:
+            return {"error": "短剧不存在"}
+        title = drow[1] or "未命名"
+
+        # 获取所有场景（按顺序）
+        scene_rows = conn.execute(
+            "SELECT id, episode, scene_number "
+            "FROM drama_scenes WHERE drama_id = ? "
+            "ORDER BY episode ASC, scene_number ASC",
+            (did,)
+        ).fetchall()
+
+        if not scene_rows:
+            return {
+                "drama_id": did,
+                "title": title,
+                "total_characters": 0,
+                "interactions": [],
+                "matrix": {},
+            }
+
+        # 获取角色名称映射
+        char_rows = conn.execute(
+            "SELECT id, name FROM drama_characters WHERE drama_id = ?",
+            (did,)
+        ).fetchall()
+        char_names = {r[0]: r[1] or "未命名" for r in char_rows}
+
+        # 冲突词
+        conflict_words = {
+            "不", "别", "错", "滚", "闭嘴", "打", "杀", "死",
+            "no", "not", "stop", "hate", "fight", "kill",
+            "冲突", "争吵", "背叛", "欺骗", "威胁", "逼迫",
+        }
+
+        # 统计每对角色在同一场景的共现 + 台词交替
+        pair_stats: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+        for sr in scene_rows:
+            sid = sr[0]
+            # 获取该场景内按顺序的角色台词
+            cur_l = conn.execute(
+                "SELECT character_id, line_text FROM drama_lines "
+                "WHERE scene_id = ? ORDER BY created_at ASC",
+                (sid,)
+            )
+            lines = _limited_fetch(cur_l, limit=500)
+            if len(lines) < 2:
+                continue
+
+            # 场景内出现的角色集合
+            chars_in_scene = list(dict.fromkeys(l[0] for l in lines if l[0]))
+            # 两两共现计数
+            for i in range(len(chars_in_scene)):
+                for j in range(i + 1, len(chars_in_scene)):
+                    a, b = chars_in_scene[i], chars_in_scene[j]
+                    key = (a, b) if a <= b else (b, a)
+                    if key not in pair_stats:
+                        pair_stats[key] = {
+                            "co_scenes": 0,
+                            "alternations": 0,
+                            "conflict_hits": 0,
+                            "total_lines": 0,
+                        }
+                    pair_stats[key]["co_scenes"] += 1
+
+            # 台词交替（相邻不同角色）+ 冲突词
+            prev_char = None
+            for l in lines:
+                cid, text = l[0], (l[1] or "").lower()
+                if cid and prev_char and cid != prev_char:
+                    key = (cid, prev_char) if cid <= prev_char else (prev_char, cid)
+                    if key in pair_stats:
+                        pair_stats[key]["alternations"] += 1
+                # 冲突词命中（归属到该角色在场景内所有 pair）
+                if cid:
+                    hits = sum(1 for w in conflict_words if w in text)
+                    if hits > 0:
+                        for other in chars_in_scene:
+                            if other == cid:
+                                continue
+                            key = (cid, other) if cid <= other else (other, cid)
+                            if key in pair_stats:
+                                pair_stats[key]["conflict_hits"] += hits
+                prev_char = cid
+
+        # 修正：重新统计 total_lines（用 pair 内 alternations 近似）
+        # 并构建互动关系列表
+        interactions: List[Dict[str, Any]] = []
+        for (a, b), st in pair_stats.items():
+            co = st["co_scenes"]
+            alt = st["alternations"]
+            conf = st["conflict_hits"]
+            if co == 0 and alt == 0:
+                continue
+            # 互动强度 = 共现场景 * 1.0 + 交替 * 0.5 + 冲突 * 0.3
+            strength = round(co * 1.0 + alt * 0.5 + conf * 0.3, 2)
+            # 关系类型
+            if conf >= 5 and conf / max(1, alt) >= 0.3:
+                rel_type = "antagonist"
+            elif alt >= 10:
+                rel_type = "close"
+            elif co >= 3:
+                rel_type = "frequent"
+            else:
+                rel_type = "casual"
+            interactions.append({
+                "char_a": a,
+                "char_b": b,
+                "name_a": char_names.get(a, a[:8]),
+                "name_b": char_names.get(b, b[:8]),
+                "co_scenes": co,
+                "alternations": alt,
+                "conflict_hits": conf,
+                "strength": strength,
+                "relation_type": rel_type,
+            })
+
+        interactions.sort(key=lambda x: -x["strength"])
+        top_inter = interactions[:top_k]
+
+        # 矩阵（角色 ID -> 角色 ID -> 强度）
+        matrix: Dict[str, Dict[str, float]] = {}
+        for it in interactions:
+            a, b, s = it["char_a"], it["char_b"], it["strength"]
+            matrix.setdefault(a, {})[b] = s
+            matrix.setdefault(b, {})[a] = s
+
+        # 核心角色识别（互动强度总和 Top-3）
+        char_total: Dict[str, float] = {}
+        for it in interactions:
+            char_total[it["char_a"]] = char_total.get(it["char_a"], 0.0) + it["strength"]
+            char_total[it["char_b"]] = char_total.get(it["char_b"], 0.0) + it["strength"]
+        core_chars = sorted(char_total.items(), key=lambda x: -x[1])[:3]
+        core_chars_out = [
+            {"character_id": cid, "name": char_names.get(cid, cid[:8]), "total_strength": round(s, 2)}
+            for cid, s in core_chars
+        ]
+
+        return {
+            "drama_id": did,
+            "title": title,
+            "total_characters": len(char_names),
+            "total_pairs": len(interactions),
+            "returned": len(top_inter),
+            "interactions": top_inter,
+            "core_characters": core_chars_out,
+            "matrix_size": len(matrix),
+        }
