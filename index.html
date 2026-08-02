@@ -1,25 +1,36 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="MindForge - AI Agent 终身记忆系统，多层记忆架构、知识图谱、多模态支持、本地加密">
+<meta name="description" content="MindForge - AI Agent 终身记忆系统，四层记忆架构、知识图谱、多模态支持、本地端侧加密">
 <title>MindForge — AI Agent 终身记忆系统</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 
+<!-- Particle Background Canvas -->
+<canvas id="particleCanvas"></canvas>
+
+<!-- Navigation -->
 <nav class="nav">
   <div class="nav-inner">
     <a href="#top" class="brand">
       <div class="brand-logo">
         <svg viewBox="0 0 32 32" fill="none">
-          <circle cx="16" cy="16" r="14" stroke="#111" stroke-width="2"/>
-          <path d="M9 16C9 12.134 12.134 9 16 9C19.866 9 23 12.134 23 16" stroke="#111" stroke-width="2" stroke-linecap="round"/>
-          <circle cx="16" cy="16" r="2.5" fill="#111"/>
+          <defs>
+            <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#00d4ff"/>
+              <stop offset="50%" style="stop-color:#a855f7"/>
+              <stop offset="100%" style="stop-color:#f472b6"/>
+            </linearGradient>
+          </defs>
+          <circle cx="16" cy="16" r="14" stroke="url(#logoGrad)" stroke-width="2"/>
+          <path d="M9 16C9 12.134 12.134 9 16 9C19.866 9 23 12.134 23 16" stroke="url(#logoGrad)" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="16" cy="16" r="2.5" fill="url(#logoGrad)"/>
         </svg>
       </div>
       <span class="brand-name">MindForge</span>
@@ -27,21 +38,30 @@
     <ul class="nav-links">
       <li><a href="#features">核心能力</a></li>
       <li><a href="#architecture">架构</a></li>
-      <li><a href="#workflow">使用流程</a></li>
-      <li><a href="#docs">文档</a></li>
+      <li><a href="#workflow">短剧分析</a></li>
+      <li><a href="#changelog">更新日志</a></li>
     </ul>
     <div class="nav-cta">
-      <a href="https://github.com/opok-ops/ClawMemory" target="_blank" class="btn-ghost">GitHub</a>
+      <a href="https://github.com/opok-ops/ClawMemory" target="_blank" class="btn-ghost">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.78-1.5.21-.78.94-1.305 1.62-1.41.87-.12 1.845.12 2.805.405.99-.105 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        GitHub
+      </a>
       <a href="#get-started" class="btn-solid">开始使用</a>
     </div>
   </div>
 </nav>
 
-<header class="hero">
+<!-- Hero Section -->
+<header class="hero" id="top">
+  <div class="hero-glow"></div>
   <div class="hero-inner">
+    <div class="hero-badge">
+      <span class="badge-dot"></span>
+      <span>v5.3.6 全新升级 · 记忆关联推理 + 智能召回</span>
+    </div>
     <h1 class="hero-title">
       让 AI Agent
-      <br>拥有 <span class="italic">终身记忆</span>
+      <br>拥有 <span class="gradient-text">终身记忆</span>
     </h1>
     <p class="hero-subtitle">
       四层记忆架构模拟人类认知 · 知识图谱自动关联推理 ·
@@ -52,21 +72,45 @@
         <span>立即开始</span>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
       </a>
-      <a href="#architecture" class="btn-secondary">查看架构</a>
-      <a href="demo.html" target="_blank" class="btn-secondary">观看演示</a>
+      <a href="demo.html" target="_blank" class="btn-secondary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        观看演示
+      </a>
     </div>
-    <div class="hero-version">
-      <span class="version-badge">v5.3.6</span>
-      <span class="version-text">记忆关联推理 · 智能记忆召回 · 剧集节奏分析 · 角色互动矩阵</span>
+    <div class="hero-stats">
+      <div class="stat-item">
+        <div class="stat-number">4</div>
+        <div class="stat-label">记忆层级</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <div class="stat-number">12+</div>
+        <div class="stat-label">功能模块</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <div class="stat-number">100%</div>
+        <div class="stat-label">本地加密</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <div class="stat-number">0</div>
+        <div class="stat-label">云端依赖</div>
+      </div>
     </div>
+  </div>
+  <div class="scroll-indicator">
+    <div class="scroll-mouse"></div>
+    <span>向下滚动探索</span>
   </div>
 </header>
 
+<!-- Features Section -->
 <section class="section features" id="features">
   <div class="container">
     <div class="section-head">
       <span class="tag">核心能力</span>
-      <h2>四大模块，<span class="italic">一次到位</span></h2>
+      <h2>四大模块，<span class="gradient-text">一次到位</span></h2>
       <p class="section-desc">
         从单条记忆到智能体协作，MindForge 提供完整的记忆基础设施。
       </p>
@@ -74,34 +118,63 @@
 
     <div class="feature-grid">
       <div class="feature-card">
-        <div class="feature-icon">🧠</div>
+        <div class="feature-icon-wrap">
+          <div class="feature-icon">🧠</div>
+          <div class="icon-glow"></div>
+        </div>
         <h3>四层记忆架构</h3>
-        <p>感觉缓冲 / 短期 / 长期 / 核心，自动分级，按重要度与访问频次智能遗忘与巩固。</p>
+        <p>感官缓冲 / 短期 / 长期 / 核心，自动分级，按重要度与访问频率智能遗忘与巩固。</p>
+        <div class="feature-tags">
+          <span>艾宾浩斯遗忘</span>
+          <span>自动巩固</span>
+        </div>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">🕸️</div>
+        <div class="feature-icon-wrap">
+          <div class="feature-icon">🕸️</div>
+          <div class="icon-glow"></div>
+        </div>
         <h3>知识图谱</h3>
         <p>实体关系抽取、记忆自动关联、相似度检索、路径推理，让 Agent 能真正"联想"。</p>
+        <div class="feature-tags">
+          <span>实体抽取</span>
+          <span>路径推理</span>
+        </div>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">🎬</div>
+        <div class="feature-icon-wrap">
+          <div class="feature-icon">🎬</div>
+          <div class="icon-glow"></div>
+        </div>
         <h3>AI 短剧分析</h3>
-        <p>追剧统计、角色网络、剧情摘要、场景张力分析，多维解读剧集内容与人物弧线。</p>
+        <p>追剧统计、角色网络、剧情摘要、场景张力分析，多维解读剧集内容与人物羁绊。</p>
+        <div class="feature-tags">
+          <span>节奏分析</span>
+          <span>角色互动</span>
+        </div>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">🔐</div>
+        <div class="feature-icon-wrap">
+          <div class="feature-icon">🔐</div>
+          <div class="icon-glow"></div>
+        </div>
         <h3>端侧加密</h3>
         <p>AES-256-GCM 零云端加密，四级隐私隔离，支持遗忘曲线与记忆衰减评分。</p>
+        <div class="feature-tags">
+          <span>AES-256</span>
+          <span>零知识证明</span>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
+<!-- Architecture Showcase -->
 <section class="section showcase" id="architecture">
   <div class="container two-col">
     <div class="showcase-text">
       <span class="tag">Agent 记忆分析</span>
-      <h2>洞察你的 Agent<br>如何<span class="italic">使用记忆</span></h2>
+      <h2>洞察你的 Agent<br>如何<span class="gradient-text">使用记忆</span></h2>
       <p>
         实时追踪记忆活跃度、标签偏好、重要度分布与情感倾向。
         主题聚类让 Agent 脑中的知识结构一目了然，行为洞察
@@ -110,12 +183,12 @@
       <ul class="bullet-list">
         <li><strong>memory-link</strong> — 关键词+标签+时间三维关联推理</li>
         <li><strong>memory-recall</strong> — 多因子综合评分智能召回</li>
-        <li><strong>memory-cluster</strong> — 关键词/标签 Jaccard 贪心聚类</li>
-        <li><strong>agent-insight</strong> — 按周趋势 + 标签偏好 + 智能建议</li>
+        <li><strong>memory-cluster</strong> — 关键词+标签 Jaccard 距离聚类</li>
+        <li><strong>agent-insight</strong> — 周趋势 + 标签偏好 + 智能建议</li>
       </ul>
     </div>
     <div class="showcase-visual">
-      <div class="visual-card visual-dark">
+      <div class="visual-card glass-card">
         <div class="visual-header">
           <div class="dot red"></div>
           <div class="dot yellow"></div>
@@ -145,7 +218,7 @@
             <span class="viz-tag">用户反馈 × 11</span>
           </div>
           <div class="viz-insight">
-            <span class="viz-insight-icon">✨</span>
+            <span class="viz-insight-icon">💡</span>
             <span>长期记忆占比偏低，建议强化记忆持久化</span>
           </div>
         </div>
@@ -154,15 +227,16 @@
   </div>
 </section>
 
+<!-- Workflow Showcase -->
 <section class="section showcase reverse" id="workflow">
   <div class="container two-col">
     <div class="showcase-text">
       <span class="tag">AI 短剧分析</span>
-      <h2>看懂一集<br>真正的<span class="italic">剧情张力</span></h2>
+      <h2>看懂一部剧<br>真正的<span class="gradient-text">剧情张力</span></h2>
       <p>
         剧情摘要一键生成，场景张力按台词量、冲突词、角色互动
         多维评分。高潮区间自动定位，角色成长弧线可视化，
-        追剧从此不只是"看"。
+        追剧从此不再只是"看"。
       </p>
       <ul class="bullet-list">
         <li><strong>drama-pacing</strong> — 节奏分布 + 拖沓/密集段识别</li>
@@ -172,12 +246,12 @@
       </ul>
     </div>
     <div class="showcase-visual">
-      <div class="visual-card visual-dark">
+      <div class="visual-card glass-card">
         <div class="visual-header">
           <div class="dot red"></div>
           <div class="dot yellow"></div>
           <div class="dot green"></div>
-          <span class="visual-title">scene_tension — 星途逆旅</span>
+          <span class="visual-title">scene_tension — 星际遗旅</span>
         </div>
         <div class="visual-body">
           <div class="viz-scene-row">
@@ -186,12 +260,12 @@
             <span class="viz-val">72</span>
           </div>
           <div class="viz-scene-row">
-            <span class="viz-scene-name">主舱对峙</span>
+            <span class="viz-scene-name">主线对弈</span>
             <div class="viz-bar"><div class="viz-fill" style="width:88%;background:linear-gradient(90deg,#ef4444,#f97316)"></div></div>
             <span class="viz-val">88</span>
           </div>
           <div class="viz-scene-row">
-            <span class="viz-scene-name">记忆回廊 ★</span>
+            <span class="viz-scene-name">记忆回响 ⭐</span>
             <div class="viz-bar"><div class="viz-fill" style="width:95%;background:linear-gradient(90deg,#ec4899,#8b5cf6)"></div></div>
             <span class="viz-val">95</span>
           </div>
@@ -201,13 +275,13 @@
             <span class="viz-val">82</span>
           </div>
           <div class="viz-scene-row">
-            <span class="viz-scene-name">最后抉择 ★</span>
+            <span class="viz-scene-name">最后抉择 ⭐</span>
             <div class="viz-bar"><div class="viz-fill" style="width:98%;background:linear-gradient(90deg,#dc2626,#f43f5e)"></div></div>
             <span class="viz-val">98</span>
           </div>
           <div class="viz-divider"></div>
           <div class="viz-insight">
-            <span class="viz-insight-icon">🌋</span>
+            <span class="viz-insight-icon">🎯</span>
             <span>主高潮：最后抉择（峰值 98）</span>
           </div>
         </div>
@@ -216,9 +290,68 @@
   </div>
 </section>
 
+<!-- Architecture Diagram Section -->
+<section class="section architecture-section">
+  <div class="container">
+    <div class="section-head">
+      <span class="tag">系统架构</span>
+      <h2>四层架构，<span class="gradient-text">层层递进</span></h2>
+      <p class="section-desc">
+        从底层存储到上层认知，MindForge 构建了完整的 AI 记忆技术栈。
+      </p>
+    </div>
+
+    <div class="arch-stack">
+      <div class="arch-layer layer-cognitive">
+        <div class="layer-icon">🧠</div>
+        <div class="layer-info">
+          <h4>认知层 Cognitive Layer</h4>
+          <p>人格引擎 · 知识图谱 · 记忆演化 · 联邦网络</p>
+        </div>
+        <div class="layer-badge">AI Powered</div>
+      </div>
+      <div class="arch-arrow">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+      </div>
+      <div class="arch-layer layer-function">
+        <div class="layer-icon">⚙️</div>
+        <div class="layer-info">
+          <h4>功能层 Function Layer</h4>
+          <p>召回引擎 · 分类管理 · 隐私引擎 · 整合器 · 多模态</p>
+        </div>
+        <div class="layer-badge">12+ Modules</div>
+      </div>
+      <div class="arch-arrow">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+      </div>
+      <div class="arch-layer layer-core">
+        <div class="layer-icon">💾</div>
+        <div class="layer-info">
+          <h4>核心层 Core Layer</h4>
+          <p>存储引擎 · 索引引擎 · 加密引擎 · 查询引擎</p>
+        </div>
+        <div class="layer-badge">High Performance</div>
+      </div>
+      <div class="arch-arrow">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+      </div>
+      <div class="arch-layer layer-adapter">
+        <div class="layer-icon">🔌</div>
+        <div class="layer-info">
+          <h4>适配层 Adapter Layer</h4>
+          <p>OpenClaw · Claude Code · 通用 API · CLI / SDK</p>
+        </div>
+        <div class="layer-badge">Multi Platform</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA Section -->
 <section class="section cta-section" id="get-started">
+  <div class="cta-glow"></div>
   <div class="container cta-inner">
-    <h2>现在就给你的 Agent<br>装上<span class="italic">终身记忆</span></h2>
+    <h2>现在就给你的 Agent<br>装上<span class="gradient-text">终身记忆</span></h2>
     <p>一行 pip 安装，零配置启动，100% 本地运行。</p>
     <div class="code-block">
       <code>pip install mindforge && mindforge init --encrypted</code>
@@ -228,33 +361,35 @@
     </div>
     <div class="cta-links">
       <a href="https://github.com/opok-ops/ClawMemory" target="_blank" class="btn-primary">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.78-1.5.21-.78.94-1.305 1.62-1.41.87-.12 1.845.12 2.805.405.99-.105 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
         <span>克隆源码</span>
       </a>
-      <a href="#docs" class="btn-secondary">查看文档 →</a>
+      <a href="#changelog" class="btn-secondary">查看更新日志 →</a>
     </div>
   </div>
 </section>
 
-<section class="section changelog" id="docs">
+<!-- Changelog Section -->
+<section class="section changelog" id="changelog">
   <div class="container">
     <div class="section-head">
       <span class="tag">更新日志</span>
-      <h2>每次迭代，<span class="italic">都在进化</span></h2>
+      <h2>每次迭代，<span class="gradient-text">都在进化</span></h2>
     </div>
     <div class="changelog-list">
       <div class="cl-item">
         <div class="cl-left">
           <span class="cl-ver">v5.3.6</span>
           <span class="cl-date">2026-08-02</span>
+          <span class="cl-badge latest">最新</span>
         </div>
         <div class="cl-body">
-          <h4>🔗 记忆关联推理 · 🔎 智能召回 · 🎬 节奏/互动分析</h4>
+          <h4>✨ 记忆关联推理 · 🔍 智能召回 · 🎬 节奏/互动分析</h4>
           <ul>
             <li><code>memory-link</code> 记忆关联推理（关键词+标签+时间三维评分）</li>
             <li><code>memory-recall</code> 智能记忆召回（多因子综合评分 Top-K）</li>
             <li><code>drama-pacing</code> 剧集节奏分析（拖沓/密集段 + 健康度）</li>
-            <li><code>char-interaction</code> 角色互动矩阵（共现+交替+冲突）</li>
+            <li><code>char-interaction</code> 角色互动矩阵（共现+交换+冲突）</li>
             <li>安全：参数化 SQL + Unicode 过滤 + 行数上限</li>
           </ul>
         </div>
@@ -267,11 +402,11 @@
         <div class="cl-body">
           <h4>🧠 Agent 记忆增强 · 🎬 AI 短剧增强 · 🔐 深度安全加固</h4>
           <ul>
-            <li><code>memory-cluster</code> 记忆主题聚类（Jaccard 贪心算法）</li>
+            <li><code>memory-cluster</code> 记忆主题聚类（Jaccard 距离算法）</li>
             <li><code>agent-insight</code> Agent 行为洞察（周趋势 + 标签偏好）</li>
             <li><code>drama-summary</code> 短剧剧情摘要（关键场景融合）</li>
             <li><code>scene-tension</code> 场景张力分析（高潮段识别 + ASCII 曲线）</li>
-            <li>安全：JSON 深度限制、SQL 行数上限、Windows 路径绕过防护</li>
+            <li>安全加固：JSON 深度限制、SQL 行数上限、Windows 路径绕过防护</li>
           </ul>
         </div>
       </div>
@@ -302,14 +437,22 @@
   </div>
 </section>
 
+<!-- Footer -->
 <footer class="footer">
   <div class="container footer-inner">
     <div class="foot-brand">
       <div class="brand-logo">
         <svg viewBox="0 0 32 32" fill="none">
-          <circle cx="16" cy="16" r="14" stroke="#111" stroke-width="2"/>
-          <path d="M9 16C9 12.134 12.134 9 16 9C19.866 9 23 12.134 23 16" stroke="#111" stroke-width="2" stroke-linecap="round"/>
-          <circle cx="16" cy="16" r="2.5" fill="#111"/>
+          <defs>
+            <linearGradient id="logoGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#00d4ff"/>
+              <stop offset="50%" style="stop-color:#a855f7"/>
+              <stop offset="100%" style="stop-color:#f472b6"/>
+            </linearGradient>
+          </defs>
+          <circle cx="16" cy="16" r="14" stroke="url(#logoGrad2)" stroke-width="2"/>
+          <path d="M9 16C9 12.134 12.134 9 16 9C19.866 9 23 12.134 23 16" stroke="url(#logoGrad2)" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="16" cy="16" r="2.5" fill="url(#logoGrad2)"/>
         </svg>
       </div>
       <div>
@@ -326,7 +469,7 @@
       </div>
       <div>
         <h5>文档</h5>
-        <a href="#docs">更新日志</a>
+        <a href="#changelog">更新日志</a>
         <a href="#">API Reference</a>
         <a href="#">CLI 手册</a>
       </div>
@@ -343,11 +486,6 @@
   </div>
 </footer>
 
-<script>
-document.querySelector('.copy-btn')?.addEventListener('click', () => {
-  const code = document.querySelector('.code-block code');
-  if (code) navigator.clipboard.writeText(code.textContent);
-});
-</script>
+<script src="assets/main.js"></script>
 </body>
 </html>

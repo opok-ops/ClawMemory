@@ -3,13 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MindForge Demo Animation</title>
+<title>MindForge Demo - 记忆系统演示</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
+
 body {
   background: #0a0a0f;
   color: #fff;
-  font-family: 'Inter', 'Segoe UI', sans-serif;
+  font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   overflow: hidden;
 }
 
@@ -28,6 +32,35 @@ body {
   pointer-events: none;
 }
 
+/* Back button */
+.back-btn {
+  position: fixed;
+  top: 24px;
+  left: 24px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: rgba(26, 26, 37, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  color: #a0a0b0;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: all 0.2s;
+  pointer-events: all;
+}
+
+.back-btn:hover {
+  color: #00d4ff;
+  border-color: rgba(0, 212, 255, 0.3);
+  background: rgba(0, 212, 255, 0.1);
+}
+
 .title-screen {
   position: absolute;
   top: 50%; left: 50%;
@@ -38,11 +71,12 @@ body {
 }
 
 .title-screen h1 {
-  font-size: 4rem;
+  font-size: 5rem;
   font-weight: 900;
   background: linear-gradient(135deg, #00d4ff 0%, #a855f7 50%, #f472b6 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  background-clip: text;
   margin-bottom: 1rem;
   letter-spacing: -2px;
 }
@@ -57,10 +91,15 @@ body {
   position: absolute;
   top: 10%; left: 10%;
   opacity: 0;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: #00d4ff;
   letter-spacing: 2px;
   text-transform: uppercase;
+  font-weight: 600;
+  padding: 8px 16px;
+  background: rgba(0, 212, 255, 0.1);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 8px;
 }
 
 .demo-card {
@@ -71,6 +110,8 @@ body {
   padding: 1.5rem;
   opacity: 0;
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
 }
 
 .demo-card h3 {
@@ -80,6 +121,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  font-weight: 600;
 }
 
 .demo-card .content {
@@ -96,11 +138,13 @@ body {
 }
 
 .demo-card .tag {
-  padding: 0.2rem 0.6rem;
+  padding: 0.25rem 0.7rem;
   background: rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(168, 85, 247, 0.2);
   border-radius: 6px;
   font-size: 0.7rem;
   color: #a855f7;
+  font-weight: 500;
 }
 
 .demo-card .score {
@@ -108,6 +152,7 @@ body {
   font-size: 0.8rem;
   color: #10b981;
   margin-top: 0.5rem;
+  font-weight: 600;
 }
 
 .search-box {
@@ -121,43 +166,62 @@ body {
 
 .search-box input {
   width: 400px;
-  padding: 0.75rem 1rem;
+  padding: 0.85rem 1.2rem;
   background: rgba(26, 26, 37, 0.9);
   border: 1px solid rgba(0, 212, 255, 0.3);
   border-radius: 12px;
   color: #fff;
   font-size: 0.9rem;
   outline: none;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-family: inherit;
+}
+
+.search-box input::placeholder {
+  color: #6b6b80;
 }
 
 .search-box button {
-  padding: 0.75rem 1.5rem;
+  padding: 0.85rem 1.5rem;
   background: linear-gradient(135deg, #00d4ff, #a855f7);
   border: none;
   border-radius: 12px;
   color: #fff;
   font-weight: 600;
   cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.search-box button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(0, 212, 255, 0.3);
 }
 
 .graph-node {
   position: absolute;
-  width: 60px; height: 60px;
+  width: 64px; height: 64px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.5rem;
+  font-size: 1.75rem;
   opacity: 0;
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+  background: rgba(26, 26, 37, 0.9);
+  border: 2px solid rgba(0, 212, 255, 0.4);
+  box-shadow: 0 0 30px rgba(0, 212, 255, 0.2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .graph-line {
   position: absolute;
   height: 2px;
-  background: linear-gradient(90deg, rgba(0, 212, 255, 0.5), rgba(168, 85, 247, 0.5));
+  background: linear-gradient(90deg, rgba(0, 212, 255, 0.6), rgba(168, 85, 247, 0.6));
   transform-origin: left center;
   opacity: 0;
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
 }
 
 .layer-stack {
@@ -168,28 +232,36 @@ body {
 }
 
 .layer {
-  padding: 0.75rem 1.5rem;
+  padding: 1rem 1.5rem;
   background: rgba(26, 26, 37, 0.8);
   border-left: 3px solid;
-  margin-bottom: 0.5rem;
-  border-radius: 0 8px 8px 0;
+  margin-bottom: 0.75rem;
+  border-radius: 0 12px 12px 0;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  min-width: 180px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
-.layer.short-term { border-color: #00d4ff; }
-.layer.working { border-color: #a855f7; }
+.layer.sensory { border-color: #00d4ff; }
+.layer.short-term { border-color: #a855f7; }
 .layer.long-term { border-color: #f472b6; }
 .layer.permanent { border-color: #10b981; }
 
 .layer span {
-  font-size: 0.85rem;
-  color: #a0a0b0;
+  font-size: 0.95rem;
+  color: #e0e0e8;
+  font-weight: 600;
 }
 
 .layer .label {
   font-size: 0.7rem;
   color: #6b6b80;
   display: block;
-  margin-top: 0.2rem;
+  margin-top: 0.25rem;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 @keyframes fadeIn {
@@ -226,10 +298,24 @@ body {
 @keyframes blink {
   50% { border-color: transparent; }
 }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .title-screen h1 { font-size: 3rem; }
+  .search-box input { width: 280px; }
+  .demo-card { width: 280px !important; }
+  .layer-stack { right: 5%; }
+  .layer { min-width: 140px; padding: 0.75rem 1rem; }
+}
 </style>
 </head>
 <body>
 <canvas id="canvas"></canvas>
+
+<a href="index.html" class="back-btn">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+  返回首页
+</a>
 
 <div class="overlay">
   <div class="title-screen" id="titleScreen">
@@ -242,13 +328,13 @@ body {
   <div class="phase" id="phase3">Phase 3: 知识关联</div>
   <div class="phase" id="phase4">Phase 4: 多层架构</div>
 
-  <div class="demo-card" id="card1" style="top: 25%; left: 15%; width: 320px;">
+  <div class="demo-card" id="card1" style="top: 25%; left: 15%; width: 340px;">
     <h3>🧠 新记忆</h3>
     <div class="content">用户喜欢用 Python 进行数据分析，偏好 pandas 和 numpy 库。</div>
     <div class="tags"><span class="tag">preferences</span><span class="tag">python</span><span class="tag">data</span></div>
   </div>
 
-  <div class="demo-card" id="card2" style="top: 55%; left: 15%; width: 320px;">
+  <div class="demo-card" id="card2" style="top: 55%; left: 15%; width: 340px;">
     <h3>🔍 检索结果</h3>
     <div class="content">用户上周提到需要优化数据库查询性能，建议使用索引。</div>
     <div class="tags"><span class="tag">work</span><span class="tag">database</span><span class="tag">optimization</span></div>
@@ -260,17 +346,17 @@ body {
     <button id="searchBtn">搜索</button>
   </div>
 
-  <div class="graph-node" id="node1" style="top: 40%; left: 45%;">🧠</div>
-  <div class="graph-node" id="node2" style="top: 30%; left: 60%;">📊</div>
-  <div class="graph-node" id="node3" style="top: 55%; left: 65%;">💡</div>
+  <div class="graph-node" id="node1" style="top: 40%; left: 48%;">🧠</div>
+  <div class="graph-node" id="node2" style="top: 28%; left: 62%;">💡</div>
+  <div class="graph-node" id="node3" style="top: 55%; left: 68%;">🔗</div>
   <div class="graph-line" id="line1"></div>
   <div class="graph-line" id="line2"></div>
 
   <div class="layer-stack" id="layerStack">
     <div class="layer permanent"><span>永久记忆</span><span class="label">Permanent</span></div>
     <div class="layer long-term"><span>长期记忆</span><span class="label">Long-term</span></div>
-    <div class="layer working"><span>工作记忆</span><span class="label">Working</span></div>
-    <div class="layer short-term"><span>感官记忆</span><span class="label">Sensory</span></div>
+    <div class="layer short-term"><span>短期记忆</span><span class="label">Short-term</span></div>
+    <div class="layer sensory"><span>感官记忆</span><span class="label">Sensory</span></div>
   </div>
 </div>
 
@@ -316,7 +402,8 @@ class Particle {
 
 function initParticles() {
   particles = [];
-  for (let i = 0; i < 100; i++) {
+  const count = Math.min(150, Math.floor(width * height / 10000));
+  for (let i = 0; i < count; i++) {
     particles.push(new Particle());
   }
 }
@@ -384,7 +471,7 @@ async function runDemo() {
   await showElement('phase2', 300);
   await showElement('searchBox', 600);
   await new Promise(r => setTimeout(r, 1000));
-  
+
   const input = document.getElementById('searchInput');
   input.value = '';
   const text = '关于数据库优化的建议';
@@ -406,7 +493,7 @@ async function runDemo() {
   await showElement('node1', 500);
   await showElement('node2', 800);
   await showElement('node3', 1100);
-  
+
   const node1 = document.getElementById('node1');
   const node2 = document.getElementById('node2');
   const node3 = document.getElementById('node3');
@@ -417,25 +504,25 @@ async function runDemo() {
     const rect1 = node1.getBoundingClientRect();
     const rect2 = node2.getBoundingClientRect();
     const rect3 = node3.getBoundingClientRect();
-    
+
     const x1 = rect1.left + rect1.width / 2;
     const y1 = rect1.top + rect1.height / 2;
     const x2 = rect2.left + rect2.width / 2;
     const y2 = rect2.top + rect2.height / 2;
     const x3 = rect3.left + rect3.width / 2;
     const y3 = rect3.top + rect3.height / 2;
-    
+
     const dx1 = x2 - x1;
     const dy1 = y2 - y1;
     const dx2 = x3 - x2;
     const dy2 = y3 - y2;
-    
+
     line1.style.left = x1 + 'px';
     line1.style.top = y1 + 'px';
     line1.style.width = Math.sqrt(dx1*dx1 + dy1*dy1) + 'px';
     line1.style.transform = `rotate(${Math.atan2(dy1, dx1)}rad)`;
     line1.style.opacity = '1';
-    
+
     line2.style.left = x2 + 'px';
     line2.style.top = y2 + 'px';
     line2.style.width = Math.sqrt(dx2*dx2 + dy2*dy2) + 'px';
