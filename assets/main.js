@@ -1,4 +1,4 @@
-﻿document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', () => {
   initCursorGlow();
   initRipple();
   initParticles();
@@ -8,6 +8,8 @@
   initPlayground();
   initKnowledgeGraph();
   initNavScroll();
+  initMagneticButtons();
+  initCardTilt();
 });
 
 function escapeHtml(str) {
@@ -16,21 +18,19 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-/* v5.0.7: 点击涟漪效果 */
+/* Click ripple */
 function initRipple() {
   document.addEventListener('click', (e) => {
     const ripple = document.createElement('div');
     ripple.className = 'ripple';
-    ripple.style.left = (e.clientX - 60) + 'px';
-    ripple.style.top = (e.clientY - 60) + 'px';
+    ripple.style.left = (e.clientX - 50) + 'px';
+    ripple.style.top = (e.clientY - 50) + 'px';
     document.body.appendChild(ripple);
-
-    ripple.addEventListener('animationend', () => {
-      ripple.remove();
-    });
+    ripple.addEventListener('animationend', () => ripple.remove());
   });
 }
 
+/* Cursor glow — smooth lerp */
 function initCursorGlow() {
   const glow = document.getElementById('cursorGlow');
   if (!glow) return;
@@ -44,8 +44,8 @@ function initCursorGlow() {
   });
 
   function animate() {
-    glowX += (mouseX - glowX) * 0.1;
-    glowY += (mouseY - glowY) * 0.1;
+    glowX += (mouseX - glowX) * 0.08;
+    glowY += (mouseY - glowY) * 0.08;
     glow.style.left = glowX + 'px';
     glow.style.top = glowY + 'px';
     requestAnimationFrame(animate);
@@ -56,6 +56,7 @@ function initCursorGlow() {
   document.addEventListener('mouseleave', () => glow.style.opacity = '0');
 }
 
+/* Particles — refined with indigo accent */
 function initParticles() {
   const canvas = document.getElementById('particle-canvas');
   if (!canvas) return;
@@ -63,7 +64,8 @@ function initParticles() {
   const ctx = canvas.getContext('2d');
   let width, height;
   let particles = [];
-  const PARTICLE_COUNT = 80;
+  const PARTICLE_COUNT = 60;
+  const COLORS = ['rgba(99, 102, 241', 'rgba(34, 211, 238', 'rgba(167, 139, 250'];
 
   function resize() {
     width = canvas.width = window.innerWidth;
@@ -71,16 +73,15 @@ function initParticles() {
   }
 
   class Particle {
-    constructor() {
-      this.reset();
-    }
+    constructor() { this.reset(); }
     reset() {
       this.x = Math.random() * width;
       this.y = Math.random() * height;
-      this.vx = (Math.random() - 0.5) * 0.3;
-      this.vy = (Math.random() - 0.5) * 0.3;
-      this.radius = Math.random() * 1.5 + 0.5;
-      this.opacity = Math.random() * 0.5 + 0.2;
+      this.vx = (Math.random() - 0.5) * 0.25;
+      this.vy = (Math.random() - 0.5) * 0.25;
+      this.radius = Math.random() * 1.5 + 0.4;
+      this.opacity = Math.random() * 0.4 + 0.15;
+      this.colorIdx = Math.floor(Math.random() * COLORS.length);
     }
     update() {
       this.x += this.vx;
@@ -91,7 +92,7 @@ function initParticles() {
     draw() {
       ctx.beginPath();
       ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(0, 212, 255, ${this.opacity})`;
+      ctx.fillStyle = `${COLORS[this.colorIdx]}, ${this.opacity})`;
       ctx.fill();
     }
   }
@@ -99,9 +100,7 @@ function initParticles() {
   function init() {
     resize();
     particles = [];
-    for (let i = 0; i < PARTICLE_COUNT; i++) {
-      particles.push(new Particle());
-    }
+    for (let i = 0; i < PARTICLE_COUNT; i++) particles.push(new Particle());
   }
 
   function drawLines() {
@@ -110,11 +109,11 @@ function initParticles() {
         const dx = particles[i].x - particles[j].x;
         const dy = particles[i].y - particles[j].y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 150) {
+        if (dist < 140) {
           ctx.beginPath();
           ctx.moveTo(particles[i].x, particles[i].y);
           ctx.lineTo(particles[j].x, particles[j].y);
-          ctx.strokeStyle = `rgba(168, 85, 247, ${0.1 * (1 - dist / 150)})`;
+          ctx.strokeStyle = `rgba(99, 102, 241, ${0.08 * (1 - dist / 140)})`;
           ctx.lineWidth = 0.5;
           ctx.stroke();
         }
@@ -124,10 +123,7 @@ function initParticles() {
 
   function animate() {
     ctx.clearRect(0, 0, width, height);
-    particles.forEach(p => {
-      p.update();
-      p.draw();
-    });
+    particles.forEach(p => { p.update(); p.draw(); });
     drawLines();
     requestAnimationFrame(animate);
   }
@@ -137,6 +133,7 @@ function initParticles() {
   window.addEventListener('resize', init);
 }
 
+/* Scroll reveal — staggered */
 function initScrollReveal() {
   const reveals = document.querySelectorAll('.reveal');
   if (!reveals.length) return;
@@ -148,14 +145,12 @@ function initScrollReveal() {
         observer.unobserve(entry.target);
       }
     });
-  }, {
-    threshold: 0.1,
-    rootMargin: '0px 0px -50px 0px'
-  });
+  }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
 
   reveals.forEach(el => observer.observe(el));
 }
 
+/* Counter animation */
 function initCounters() {
   const counters = document.querySelectorAll('.stat-value[data-target]');
   if (!counters.length) return;
@@ -180,14 +175,14 @@ function animateCounter(el) {
   function update(now) {
     const progress = Math.min((now - start) / duration, 1);
     const eased = 1 - Math.pow(1 - progress, 3);
-    const current = Math.floor(eased * target);
-    el.textContent = current;
+    el.textContent = Math.floor(eased * target);
     if (progress < 1) requestAnimationFrame(update);
     else el.textContent = target;
   }
   requestAnimationFrame(update);
 }
 
+/* Code tabs */
 function initCodeTabs() {
   const tabs = document.querySelectorAll('.code-tab');
   const blocks = document.querySelectorAll('.code-block');
@@ -204,6 +199,7 @@ function initCodeTabs() {
   });
 }
 
+/* Playground demo data */
 const DEMO_MEMORIES = [
   { id: '1', title: '关于数据库优化的想法', content: '今天研究了 PostgreSQL 查询优化，发现索引对大表查询性能提升显著。建议对经常出现在 WHERE 子句中的列创建复合索引，注意索引顺序要匹配查询模式。另外，VACUUM ANALYZE 可以帮助规划器生成更好的执行计划。', category: 'tech', catColor: 'cat-purple', tags: ['数据库', 'PostgreSQL', '性能优化'], importance: 'high', time: '2小时前' },
   { id: '2', title: '项目周报总结', content: '本周完成了用户认证模块的重构，从 session-based 迁移到 JWT + refresh token 方案。上线后性能提升 30%，但需要注意 token 刷新的并发安全问题。下周计划开始做支付模块集成。', category: 'work', catColor: 'cat-blue', tags: ['工作', '周报', 'JWT'], importance: 'medium', time: '5小时前' },
@@ -257,21 +253,13 @@ function initPlayground() {
   }
 
   function search(query) {
-    if (!query.trim()) {
-      showEmpty();
-      return;
-    }
-
+    if (!query.trim()) { showEmpty(); return; }
     const q = query.toLowerCase();
     const results = filterByCategory(currentCategory).filter(m =>
       m.title.toLowerCase().includes(q) ||
       m.content.toLowerCase().includes(q) ||
       m.tags.some(t => t.toLowerCase().includes(q))
-    ).map(m => ({
-      ...m,
-      relevance: computeRelevance(query, m)
-    })).sort((a, b) => b.relevance - a.relevance);
-
+    ).map(m => ({ ...m, relevance: computeRelevance(query, m) })).sort((a, b) => b.relevance - a.relevance);
     showResult(results);
   }
 
@@ -292,11 +280,9 @@ function initPlayground() {
           <div class="empty-icon">📭</div>
           <p>没有找到相关记忆</p>
           <span>试试其他关键词</span>
-        </div>
-      `;
+        </div>`;
       return;
     }
-
     searchResults.innerHTML = `<p style="font-size:0.85rem;color:var(--text-tertiary);margin-bottom:1rem;">找到 ${results.length} 条相关记忆</p>` +
       results.map(m => `
         <div class="result-card" data-id="${m.id}">
@@ -305,11 +291,8 @@ function initPlayground() {
             <span class="result-relevance">相关度 <strong>${(m.relevance || 0.85).toFixed(2)}</strong></span>
           </div>
           <div class="result-content">${escapeHtml(m.content)}</div>
-          <div class="result-tags">
-            ${m.tags.map(t => `<span class="result-tag">#${escapeHtml(t)}</span>`).join('')}
-          </div>
-        </div>
-      `).join('');
+          <div class="result-tags">${m.tags.map(t => `<span class="result-tag">#${escapeHtml(t)}</span>`).join('')}</div>
+        </div>`).join('');
   }
 
   function showEmpty() {
@@ -318,29 +301,25 @@ function initPlayground() {
         <div class="empty-icon">🔍</div>
         <p>输入关键词开始搜索</p>
         <span>支持语义检索、模糊匹配、分类筛选</span>
-      </div>
-    `;
+      </div>`;
   }
 
   categoryBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       categoryBtns.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      const cat = btn.dataset.cat;
-      const filtered = filterByCategory(cat);
-      renderMemoryList(filtered);
+      renderMemoryList(filterByCategory(btn.dataset.cat));
       showEmpty();
     });
   });
 
   searchBtn?.addEventListener('click', () => search(searchInput.value));
-  searchInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') search(searchInput.value);
-  });
+  searchInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') search(searchInput.value); });
 
   renderMemoryList(DEMO_MEMORIES);
 }
 
+/* Knowledge graph — force-directed */
 function initKnowledgeGraph() {
   const canvas = document.getElementById('graphCanvas');
   if (!canvas) return;
@@ -349,55 +328,36 @@ function initKnowledgeGraph() {
   let width, height;
 
   const nodes = [
-    { id: '中心', label: '记忆核心', x: 0, y: 0, vx: 0, vy: 0, color: '#00d4ff', size: 24, isCenter: true },
-    { id: 'n1', label: '数据库', x: -80, y: -60, vx: 0, vy: 0, color: '#a855f7', size: 16 },
-    { id: 'n2', label: 'Python', x: 80, y: -50, vx: 0, vy: 0, color: '#f472b6', size: 16 },
-    { id: 'n3', label: '产品创意', x: 0, y: 80, vx: 0, vy: 0, color: '#f59e0b', size: 16 },
-    { id: 'n4', label: '工作项目', x: -90, y: 40, vx: 0, vy: 0, color: '#3b82f6', size: 14 },
-    { id: 'n5', label: '生活记录', x: 90, y: 50, vx: 0, vy: 0, color: '#10b981', size: 14 },
-    { id: 'n6', label: '设计系统', x: -50, y: -100, vx: 0, vy: 0, color: '#a855f7', size: 12 },
-    { id: 'n7', label: '技术债务', x: 50, y: 100, vx: 0, vy: 0, color: '#ef4444', size: 12 },
-    { id: 'n8', label: '咖啡', x: 120, y: 0, vx: 0, vy: 0, color: '#10b981', size: 10 },
+    { id: 'center', label: '记忆核心', x: 0, y: 0, vx: 0, vy: 0, color: '#6366f1', size: 24, isCenter: true },
+    { id: 'n1', label: '数据库', x: -80, y: -60, vx: 0, vy: 0, color: '#a78bfa', size: 16 },
+    { id: 'n2', label: 'Python', x: 80, y: -50, vx: 0, vy: 0, color: '#22d3ee', size: 16 },
+    { id: 'n3', label: '产品创意', x: 0, y: 80, vx: 0, vy: 0, color: '#fbbf24', size: 16 },
+    { id: 'n4', label: '工作项目', x: -90, y: 40, vx: 0, vy: 0, color: '#60a5fa', size: 14 },
+    { id: 'n5', label: '生活记录', x: 90, y: 50, vx: 0, vy: 0, color: '#34d399', size: 14 },
+    { id: 'n6', label: '设计系统', x: -50, y: -100, vx: 0, vy: 0, color: '#a78bfa', size: 12 },
+    { id: 'n7', label: '技术债务', x: 50, y: 100, vx: 0, vy: 0, color: '#fb7185', size: 12 },
+    { id: 'n8', label: '咖啡', x: 120, y: 0, vx: 0, vy: 0, color: '#34d399', size: 10 },
   ];
 
   const edges = [
-    { from: '中心', to: 'n1' },
-    { from: '中心', to: 'n2' },
-    { from: '中心', to: 'n3' },
-    { from: '中心', to: 'n4' },
-    { from: '中心', to: 'n5' },
-    { from: 'n1', to: 'n6' },
-    { from: 'n1', to: 'n7' },
-    { from: 'n4', to: 'n7' },
-    { from: 'n5', to: 'n8' },
-    { from: 'n2', to: 'n3' },
+    { from: 'center', to: 'n1' }, { from: 'center', to: 'n2' }, { from: 'center', to: 'n3' },
+    { from: 'center', to: 'n4' }, { from: 'center', to: 'n5' }, { from: 'n1', to: 'n6' },
+    { from: 'n1', to: 'n7' }, { from: 'n4', to: 'n7' }, { from: 'n5', to: 'n8' }, { from: 'n2', to: 'n3' },
   ];
 
   function resize() {
     const container = canvas.parentElement;
     width = canvas.width = container.clientWidth;
     height = canvas.height = container.clientHeight;
-    nodes.forEach(n => {
-      if (!n.isCenter) return;
-      n.x = width / 2;
-      n.y = height / 2;
-    });
+    nodes.forEach(n => { if (n.isCenter) { n.x = width / 2; n.y = height / 2; } });
   }
 
-  function getNode(id) {
-    return nodes.find(n => n.id === id);
-  }
+  function getNode(id) { return nodes.find(n => n.id === id); }
 
   function simulate() {
     nodes.forEach(node => {
-      if (node.isCenter) {
-        node.vx *= 0.9;
-        node.vy *= 0.9;
-        return;
-      }
-
+      if (node.isCenter) { node.vx *= 0.9; node.vy *= 0.9; return; }
       let fx = 0, fy = 0;
-
       nodes.forEach(other => {
         if (other.id === node.id) return;
         const dx = node.x - other.x;
@@ -407,49 +367,35 @@ function initKnowledgeGraph() {
         fx += (dx / dist) * force;
         fy += (dy / dist) * force;
       });
-
       edges.forEach(edge => {
         let other = null;
         if (edge.from === node.id) other = getNode(edge.to);
         else if (edge.to === node.id) other = getNode(edge.from);
         if (!other) return;
-
         const dx = other.x - node.x;
         const dy = other.y - node.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const targetDist = 80;
-        const force = (dist - targetDist) * 0.02;
+        const force = (dist - 80) * 0.02;
         fx += (dx / dist) * force;
         fy += (dy / dist) * force;
       });
-
-      const centerX = width / 2;
-      const centerY = height / 2;
-      fx += (centerX - node.x) * 0.001;
-      fy += (centerY - node.y) * 0.001;
-
+      fx += (width / 2 - node.x) * 0.001;
+      fy += (height / 2 - node.y) * 0.001;
       node.vx = (node.vx + fx) * 0.9;
       node.vy = (node.vy + fy) * 0.9;
     });
-
-    nodes.forEach(node => {
-      node.x += node.vx;
-      node.y += node.vy;
-    });
+    nodes.forEach(node => { node.x += node.vx; node.y += node.vy; });
   }
 
   function draw() {
     ctx.clearRect(0, 0, width, height);
-
     edges.forEach(edge => {
       const from = getNode(edge.from);
       const to = getNode(edge.to);
       if (!from || !to) return;
-
       const gradient = ctx.createLinearGradient(from.x, from.y, to.x, to.y);
       gradient.addColorStop(0, from.color + '40');
       gradient.addColorStop(1, to.color + '40');
-
       ctx.beginPath();
       ctx.moveTo(from.x, from.y);
       ctx.lineTo(to.x, to.y);
@@ -457,13 +403,11 @@ function initKnowledgeGraph() {
       ctx.lineWidth = 1;
       ctx.stroke();
     });
-
     nodes.forEach(node => {
       ctx.beginPath();
       ctx.arc(node.x, node.y, node.size + 4, 0, Math.PI * 2);
       ctx.fillStyle = node.color + '20';
       ctx.fill();
-
       ctx.beginPath();
       ctx.arc(node.x, node.y, node.size, 0, Math.PI * 2);
       const gradient = ctx.createRadialGradient(node.x - 3, node.y - 3, 0, node.x, node.y, node.size);
@@ -471,7 +415,6 @@ function initKnowledgeGraph() {
       gradient.addColorStop(1, node.color + 'aa');
       ctx.fillStyle = gradient;
       ctx.fill();
-
       ctx.font = '11px Inter, sans-serif';
       ctx.fillStyle = 'rgba(255,255,255,0.7)';
       ctx.textAlign = 'center';
@@ -479,31 +422,60 @@ function initKnowledgeGraph() {
     });
   }
 
-  function animate() {
-    simulate();
-    draw();
-    requestAnimationFrame(animate);
-  }
-
+  function animate() { simulate(); draw(); requestAnimationFrame(animate); }
   resize();
   animate();
   window.addEventListener('resize', resize);
 }
 
+/* Nav scroll effect */
 function initNavScroll() {
   const nav = document.querySelector('.nav');
   if (!nav) return;
-
-  let lastScroll = 0;
   window.addEventListener('scroll', () => {
-    const currentScroll = window.pageYOffset;
-    if (currentScroll > 100) {
-      nav.style.background = 'rgba(10, 10, 15, 0.9)';
-      nav.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
-    } else {
-      nav.style.background = 'rgba(10, 10, 15, 0.7)';
-      nav.style.boxShadow = 'none';
-    }
-    lastScroll = currentScroll;
+    if (window.pageYOffset > 100) nav.classList.add('scrolled');
+    else nav.classList.remove('scrolled');
+  });
+}
+
+/* Magnetic buttons — premium micro-interaction */
+function initMagneticButtons() {
+  const btns = document.querySelectorAll('.btn-primary, .btn-secondary');
+  const STRENGTH = 0.25;
+
+  btns.forEach(btn => {
+    btn.addEventListener('mousemove', (e) => {
+      const rect = btn.getBoundingClientRect();
+      const x = e.clientX - rect.left - rect.width / 2;
+      const y = e.clientY - rect.top - rect.height / 2;
+      btn.style.transform = `translate(${x * STRENGTH}px, ${y * STRENGTH}px)`;
+    });
+
+    btn.addEventListener('mouseleave', () => {
+      btn.style.transform = '';
+    });
+  });
+}
+
+/* 3D card tilt — mouse-tracking perspective */
+function initCardTilt() {
+  const cards = document.querySelectorAll('.feature-card:not(.feature-preview)');
+  const MAX_TILT = 4;
+
+  cards.forEach(card => {
+    card.addEventListener('mousemove', (e) => {
+      const rect = card.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+      const tiltX = (y - 0.5) * MAX_TILT * 2;
+      const tiltY = (x - 0.5) * MAX_TILT * -2;
+      card.style.transform = `translateY(-6px) perspective(800px) rotateX(${tiltX}deg) rotateY(${tiltY}deg)`;
+      card.style.setProperty('--mx', `${x * 100}%`);
+      card.style.setProperty('--my', `${y * 100}%`);
+    });
+
+    card.addEventListener('mouseleave', () => {
+      card.style.transform = '';
+    });
   });
 }
