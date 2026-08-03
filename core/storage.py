@@ -27,11 +27,14 @@ def _is_suspicious_windows_path(comp: str) -> bool:
     """检测 Windows 短文件名绕过模式（如 PROGRA~1、FILE~1.TXT）"""
     if not comp or len(comp) == 0:
         return False
-    # 匹配 短名模式：基础名 + ~N + 可选扩展名
     import re as _re
+    # v5.3.7 修复：豁免 Windows 盘符根（如 C:\、D:），之前误报导致所有导出功能失效
+    if len(comp) <= 3 and _re.match(r'^[A-Za-z]:\\?$', comp):
+        return False
+    # 匹配 短名模式：基础名 + ~N + 可选扩展名
     if _re.match(r'^[^~]{1,6}~\d(\..{1,3})?$', comp, _re.IGNORECASE):
         return True
-    # 包含 / 或 \ 在不应该的位置
+    # 包含 / 或 \ 在不应该的位置；盘符内的 : 已在上文豁免
     if any(s in comp for s in ('..', '/', '\\', '\x00', ':')):
         return True
     return False
@@ -141,6 +144,18 @@ def _limited_fetch(cursor, limit: int = 10000):
     if len(rows) > limit:
         raise ValueError(f"查询结果超过行数上限 {limit}")
     return rows
+
+
+# v5.3.7 安全加固：Unicode 控制字符过滤，防止双向字符（RLO/LRO）显示欺骗
+def _filter_unicode_ctrl(s: str) -> str:
+    """过滤 Unicode Cf/Cc 类控制字符（保留 \\n\\r\\t），防止路径/ID 显示欺骗"""
+    if not isinstance(s, str) or not s:
+        return s
+    import unicodedata
+    return ''.join(
+        ch for ch in s
+        if unicodedata.category(ch) not in ('Cf', 'Cc') or ch in '\n\r\t'
+    )
 
 
 # v5.3.3 安全加固：LIKE 通配符转义，防止 % 和 _ 被解释为 SQL LIKE 通配符
@@ -2925,7 +2940,7 @@ class StorageEngine:
             匹配的记忆列表
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         kw = keyword[:200] if isinstance(keyword, str) else ""
         if not aid or not kw:
             return []
@@ -3158,7 +3173,7 @@ class StorageEngine:
             差异报告字典
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
 
@@ -3234,7 +3249,7 @@ class StorageEngine:
             清理结果字典
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
 
@@ -3523,7 +3538,7 @@ class StorageEngine:
             时间线分析结果：按天计数、按小时分布、活跃峰、趋势
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
 
@@ -3615,7 +3630,7 @@ class StorageEngine:
             热力图矩阵：分类行 × 重要度列的计数矩阵
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
 
@@ -3809,7 +3824,7 @@ class StorageEngine:
             角色关系网络：节点列表 + 边列表（含共同出场次数）
         """
         conn = self._get_conn()
-        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
         if not did:
             return {"error": "短剧 ID 不能为空"}
 
@@ -3918,7 +3933,7 @@ class StorageEngine:
             情感分析结果：正面/负面/中性计数、情感分布、主导情感
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
 
@@ -4020,7 +4035,7 @@ class StorageEngine:
             衰减分析结果：平均衰减率、高危记忆数、各衰减级别分布
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
 
@@ -4197,7 +4212,7 @@ class StorageEngine:
             角色成长弧线数据：按场景的台词量变化、活跃峰值、成长阶段
         """
         conn = self._get_conn()
-        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
         cid = character_id[:64] if isinstance(character_id, str) and character_id else ""
         if not did or not cid:
             return {"error": "短剧 ID 和角色 ID 不能为空"}
@@ -4291,7 +4306,7 @@ class StorageEngine:
             主题聚类结果：各主题簇列表、核心词、主题标签
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
 
@@ -4450,7 +4465,7 @@ class StorageEngine:
             行为洞察报告
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
 
@@ -4637,7 +4652,7 @@ class StorageEngine:
             剧情摘要、核心角色、关键场景索引
         """
         conn = self._get_conn()
-        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
         if not did:
             return {"error": "短剧 ID 不能为空"}
         max_length = max(100, min(2000, int(max_length)))
@@ -4785,7 +4800,7 @@ class StorageEngine:
             张力排行、各场景张力曲线、高潮场景索引
         """
         conn = self._get_conn()
-        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
         if not did:
             return {"error": "短剧 ID 不能为空"}
         top_k = max(1, min(50, int(top_k)))
@@ -5133,11 +5148,32 @@ class StorageEngine:
             return default
 
     def _row_to_entry(self, row: sqlite3.Row) -> MemoryEntry:
+        # v5.3.7 修复：tags/metadata 可能已经是 list/dict（非 JSON 字符串）
+        raw_tags = row["tags"]
+        if isinstance(raw_tags, (list, tuple)):
+            tags_val = list(raw_tags)
+        elif isinstance(raw_tags, str):
+            try:
+                tags_val = self._safe_json_loads(raw_tags, [])
+            except (ValueError, json.JSONDecodeError):
+                tags_val = []
+        else:
+            tags_val = []
+        raw_meta = row["metadata"]
+        if isinstance(raw_meta, dict):
+            meta_val = raw_meta
+        elif isinstance(raw_meta, str):
+            try:
+                meta_val = self._safe_json_loads(raw_meta, {})
+            except (ValueError, json.JSONDecodeError):
+                meta_val = {}
+        else:
+            meta_val = {}
         return MemoryEntry(
             id=row["id"],
             content=row["content"] or "",
             category=row["category"],
-            tags=self._safe_json_loads(row["tags"], []),
+            tags=tags_val,
             privacy=PrivacyLevel(row["privacy"]),
             importance=Importance(row["importance"]),
             memory_type=MemoryType(row["memory_type"]),
@@ -5153,7 +5189,7 @@ class StorageEngine:
             strength=row["strength"],
             starred=bool(row["starred"]) if "starred" in row.keys() else False,
             pinned=bool(row["pinned"]) if "pinned" in row.keys() else False,
-            metadata=self._safe_json_loads(row["metadata"], {}),
+            metadata=meta_val,
             encrypted=bool(row["encrypted"]),
             ciphertext=row["ciphertext"],
             nonce=row["nonce"],
@@ -7783,8 +7819,8 @@ class StorageEngine:
             关联记忆列表（含关联类型与关联强度）、关联图谱摘要
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
-        mid = memory_id[:64] if isinstance(memory_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        mid = _filter_unicode_ctrl(memory_id[:64]) if isinstance(memory_id, str) else ""
         if not aid or not mid:
             return {"error": "Agent ID 和记忆 ID 不能为空"}
         top_k = max(1, min(50, int(top_k)))
@@ -7941,8 +7977,8 @@ class StorageEngine:
             召回记忆列表（含召回分、匹配关键词）、召回统计
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
-        q = query[:500] if isinstance(query, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        q = _filter_unicode_ctrl(query[:500]) if isinstance(query, str) else ""
         if not aid or not q:
             return {"error": "Agent ID 和查询文本不能为空"}
         top_k = max(1, min(50, int(top_k)))
@@ -8066,7 +8102,7 @@ class StorageEngine:
             节奏分布、拖沓/密集段、节奏健康度
         """
         conn = self._get_conn()
-        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
         if not did:
             return {"error": "短剧 ID 不能为空"}
         window = max(1, min(10, int(window)))
@@ -8232,7 +8268,7 @@ class StorageEngine:
             互动矩阵、Top 互动关系、核心角色识别
         """
         conn = self._get_conn()
-        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
         if not did:
             return {"error": "短剧 ID 不能为空"}
         top_k = max(1, min(50, int(top_k)))
@@ -8389,4 +8425,866 @@ class StorageEngine:
             "interactions": top_inter,
             "core_characters": core_chars_out,
             "matrix_size": len(matrix),
+        }
+
+    # ===== v5.3.7 新增：Agent 记忆重要度/上下文注入/情感追踪 + 短剧类型趋势/追剧粘性/角色关系 =====
+
+    def memory_importance(self,
+                          agent_id: str,
+                          days: int = 30) -> Dict[str, Any]:
+        """记忆重要度分析（v5.3.7 新增）
+
+        分析 Agent 记忆的重要度分布趋势、重要度漂移、
+        低估/高估记忆识别，并给出动态重评估建议。
+        参考 Mem0 的动态记忆评分机制。
+        """
+        conn = self._get_conn()
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+        days = max(1, min(365, int(days)))
+        now = time.time()
+        since = now - days * 86400
+
+        # v5.3.7 安全：参数化 SQL + 行数限制
+        cur = conn.execute(
+            "SELECT id, content, importance, access_count, created_at, category "
+            "FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND created_at >= ? "
+            "ORDER BY created_at ASC",
+            (aid, since)
+        )
+        rows = _limited_fetch(cur, limit=10000)
+
+        if not rows:
+            return {
+                "agent_id": aid,
+                "days": days,
+                "total_memories": 0,
+                "importance_distribution": {},
+                "drift_analysis": {},
+                "underrated": [],
+                "overrated": [],
+                "re_evaluation_suggestions": [],
+            }
+
+        # 重要度分布
+        imp_dist: Dict[str, int] = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
+        # 按时间段分（前半段 vs 后半段）分析漂移
+        midpoint = len(rows) // 2
+        first_half_imp: Dict[str, int] = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
+        second_half_imp: Dict[str, int] = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
+
+        underrated: List[Dict[str, Any]] = []
+        overrated: List[Dict[str, Any]] = []
+
+        for i, r in enumerate(rows):
+            mid, content, importance, access_count, created_at, category = (
+                r[0], r[1], r[2], r[3], r[4], r[5]
+            )
+            imp = (importance or "MEDIUM").upper()
+            if imp not in imp_dist:
+                imp = "MEDIUM"
+            imp_dist[imp] += 1
+
+            # 漂移分析
+            half = first_half_imp if i < midpoint else second_half_imp
+            half[imp] += 1
+
+            ac = access_count if isinstance(access_count, int) and access_count > 0 else 0
+
+            # 低估记忆：高访问量但低重要度
+            if ac >= 5 and imp in ("LOW", "MEDIUM"):
+                underrated.append({
+                    "memory_id": mid,
+                    "importance": imp,
+                    "access_count": ac,
+                    "suggested_importance": "HIGH" if ac >= 10 else "MEDIUM",
+                    "content_preview": (content or "")[:80],
+                })
+
+            # 高估记忆：高重要度但低访问量
+            if imp in ("HIGH", "CRITICAL") and ac <= 1:
+                overrated.append({
+                    "memory_id": mid,
+                    "importance": imp,
+                    "access_count": ac,
+                    "suggested_importance": "MEDIUM",
+                    "content_preview": (content or "")[:80],
+                })
+
+        # 漂移趋势
+        total_first = max(1, sum(first_half_imp.values()))
+        total_second = max(1, sum(second_half_imp.values()))
+        drift: Dict[str, Dict[str, Any]] = {}
+        for imp_level in ("LOW", "MEDIUM", "HIGH", "CRITICAL"):
+            first_ratio = first_half_imp[imp_level] / total_first
+            second_ratio = second_half_imp[imp_level] / total_second
+            direction = "stable"
+            if second_ratio > first_ratio + 0.05:
+                direction = "increasing"
+            elif second_ratio < first_ratio - 0.05:
+                direction = "decreasing"
+            drift[imp_level] = {
+                "first_half_ratio": round(first_ratio, 4),
+                "second_half_ratio": round(second_ratio, 4),
+                "direction": direction,
+            }
+
+        # 重评估建议
+        suggestions: List[str] = []
+        if len(underrated) > len(overrated):
+            suggestions.append(f"发现 {len(underrated)} 条被低估的记忆（高访问低重要度），建议提升其重要度")
+        if len(overrated) > 5:
+            suggestions.append(f"发现 {len(overrated)} 条被高估的记忆（高重要度低访问），建议降低其重要度")
+        if not suggestions:
+            suggestions.append("重要度分配合理，无需大规模调整")
+
+        underrated.sort(key=lambda x: -x["access_count"])
+        overrated.sort(key=lambda x: x["access_count"])
+
+        return {
+            "agent_id": aid,
+            "days": days,
+            "total_memories": len(rows),
+            "importance_distribution": imp_dist,
+            "drift_analysis": drift,
+            "underrated": underrated[:20],
+            "overrated": overrated[:20],
+            "re_evaluation_suggestions": suggestions,
+        }
+
+    def memory_context(self,
+                       agent_id: str,
+                       query: str,
+                       max_tokens: int = 4000) -> Dict[str, Any]:
+        """上下文记忆注入（v5.3.7 新增）
+
+        给定查询，选择并格式化最相关的记忆以适配 token 预算。
+        参考 Letta 的上下文窗口管理。
+        """
+        conn = self._get_conn()
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        q = _filter_unicode_ctrl(query[:500]) if isinstance(query, str) else ""
+        if not aid or not q:
+            return {"error": "Agent ID 和查询文本不能为空"}
+        max_tokens = max(500, min(32000, int(max_tokens)))
+        now = time.time()
+        since = now - 180 * 86400  # 默认回溯 180 天
+
+        import re as _re
+        q_lower = q.lower()
+        q_words = set()
+        for w in _re.findall(r'[a-zA-Z]{2,}', q_lower):
+            q_words.add(w)
+        for w in _re.findall(r'[\u4e00-\u9fff]{2,4}', q_lower):
+            q_words.add(w)
+
+        if not q_words:
+            return {
+                "agent_id": aid,
+                "query": q,
+                "context": "",
+                "included_count": 0,
+                "excluded_count": 0,
+                "token_estimate": 0,
+            }
+
+        # v5.3.7 安全：参数化 SQL + 行数限制
+        cur = conn.execute(
+            "SELECT id, content, tags, category, importance, layer, "
+            "created_at, access_count, starred "
+            "FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND created_at >= ?",
+            (aid, since)
+        )
+        rows = _limited_fetch(cur, limit=10000)
+
+        # 复用 memory_recall 评分逻辑
+        scored: List[Dict[str, Any]] = []
+        for r in rows:
+            mid, content, tags_raw, category, importance, layer, created_at, access_count, starred = (
+                r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]
+            )
+            c_lower = (content or "").lower()
+            matched = sorted([w for w in q_words if w in c_lower])
+            if not matched:
+                try:
+                    c_tags = json.loads(tags_raw) if isinstance(tags_raw, str) and tags_raw else []
+                except Exception:
+                    c_tags = []
+                tag_set = {str(t).lower() for t in c_tags}
+                matched = sorted([w for w in q_words if w in tag_set])
+                if not matched:
+                    continue
+
+            coverage = len(matched) / len(q_words)
+            imp = (importance or "MEDIUM").upper()
+            imp_w = {"LOW": 0.6, "MEDIUM": 1.0, "HIGH": 1.4, "CRITICAL": 1.8}.get(imp, 1.0)
+            ac = access_count if isinstance(access_count, int) and access_count > 0 else 0
+            access_w = 1.0 + min(1.0, (ac / 10.0) * 0.5)
+            created = created_at if isinstance(created_at, (int, float)) else now
+            age_days = max(0.0, (now - created) / 86400.0)
+            if age_days <= 30:
+                recency = 1.0
+            elif age_days <= 180:
+                recency = 1.0 - (age_days - 30) / 150.0 * 0.8
+            else:
+                recency = 0.2
+            star_bonus = 1.1 if starred else 1.0
+            score = round(coverage * 40.0 + imp_w * 20.0 + access_w * 15.0
+                          + recency * 20.0, 2)
+            score = round(score * star_bonus, 2)
+
+            scored.append({
+                "memory_id": mid,
+                "score": score,
+                "content": content or "",
+                "importance": imp,
+                "category": category or "general",
+                "layer": (layer or "SHORT_TERM").upper(),
+                "matched_keywords": matched[:12],
+            })
+
+        scored.sort(key=lambda x: -x["score"])
+
+        # token 估算：每 4 字符 ≈ 1 token（粗略）
+        chars_per_token = 4
+        budget_chars = max_tokens * chars_per_token
+        used_chars = 0
+        included: List[Dict[str, Any]] = []
+        excluded_count = 0
+
+        # 预留 header 和 footer 空间
+        header = f"# Agent Memory Context\nQuery: {q}\n\n"
+        footer = f"\n---\n{len(scored)} memories scanned."
+        budget_chars -= len(header) + len(footer)
+
+        context_parts: List[str] = [header]
+        for s in scored:
+            entry_text = f"## Memory: {s['memory_id'][:8]}...\n" \
+                        f"Importance: {s['importance']} | Category: {s['category']}\n" \
+                        f"Content: {s['content']}\n\n"
+            entry_len = len(entry_text)
+            if used_chars + entry_len > budget_chars:
+                excluded_count += 1
+                continue
+            used_chars += entry_len
+            context_parts.append(entry_text)
+            included.append(s)
+
+        context_parts.append(footer)
+        context_str = "".join(context_parts)
+        token_estimate = len(context_str) // chars_per_token
+
+        return {
+            "agent_id": aid,
+            "query": q,
+            "context": context_str,
+            "included_count": len(included),
+            "excluded_count": excluded_count,
+            "token_estimate": token_estimate,
+            "max_tokens": max_tokens,
+        }
+
+    def agent_emotion(self,
+                     agent_id: str,
+                     days: int = 30) -> Dict[str, Any]:
+        """Agent 情感追踪（v5.3.7 新增）
+
+        基于记忆情感的时间追踪，构建情感时间线、转换序列、
+        主导情感与波动性评分。参考 Zep 的情感记忆功能。
+        """
+        conn = self._get_conn()
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+        days = max(1, min(365, int(days)))
+        now = time.time()
+        since = now - days * 86400
+
+        # v5.3.7 安全：参数化 SQL + 行数限制
+        cur = conn.execute(
+            "SELECT content, importance, created_at "
+            "FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND created_at >= ? "
+            "ORDER BY created_at ASC",
+            (aid, since)
+        )
+        rows = _limited_fetch(cur, limit=10000)
+
+        if not rows:
+            return {
+                "agent_id": aid,
+                "days": days,
+                "total_memories": 0,
+                "emotion_distribution": {},
+                "dominant_emotion": "no_data",
+                "volatility_score": 0.0,
+            }
+
+        # 情感关键词词典（扩展版）
+        positive_words = {
+            "好", "棒", "优秀", "成功", "完成", "解决", "开心", "满意", "喜欢",
+            "good", "great", "excellent", "success", "happy", "love", "perfect",
+            "突破", "提升", "优化", "改进", "有效", "正确", "赞同",
+        }
+        negative_words = {
+            "坏", "差", "失败", "错误", "问题", "bug", "崩溃", "讨厌", "不满",
+            "bad", "fail", "error", "broken", "crash", "hate", "wrong", "issue",
+            "缺失", "丢失", "异常", "警告", "危险", "漏洞", "冲突", "阻塞",
+        }
+        # 情感分类
+        emotion_map = {"positive": "joy", "negative": "frustration", "neutral": "calm"}
+
+        # 按天分组
+        day_emotions: Dict[str, Dict[str, int]] = {}
+        emotion_dist: Dict[str, int] = {"joy": 0, "frustration": 0, "calm": 0}
+        transitions: List[str] = []
+        prev_emotion: Optional[str] = None
+
+        for r in rows:
+            content = (r[0] or "").lower()
+            created_at = r[2] if isinstance(r[2], (int, float)) else now
+            day_key = time.strftime("%Y-%m-%d", time.localtime(created_at))
+
+            pos_hits = sum(1 for w in positive_words if w in content)
+            neg_hits = sum(1 for w in negative_words if w in content)
+
+            if pos_hits > neg_hits:
+                emotion = "joy"
+            elif neg_hits > pos_hits:
+                emotion = "frustration"
+            else:
+                emotion = "calm"
+
+            emotion_dist[emotion] += 1
+
+            if day_key not in day_emotions:
+                day_emotions[day_key] = {"joy": 0, "frustration": 0, "calm": 0}
+            day_emotions[day_key][emotion] += 1
+
+            # 转换追踪
+            cur_e = emotion_map.get(emotion, emotion)
+            if prev_emotion and prev_emotion != cur_e:
+                transitions.append(f"{prev_emotion}→{cur_e}")
+            prev_emotion = cur_e
+
+        # 情感时间线（按天）
+        timeline: List[Dict[str, Any]] = []
+        for day, counts in sorted(day_emotions.items()):
+            total = max(1, sum(counts.values()))
+            dom = max(counts, key=counts.get)
+            timeline.append({
+                "date": day,
+                "dominant": dom,
+                "distribution": counts,
+                "total": sum(counts.values()),
+            })
+
+        # 主导情感
+        total_mems = len(rows)
+        dominant = max(emotion_dist, key=emotion_dist.get)
+        if emotion_dist[dominant] == 0:
+            dominant = "no_data"
+
+        # 情感波动性评分（转换频率 / 总记忆数）
+        volatility = round(min(100.0, len(transitions) / max(1, total_mems) * 100.0), 1)
+
+        # 情感分布百分比
+        emotion_pct = {
+            e: round(c / total_mems, 4) if total_mems else 0
+            for e, c in emotion_dist.items()
+        }
+
+        return {
+            "agent_id": aid,
+            "days": days,
+            "total_memories": total_mems,
+            "emotion_distribution": emotion_dist,
+            "emotion_percentages": emotion_pct,
+            "dominant_emotion": dominant,
+            "timeline": timeline,
+            "transitions": transitions[:50],
+            "transition_count": len(transitions),
+            "volatility_score": volatility,
+        }
+
+    def drama_genre_trend(self,
+                          days: int = 90) -> Dict[str, Any]:
+        """短剧类型趋势分析（v5.3.7 新增）
+
+        分析所有短剧的类型分布与流行度趋势。
+        """
+        conn = self._get_conn()
+        days = max(1, min(365, int(days)))
+        now = time.time()
+        since = now - days * 86400
+
+        # v5.3.7 安全：参数化 SQL
+        cur = conn.execute(
+            "SELECT id, title, genre, rating, total_episodes, created_at "
+            "FROM drama_series WHERE created_at >= ? "
+            "ORDER BY created_at ASC",
+            (since,)
+        )
+        rows = _limited_fetch(cur, limit=10000)
+
+        if not rows:
+            return {
+                "days": days,
+                "total_dramas": 0,
+                "genre_distribution": {},
+                "trends": {},
+                "top_genre": None,
+            }
+
+        # 类型分布
+        genre_counts: Dict[str, int] = {}
+        genre_ratings: Dict[str, List[float]] = {}
+        genre_first_half: Dict[str, int] = {}
+        genre_second_half: Dict[str, int] = {}
+
+        midpoint = len(rows) // 2
+
+        for i, r in enumerate(rows):
+            title = r[1] or "未命名"
+            genre = (r[2] or "未分类").strip()
+            rating = r[3] if isinstance(r[3], (int, float)) else 0
+
+            genre_counts[genre] = genre_counts.get(genre, 0) + 1
+            genre_ratings.setdefault(genre, []).append(rating)
+
+            if i < midpoint:
+                genre_first_half[genre] = genre_first_half.get(genre, 0) + 1
+            else:
+                genre_second_half[genre] = genre_second_half.get(genre, 0) + 1
+
+        # 趋势方向
+        total_first = max(1, sum(genre_first_half.values()))
+        total_second = max(1, sum(genre_second_half.values()))
+        trends: Dict[str, Dict[str, Any]] = {}
+        for genre, count in genre_counts.items():
+            first_ratio = genre_first_half.get(genre, 0) / total_first
+            second_ratio = genre_second_half.get(genre, 0) / total_second
+            if second_ratio > first_ratio + 0.05:
+                direction = "rising"
+            elif second_ratio < first_ratio - 0.05:
+                direction = "declining"
+            else:
+                direction = "stable"
+            ratings = genre_ratings.get(genre, [])
+            avg_rating = round(sum(ratings) / len(ratings), 2) if ratings else 0
+            trends[genre] = {
+                "count": count,
+                "share": round(count / len(rows), 4),
+                "trend": direction,
+                "avg_rating": avg_rating,
+                "first_half_ratio": round(first_ratio, 4),
+                "second_half_ratio": round(second_ratio, 4),
+            }
+
+        # 热门类型（按数量）
+        top_genre = max(genre_counts, key=genre_counts.get) if genre_counts else None
+
+        return {
+            "days": days,
+            "total_dramas": len(rows),
+            "genre_distribution": genre_counts,
+            "trends": trends,
+            "top_genre": top_genre,
+            "top_genre_count": genre_counts.get(top_genre, 0) if top_genre else 0,
+        }
+
+    def drama_binge_score(self,
+                          drama_id: str) -> Dict[str, Any]:
+        """追剧粘性评分（v5.3.7 新增）
+
+        多因子加权评分：节奏健康度 25% + 平均张力 25% +
+        互动密度 20% + 经典台词比 15% + 完成率 15%。
+        """
+        conn = self._get_conn()
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+
+        drow = conn.execute(
+            "SELECT id, title, total_episodes, rating "
+            "FROM drama_series WHERE id = ?",
+            (did,)
+        ).fetchone()
+        if not drow:
+            return {"error": "短剧不存在"}
+        title = drow[1] or "未命名"
+        total_eps = drow[2] if isinstance(drow[2], int) and drow[2] > 0 else 1
+
+        # 因子 1: 节奏健康度（复用 drama_pacing 逻辑）
+        pacing_result = self.drama_pacing(did, 3)
+        pacing_health = pacing_result.get("health_score", 50.0)
+        pacing_health = max(0.0, min(100.0, pacing_health))
+
+        # 因子 2: 平均场景张力（复用 scene_tension 逻辑）
+        scene_rows = conn.execute(
+            "SELECT id FROM drama_scenes WHERE drama_id = ?",
+            (did,)
+        ).fetchall()
+        total_scenes = len(scene_rows)
+
+        tension_scores: List[float] = []
+        conflict_words = {
+            "不", "别", "错", "滚", "闭嘴", "打", "杀", "死",
+            "no", "not", "stop", "hate", "fight", "kill",
+            "冲突", "争吵", "背叛", "欺骗", "威胁", "逼迫",
+        }
+        intensity_words = {
+            "必须", "马上", "立刻", "快", "紧急", "危险",
+            "终于", "竟然", "居然", "到底", "不可能",
+        }
+
+        for sr in scene_rows:
+            sid = sr[0]
+            lrow = conn.execute(
+                "SELECT COUNT(*), COUNT(DISTINCT character_id) "
+                "FROM drama_lines WHERE scene_id = ?",
+                (sid,)
+            ).fetchone()
+            lc = lrow[0] or 0
+            cc = lrow[1] or 0
+
+            lines_cur = conn.execute(
+                "SELECT line_text FROM drama_lines WHERE scene_id = ?",
+                (sid,)
+            )
+            lines = _limited_fetch(lines_cur, limit=500)
+
+            conflict_hits = 0
+            intensity_hits = 0
+            for l in lines:
+                text = (l[0] or "").lower()
+                conflict_hits += sum(1 for w in conflict_words if w in text)
+                intensity_hits += sum(1 for w in intensity_words if w in text)
+
+            tension = min(100.0, lc * 5 + conflict_hits * 10 + intensity_hits * 8 + cc * 3)
+            tension_scores.append(tension)
+
+        tension_avg = round(sum(tension_scores) / len(tension_scores), 1) if tension_scores else 0.0
+        tension_avg = max(0.0, min(100.0, tension_avg))
+
+        # 因子 3: 互动密度（复用 char_interaction 逻辑简化版）
+        char_rows = conn.execute(
+            "SELECT id, name FROM drama_characters WHERE drama_id = ?",
+            (did,)
+        ).fetchall()
+        total_chars = len(char_rows)
+
+        interaction_count = 0
+        if total_chars > 0 and total_scenes > 0:
+            for sr in scene_rows:
+                sid = sr[0]
+                lcount = conn.execute(
+                    "SELECT COUNT(DISTINCT character_id) FROM drama_lines WHERE scene_id = ?",
+                    (sid,)
+                ).fetchone()
+                cc = lcount[0] if lcount and lcount[0] else 0
+                if cc >= 2:
+                    interaction_count += cc * (cc - 1) // 2  # C(n,2)
+            interaction_density = min(100.0, (interaction_count / max(1, total_scenes)) * 20.0)
+        else:
+            interaction_density = 0.0
+
+        # 因子 4: 经典台词比
+        classic_count_row = conn.execute(
+            "SELECT COUNT(*) FROM drama_lines WHERE drama_id = ? AND is_classic = 1",
+            (did,)
+        ).fetchone()
+        classic_count = classic_count_row[0] if classic_count_row else 0
+
+        total_lines_row = conn.execute(
+            "SELECT COUNT(*) FROM drama_lines WHERE drama_id = ?",
+            (did,)
+        ).fetchone()
+        total_lines = total_lines_row[0] if total_lines_row else 0
+
+        classic_ratio = round(classic_count / total_lines * 100, 2) if total_lines > 0 else 0.0
+        classic_ratio = min(100.0, classic_ratio)
+
+        # 因子 5: 完成率（有台词的场景数 / 总场景数）
+        scenes_with_lines = 0
+        for sr in scene_rows:
+            sid = sr[0]
+            lc = conn.execute(
+                "SELECT COUNT(*) FROM drama_lines WHERE scene_id = ?",
+                (sid,)
+            ).fetchone()
+            if lc and lc[0] > 0:
+                scenes_with_lines += 1
+        completion_rate = round(scenes_with_lines / max(1, total_scenes) * 100, 2) if total_scenes > 0 else 0.0
+
+        # 加权总分
+        binge_score = round(
+            pacing_health * 0.25 +
+            tension_avg * 0.25 +
+            interaction_density * 0.20 +
+            classic_ratio * 0.15 +
+            completion_rate * 0.15,
+            1
+        )
+        binge_score = max(0.0, min(100.0, binge_score))
+
+        # 评级
+        if binge_score >= 80:
+            rating_label = "extreme"
+            recommendation = "极度推荐：追剧粘性极高，大概率一口气看完"
+        elif binge_score >= 60:
+            rating_label = "high"
+            recommendation = "高度推荐：节奏紧凑，角色互动丰富，值得追看"
+        elif binge_score >= 40:
+            rating_label = "medium"
+            recommendation = "中等推荐：有一定吸引力，但存在拖沓或互动不足"
+        else:
+            rating_label = "low"
+            recommendation = "低度推荐：追剧粘性较低，可能需要优化节奏和角色互动"
+
+        return {
+            "drama_id": did,
+            "title": title,
+            "binge_score": binge_score,
+            "rating": rating_label,
+            "recommendation": recommendation,
+            "factors": {
+                "pacing_health": {"score": round(pacing_health, 1), "weight": 0.25, "contribution": round(pacing_health * 0.25, 1)},
+                "tension_avg": {"score": round(tension_avg, 1), "weight": 0.25, "contribution": round(tension_avg * 0.25, 1)},
+                "interaction_density": {"score": round(interaction_density, 1), "weight": 0.20, "contribution": round(interaction_density * 0.20, 1)},
+                "classic_ratio": {"score": round(classic_ratio, 2), "weight": 0.15, "contribution": round(classic_ratio * 0.15, 2)},
+                "completion_rate": {"score": round(completion_rate, 2), "weight": 0.15, "contribution": round(completion_rate * 0.15, 2)},
+            },
+            "total_scenes": total_scenes,
+            "total_characters": total_chars,
+            "total_lines": total_lines,
+            "classic_lines": classic_count,
+        }
+
+    def char_relationship(self,
+                           drama_id: str,
+                           char1_id: str,
+                           char2_id: str) -> Dict[str, Any]:
+        """角色关系深度分析（v5.3.7 新增）
+
+        分析两个特定角色之间的关系。
+        """
+        conn = self._get_conn()
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
+        c1 = _filter_unicode_ctrl(char1_id[:64]) if isinstance(char1_id, str) and char1_id else ""
+        c2 = _filter_unicode_ctrl(char2_id[:64]) if isinstance(char2_id, str) and char2_id else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+        if not c1 or not c2:
+            return {"error": "角色 ID 不能为空"}
+        if c1 == c2:
+            return {"error": "两个角色 ID 不能相同"}
+
+        drow = conn.execute(
+            "SELECT id, title FROM drama_series WHERE id = ?",
+            (did,)
+        ).fetchone()
+        if not drow:
+            return {"error": "短剧不存在"}
+        title = drow[1] or "未命名"
+
+        # 获取角色名称
+        ch1_row = conn.execute(
+            "SELECT name FROM drama_characters WHERE id = ? AND drama_id = ?",
+            (c1, did)
+        ).fetchone()
+        ch2_row = conn.execute(
+            "SELECT name FROM drama_characters WHERE id = ? AND drama_id = ?",
+            (c2, did)
+        ).fetchone()
+        name1 = (ch1_row[0] if ch1_row else "角色1") or "角色1"
+        name2 = (ch2_row[0] if ch2_row else "角色2") or "角色2"
+
+        # 获取所有场景
+        scene_rows = conn.execute(
+            "SELECT id, episode, scene_number FROM drama_scenes "
+            "WHERE drama_id = ? ORDER BY episode ASC, scene_number ASC",
+            (did,)
+        ).fetchall()
+
+        if not scene_rows:
+            return {
+                "drama_id": did,
+                "title": title,
+                "char1_id": c1,
+                "char2_id": c2,
+                "name1": name1,
+                "name2": name2,
+                "relationship_type": "stranger",
+                "interaction_count": 0,
+                "relationship_strength": 0.0,
+            }
+
+        # 冲突词
+        conflict_words = {
+            "不", "别", "错", "滚", "闭嘴", "打", "杀", "死",
+            "no", "not", "stop", "hate", "fight", "kill",
+            "冲突", "争吵", "背叛", "欺骗", "威胁", "逼迫",
+        }
+        # 情感词
+        positive_words = {
+            "好", "棒", "喜欢", "爱", "开心", "满意", "谢谢", "感谢",
+            "good", "love", "happy", "thanks", "great", "perfect",
+        }
+        negative_words = {
+            "坏", "差", "恨", "讨厌", "滚", "走开", "不",
+            "bad", "hate", "go away", "wrong", "stupid",
+        }
+
+        co_scenes = 0
+        total_alternations = 0
+        total_conflict = 0
+        total_positive = 0
+        total_negative = 0
+        key_scenes: List[Dict[str, Any]] = []
+        emotion_progression: List[Dict[str, Any]] = []
+
+        for sr in scene_rows:
+            sid = sr[0]
+            episode = sr[1]
+            scene_number = sr[2]
+
+            # 获取该场景中两个角色的台词
+            cur_l = conn.execute(
+                "SELECT character_id, line_text FROM drama_lines "
+                "WHERE scene_id = ? ORDER BY created_at ASC",
+                (sid,)
+            )
+            lines = _limited_fetch(cur_l, limit=500)
+
+            # 检查是否两个角色都在该场景中
+            char1_lines = [l for l in lines if l[0] == c1]
+            char2_lines = [l for l in lines if l[0] == c2]
+
+            if not char1_lines and not char2_lines:
+                continue
+
+            co_scenes += 1
+
+            # 统计交替次数
+            alternations = 0
+            prev_char = None
+            for l in lines:
+                cid = l[0]
+                if cid in (c1, c2):
+                    if prev_char and prev_char != cid:
+                        alternations += 1
+                    prev_char = cid
+            total_alternations += alternations
+
+            # 统计冲突/情感词
+            scene_conflict = 0
+            scene_positive = 0
+            scene_negative = 0
+            for l in char1_lines + char2_lines:
+                text = (l[1] or "").lower()
+                scene_conflict += sum(1 for w in conflict_words if w in text)
+                scene_positive += sum(1 for w in positive_words if w in text)
+                scene_negative += sum(1 for w in negative_words if w in text)
+            total_conflict += scene_conflict
+            total_positive += scene_positive
+            total_negative += scene_negative
+
+            # 情感方向
+            if scene_positive > scene_negative:
+                emotion = "positive"
+            elif scene_negative > scene_positive:
+                emotion = "negative"
+            else:
+                emotion = "neutral"
+            emotion_progression.append({
+                "episode": episode,
+                "scene": scene_number,
+                "emotion": emotion,
+                "alternations": alternations,
+            })
+
+            # 关键场景（高交替或高冲突）
+            if alternations >= 5 or scene_conflict >= 3:
+                key_scenes.append({
+                    "episode": episode,
+                    "scene_number": scene_number,
+                    "alternations": alternations,
+                    "conflict_hits": scene_conflict,
+                    "emotion": emotion,
+                })
+
+        # 关系类型判定
+        if co_scenes == 0:
+            rel_type = "stranger"
+            rel_strength = 0.0
+        else:
+            conflict_ratio = total_conflict / max(1, total_alternations)
+            positive_ratio = total_positive / max(1, total_alternations)
+
+            if conflict_ratio >= 0.3:
+                rel_type = "rival"
+            elif positive_ratio >= 0.25 and total_positive > total_negative:
+                rel_type = "romance"
+            elif total_alternations >= 10 and conflict_ratio < 0.15:
+                rel_type = "ally"
+            elif co_scenes >= 3 and total_alternations < 3:
+                rel_type = "family"
+            elif total_alternations >= 5 and positive_ratio >= 0.1:
+                rel_type = "mentor"
+            else:
+                rel_type = "stranger"
+
+            # 关系强度
+            rel_strength = round(
+                co_scenes * 1.0 +
+                total_alternations * 0.5 +
+                total_conflict * 0.3 +
+                (total_positive + total_negative) * 0.2,
+                2
+            )
+
+        # 冲突水平
+        if total_conflict == 0:
+            conflict_level = "none"
+        elif total_conflict < 5:
+            conflict_level = "low"
+        elif total_conflict < 15:
+            conflict_level = "moderate"
+        else:
+            conflict_level = "high"
+
+        # 情感弧线
+        emotion_arc = "stable"
+        if len(emotion_progression) >= 2:
+            first_emotions = [e["emotion"] for e in emotion_progression[:len(emotion_progression)//2]]
+            last_emotions = [e["emotion"] for e in emotion_progression[len(emotion_progression)//2:]]
+            first_dom = max(set(first_emotions), key=first_emotions.count) if first_emotions else "neutral"
+            last_dom = max(set(last_emotions), key=last_emotions.count) if last_emotions else "neutral"
+            if first_dom != last_dom:
+                emotion_arc = f"{first_dom}→{last_dom}"
+            else:
+                emotion_arc = f"stable ({first_dom})"
+
+        return {
+            "drama_id": did,
+            "title": title,
+            "char1_id": c1,
+            "char2_id": c2,
+            "name1": name1,
+            "name2": name2,
+            "relationship_type": rel_type,
+            "interaction_count": co_scenes,
+            "total_alternations": total_alternations,
+            "conflict_level": conflict_level,
+            "conflict_hits": total_conflict,
+            "positive_hits": total_positive,
+            "negative_hits": total_negative,
+            "emotion_arc": emotion_arc,
+            "key_scenes": key_scenes[:20],
+            "relationship_strength": rel_strength,
+            "emotion_progression": emotion_progression[:30],
         }

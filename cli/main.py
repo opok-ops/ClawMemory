@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.3.6 CLI - 命令行工具
+MindForge v5.3.7 CLI - 命令行工具
 =================================
 
 Usage:
@@ -31,6 +31,18 @@ Commands:
     multimodal          多模态记忆
     federated           联邦记忆
     serve               启动 Web UI
+    --- v5.3.6+ ---
+    memory-link         记忆关联推理
+    memory-recall       智能记忆召回
+    drama-pacing        剧集节奏分析
+    char-interaction    角色互动分析
+    --- v5.3.7+ ---
+    memory-importance   记忆重要度分析
+    memory-context      上下文记忆注入
+    agent-emotion       Agent 情感追踪
+    drama-genre-trend   短剧类型趋势分析
+    drama-binge-score   追剧粘性评分
+    char-relationship   角色关系深度分析
 """
 
 import sys
@@ -60,7 +72,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.3.6"
+    __version__ = "5.3.7"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -3036,12 +3048,390 @@ def main():
                                help="空间 ID 或名称（省略则全局统计）")
     p_space_stats.add_argument("--agent", default="cli", help="Agent ID")
 
+    # ===== v5.3.7 新增 Agent 记忆命令 =====
+    p_mem_importance = sub.add_parser("memory-importance", help="记忆重要度分析（v5.3.7 新增）")
+    p_mem_importance.add_argument("agent", help="Agent ID")
+    p_mem_importance.add_argument("--days", "-d", type=int, default=30, help="回溯窗口天数（1-365）")
+
+    p_mem_context = sub.add_parser("memory-context", help="上下文记忆注入（v5.3.7 新增）")
+    p_mem_context.add_argument("agent", help="Agent ID")
+    p_mem_context.add_argument("query", help="查询文本")
+    p_mem_context.add_argument("--max-tokens", "-t", type=int, default=4000, help="token 预算上限（500-32000）")
+
+    p_agent_emotion = sub.add_parser("agent-emotion", help="Agent 情感追踪（v5.3.7 新增）")
+    p_agent_emotion.add_argument("agent", help="Agent ID")
+    p_agent_emotion.add_argument("--days", "-d", type=int, default=30, help="回溯天数（1-365）")
+
+    # ===== v5.3.7 新增 AI 短剧命令 =====
+    p_genre_trend = sub.add_parser("drama-genre-trend", help="短剧类型趋势分析（v5.3.7 新增）")
+    p_genre_trend.add_argument("--days", "-d", type=int, default=90, help="回溯窗口天数（1-365）")
+
+    p_binge_score = sub.add_parser("drama-binge-score", help="追剧粘性评分（v5.3.7 新增）")
+    p_binge_score.add_argument("drama_id", help="短剧 ID")
+
+    p_char_rel = sub.add_parser("char-relationship", help="角色关系深度分析（v5.3.7 新增）")
+    p_char_rel.add_argument("drama_id", help="短剧 ID")
+    p_char_rel.add_argument("char1", help="角色 1 ID")
+    p_char_rel.add_argument("char2", help="角色 2 ID")
+
     args = parser.parse_args()
 
     # v5.2.8 修复：统一展开逗号分隔的标签（覆盖全部 nargs="+" 的 --tags 命令）
     if isinstance(getattr(args, "tags", None), list):
         args.tags = _split_tags(args.tags)
 
+    _main_dispatch(args)
+
+
+def cmd_memory_importance(args):
+    """记忆重要度分析（v5.3.7 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n📊 记忆重要度分析（v5.3.7）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:    {args.agent}")
+    print(f"  回溯天数:    {args.days}")
+
+    try:
+        result = cm.memory_importance(args.agent, args.days)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    total = result["total_memories"]
+    if total == 0:
+        print(c(f"\n⚠️  该 Agent 在 {args.days} 天内无记忆", "yellow"))
+        cm.close()
+        return 0
+
+    print(f"  总记忆数:    {total}")
+
+    # 重要度分布
+    dist = result.get("importance_distribution", {})
+    print(c(f"\n📈 重要度分布", "cyan"))
+    imp_colors = {"LOW": "yellow", "MEDIUM": "cyan", "HIGH": "green", "CRITICAL": "red"}
+    for imp in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+        cnt = dist.get(imp, 0)
+        pct = cnt / total * 100 if total > 0 else 0
+        bar = "█" * int(pct / 5)
+        print(f"  {imp:<10} {cnt:>5}  ({pct:>5.1f}%)  {c(bar, imp_colors.get(imp, 'cyan'))}")
+
+    # 漂移分析
+    drift = result.get("drift_analysis", {})
+    if drift:
+        print(c(f"\n📉 重要度漂移分析", "cyan"))
+        for imp in ("LOW", "MEDIUM", "HIGH", "CRITICAL"):
+            d = drift.get(imp, {})
+            dir_label = {"increasing": "↑ 上升", "decreasing": "↓ 下降", "stable": "→ 稳定"}
+            print(f"  {imp:<10} {dir_label.get(d.get('direction', 'stable'), '?'):<10} "
+                  f"前半段 {d.get('first_half_ratio', 0):.1%} → 后半段 {d.get('second_half_ratio', 0):.1%}")
+
+    # 低估记忆
+    underrated = result.get("underrated", [])
+    if underrated:
+        print(c(f"\n⬇️ 被低估的记忆（高访问低重要度）共 {len(underrated)} 条", "yellow"))
+        for u in underrated[:5]:
+            print(f"  [{u['importance']}] 访问 {u['access_count']}x → 建议 {u['suggested_importance']}  "
+                  f"{(u.get('content_preview') or '')[:40]}")
+
+    # 高估记忆
+    overrated = result.get("overrated", [])
+    if overrated:
+        print(c(f"\n⬆️ 被高估的记忆（高重要度低访问）共 {len(overrated)} 条", "red"))
+        for o in overrated[:5]:
+            print(f"  [{o['importance']}] 访问 {o['access_count']}x → 建议 {o['suggested_importance']}  "
+                  f"{(o.get('content_preview') or '')[:40]}")
+
+    # 建议
+    suggestions = result.get("re-evaluation_suggestions", [])
+    if suggestions:
+        print(c(f"\n💡 重评估建议", "cyan"))
+        for s in suggestions:
+            print(f"  • {s}")
+
+    cm.close()
+    return 0
+
+
+def cmd_memory_context(args):
+    """上下文记忆注入（v5.3.7 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n📥 上下文记忆注入（v5.3.7）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:    {args.agent}")
+    print(f"  查询:        {args.query}")
+    print(f"  Token 上限:  {args.max_tokens}")
+
+    try:
+        result = cm.memory_context(args.agent, args.query, args.max_tokens)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(f"  包含记忆:    {result['included_count']}")
+    print(f"  排除记忆:    {result['excluded_count']}")
+    print(f"  Token 估计:  {result['token_estimate']}")
+
+    context = result.get("context", "")
+    if not context:
+        print(c(f"\n⚠️  无匹配记忆可注入", "yellow"))
+        cm.close()
+        return 0
+
+    print(c(f"\n{'─' * 60}", "cyan"))
+    print(context)
+    print(c(f"{'─' * 60}", "cyan"))
+
+    cm.close()
+    return 0
+
+
+def cmd_agent_emotion(args):
+    """Agent 情感追踪（v5.3.7 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n😊 Agent 情感追踪（v5.3.7）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:    {args.agent}")
+    print(f"  回溯天数:    {args.days}")
+
+    try:
+        result = cm.agent_emotion(args.agent, args.days)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    total = result["total_memories"]
+    if total == 0:
+        print(c(f"\n⚠️  该 Agent 在 {args.days} 天内无记忆", "yellow"))
+        cm.close()
+        return 0
+
+    print(f"  总记忆数:    {total}")
+
+    # 情感分布
+    dist = result.get("emotion_distribution", {})
+    pct = result.get("emotion_percentages", {})
+    print(c(f"\n📊 情感分布", "cyan"))
+    emo_label = {"joy": "喜悦", "frustration": "挫败", "calm": "平静"}
+    emo_color = {"joy": "green", "frustration": "red", "calm": "cyan"}
+    for e in ("joy", "frustration", "calm"):
+        cnt = dist.get(e, 0)
+        p = pct.get(e, 0)
+        bar = "█" * int(p * 20)
+        print(f"  {emo_label.get(e, e):<10} {cnt:>5}  ({p:>5.1%})  {c(bar, emo_color.get(e, 'cyan'))}")
+
+    # 主导情感
+    dominant = result.get("dominant_emotion", "no_data")
+    print(c(f"\n🎯 主导情感: {emo_label.get(dominant, dominant)}", "bold"))
+
+    # 波动性
+    vol = result.get("volatility_score", 0)
+    vol_color = "green" if vol < 30 else ("yellow" if vol < 60 else "red")
+    print(f"  情感波动性: {c(f'{vol:.1f} / 100', vol_color)}")
+
+    # 时间线
+    timeline = result.get("timeline", [])
+    if timeline and len(timeline) <= 60:
+        print(c(f"\n📉 情感时间线", "cyan"))
+        for t in timeline:
+            dom = t["dominant"]
+            bar = "█" * (t.get("total", 1))
+            print(f"  {t['date']}  {emo_label.get(dom, dom):<8} {c(bar, emo_color.get(dom, 'cyan'))}")
+
+    # 转换
+    transitions = result.get("transitions", [])
+    if transitions:
+        print(c(f"\n🔄 情感转换（共 {result.get('transition_count', 0)} 次）", "cyan"))
+        for tr in transitions[:10]:
+            print(f"  {tr}")
+        if len(transitions) > 10:
+            print(f"  ... 还有 {len(transitions) - 10} 次转换")
+
+    cm.close()
+    return 0
+
+
+def cmd_drama_genre_trend(args):
+    """短剧类型趋势分析（v5.3.7 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🎭 短剧类型趋势分析（v5.3.7）", "bold"))
+    print("=" * 60)
+    print(f"  回溯天数:    {args.days}")
+
+    try:
+        result = cm.drama_genre_trend(args.days)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    total = result["total_dramas"]
+    if total == 0:
+        print(c(f"\n⚠️  {args.days} 天内无短剧数据", "yellow"))
+        cm.close()
+        return 0
+
+    print(f"  短剧总数:    {total}")
+
+    # 类型分布
+    dist = result.get("genre_distribution", {})
+    trends = result.get("trends", {})
+    print(c(f"\n📊 类型分布与趋势", "cyan"))
+    print(f"{'类型':<16}{'数量':>6}{'占比':>8}{'趋势':>10}{'平均评分':>10}")
+    print("-" * 60)
+    for genre, cnt in sorted(dist.items(), key=lambda x: -x[1]):
+        trend = trends.get(genre, {})
+        share = trend.get("share", 0)
+        direction = trend.get("trend", "stable")
+        avg_r = trend.get("avg_rating", 0)
+        dir_label = {"rising": "↑ 上升", "declining": "↓ 下降", "stable": "→ 稳定"}
+        print(f"{genre:<16}{cnt:>6}{share:>7.1%}{dir_label.get(direction, '?'):>10}{avg_r:>10.1f}")
+
+    # 热门类型
+    top_genre = result.get("top_genre")
+    if top_genre:
+        print(c(f"\n🏆 热门类型: {top_genre}（{result.get('top_genre_count', 0)} 部）", "green"))
+
+    cm.close()
+    return 0
+
+
+def cmd_drama_binge_score(args):
+    """追剧粘性评分（v5.3.7 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🔥 追剧粘性评分（v5.3.7）", "bold"))
+    print("=" * 60)
+    print(f"  短剧 ID:    {args.drama_id}")
+
+    try:
+        result = cm.drama_binge_score(args.drama_id)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(f"  剧名:       {result['title']}")
+
+    score = result["binge_score"]
+    rating = result["rating"]
+    s_color = "red" if score >= 80 else ("green" if score >= 60 else ("yellow" if score >= 40 else "red"))
+    print(f"  追剧粘性:   {c(f'{score:.1f} / 100', s_color)}")
+    r_label = {"extreme": "极高", "high": "高", "medium": "中", "low": "低"}
+    print(f"  评级:       {c(r_label.get(rating, rating), s_color)}")
+    print(f"  推荐:       {result['recommendation']}")
+
+    # 因子分解
+    factors = result.get("factors", {})
+    if factors:
+        print(c(f"\n📊 因子分解", "cyan"))
+        print(f"{'因子':<20}{'得分':>8}{'权重':>8}{'贡献':>8}")
+        print("-" * 50)
+        for fname, fdata in factors.items():
+            label_map = {
+                "pacing_health": "节奏健康度",
+                "tension_avg": "平均张力",
+                "interaction_density": "互动密度",
+                "classic_ratio": "经典台词比",
+                "completion_rate": "完成率",
+            }
+            print(f"{label_map.get(fname, fname):<20}{fdata['score']:>8.1f}{fdata['weight']:>8.0%}{fdata['contribution']:>8.1f}")
+
+    print(c(f"\n总计: 场景 {result.get('total_scenes', 0)} | 角色 {result.get('total_characters', 0)} | "
+          f"台词 {result.get('total_lines', 0)} | 经典 {result.get('classic_lines', 0)}", "cyan"))
+
+    cm.close()
+    return 0
+
+
+def cmd_char_relationship(args):
+    """角色关系深度分析（v5.3.7 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n👥 角色关系深度分析（v5.3.7）", "bold"))
+    print("=" * 60)
+    print(f"  短剧 ID:    {args.drama_id}")
+    print(f"  角色 1:     {args.char1}")
+    print(f"  角色 2:     {args.char2}")
+
+    try:
+        result = cm.char_relationship(args.drama_id, args.char1, args.char2)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(f"  剧名:       {result['title']}")
+    print(f"  角色名称:   {result['name1']} ↔ {result['name2']}")
+
+    rel_type = result.get("relationship_type", "stranger")
+    rel_label = {
+        "ally": "盟友", "rival": "对手", "romance": "恋情",
+        "family": "家人", "mentor": "导师", "stranger": "陌生人",
+    }
+    print(c(f"\n🤝 关系类型: {rel_label.get(rel_type, rel_type)}", "bold"))
+    print(f"  互动场景数: {result.get('interaction_count', 0)}")
+    print(f"  台词交替数: {result.get('total_alternations', 0)}")
+    print(f"  冲突水平:   {result.get('conflict_level', 'none')}")
+    print(f"  关系强度:   {result.get('relationship_strength', 0):.2f}")
+    print(f"  情感弧线:   {result.get('emotion_arc', 'stable')}")
+
+    # 关键场景
+    key_scenes = result.get("key_scenes", [])
+    if key_scenes:
+        print(c(f"\n🎬 关键场景（高互动/高冲突）", "cyan"))
+        print(f"{'集':>4}{'场景':>6}{'交替':>6}{'冲突':>6}{'情感':>8}")
+        print("-" * 40)
+        for ks in key_scenes[:10]:
+            print(f"{ks['episode']:>4}{ks['scene_number']:>6}{ks['alternations']:>6}"
+                  f"{ks['conflict_hits']:>6}{ks['emotion']:>8}")
+        if len(key_scenes) > 10:
+            print(f"  ... 还有 {len(key_scenes) - 10} 个关键场景")
+
+    # 情感发展
+    progression = result.get("emotion_progression", [])
+    if progression and len(progression) <= 30:
+        print(c(f"\n📈 情感发展", "cyan"))
+        for ep in progression:
+            bar = "█" * ep.get("alternations", 1)
+            print(f"  EP{ep['episode']} S{ep['scene']}  {ep['emotion']:<10} {bar}")
+
+    cm.close()
+    return 0
+
+
+def _main_dispatch(args):
+    """命令分发（v5.3.7 重构：将 commands dict 和 dispatch 逻辑独立）"""
     commands = {
         "init": cmd_init,
         "add": cmd_add,
@@ -3210,6 +3600,13 @@ def main():
         "space-share": cmd_space_share,
         "space-memories": cmd_space_memories,
         "space-stats": cmd_space_stats,
+        # v5.3.7 新增
+        "memory-importance": cmd_memory_importance,
+        "memory-context": cmd_memory_context,
+        "agent-emotion": cmd_agent_emotion,
+        "drama-genre-trend": cmd_drama_genre_trend,
+        "drama-binge-score": cmd_drama_binge_score,
+        "char-relationship": cmd_char_relationship,
     }
 
     cmd = commands.get(args.command)
