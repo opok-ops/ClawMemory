@@ -1,5 +1,5 @@
 """
-MindForge v5.3.6 主入口类
+MindForge v5.3.7 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,7 +31,7 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.3.6"
+    __version__ = "5.3.7"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -120,7 +120,7 @@ def _safe_path(path_str, must_exist=False, allow_symlinks=False,
 
 
 class MindForge:
-    """MindForge 主类 - AI Agent 终身记忆系统 v5.3.6"""
+    """MindForge 主类 - AI Agent 终身记忆系统 v5.3.7"""
 
     def __init__(self, config: Optional[MemoryConfig] = None, **kwargs):
         if config is None:
@@ -2320,6 +2320,155 @@ class MindForge:
                            if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
         top_k = max(1, min(50, int(top_k)))
         return self._storage.char_interaction(drama_id, top_k)
+
+    # ===== v5.3.7 新增 =====
+
+    def memory_importance(self,
+                          agent_id: str,
+                          days: int = 30) -> Dict[str, Any]:
+        """记忆重要度分析（v5.3.7 新增）
+
+        分析 Agent 记忆的重要度分布趋势、重要度漂移、
+        低估/高估记忆识别，并给出动态重评估建议。
+        参考 Mem0 的动态记忆评分机制，基于使用模式重评估。
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯窗口天数（1-365）
+
+        Returns:
+            重要度分布、漂移分析、低估/高估记忆、重评估建议
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        days = max(1, min(365, int(days)))
+        return self._storage.memory_importance(agent_id, days)
+
+    def memory_context(self,
+                       agent_id: str,
+                       query: str,
+                       max_tokens: int = 4000) -> Dict[str, Any]:
+        """上下文记忆注入（v5.3.7 新增）
+
+        给定查询，选择并格式化最相关的记忆以适配 LLM 提示词的
+        token 预算。参考 Letta 的上下文窗口管理，将召回记忆
+        格式化为可直接注入的上下文字符串。
+
+        Args:
+            agent_id: Agent ID
+            query: 查询文本
+            max_tokens: token 预算上限（500-32000）
+
+        Returns:
+            格式化上下文字符串、包含记忆数、token 估计、排除数
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        if not query or not isinstance(query, str):
+            return {"error": "查询文本不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        query = "".join(c for c in query[:500]
+                        if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        max_tokens = max(500, min(32000, int(max_tokens)))
+        return self._storage.memory_context(agent_id, query, max_tokens)
+
+    def agent_emotion(self,
+                     agent_id: str,
+                     days: int = 30) -> Dict[str, Any]:
+        """Agent 情感追踪（v5.3.7 新增）
+
+        基于记忆情感的时间追踪，构建情感时间线、情感转换、
+        主导情感与情感波动性评分。参考 Zep 的情感记忆功能。
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            情感分布、时间线、转换序列、主导情感、波动性评分
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        days = max(1, min(365, int(days)))
+        return self._storage.agent_emotion(agent_id, days)
+
+    def drama_genre_trend(self,
+                          days: int = 90) -> Dict[str, Any]:
+        """短剧类型趋势分析（v5.3.7 新增）
+
+        分析所有短剧的类型分布与流行度趋势，识别上升/下降/稳定类型，
+        按类型平均评分。参考竞品「爆款风向标」功能。
+
+        Args:
+            days: 回溯窗口天数（1-365）
+
+        Returns:
+            类型分布、趋势方向、各类型平均评分、热门类型
+        """
+        days = max(1, min(365, int(days)))
+        return self._storage.drama_genre_trend(days)
+
+    def drama_binge_score(self,
+                          drama_id: str) -> Dict[str, Any]:
+        """追剧粘性评分（v5.3.7 新增）
+
+        计算短剧的追剧粘性评分（0-100），基于多因子加权：
+        节奏健康度 25% + 平均张力 25% + 互动密度 20% +
+        经典台词比 15% + 完成率 15%。
+
+        Args:
+            drama_id: 短剧 ID
+
+        Returns:
+            总分、因子分解、评级（低/中/高/极高）、推荐建议
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        return self._storage.drama_binge_score(drama_id)
+
+    def char_relationship(self,
+                           drama_id: str,
+                           char1_id: str,
+                           char2_id: str) -> Dict[str, Any]:
+        """角色关系深度分析（v5.3.7 新增）
+
+        分析两个特定角色之间的关系：场景共现、对话交流模式、
+        冲突水平、情感发展。关系类型：ally/rival/romance/
+        family/mentor/stranger。
+
+        Args:
+            drama_id: 短剧 ID
+            char1_id: 角色 1 ID
+            char2_id: 角色 2 ID
+
+        Returns:
+            关系类型、互动数、冲突水平、情感弧线、关键场景、关系强度
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        if not char1_id or not isinstance(char1_id, str):
+            return {"error": "角色 1 ID 不能为空"}
+        if not char2_id or not isinstance(char2_id, str):
+            return {"error": "角色 2 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        char1_id = "".join(c for c in char1_id[:64]
+                            if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        char2_id = "".join(c for c in char2_id[:64]
+                            if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        return self._storage.char_relationship(drama_id, char1_id, char2_id)
 
     def analyze_similarity(self,
                            memory_id: str,
