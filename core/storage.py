@@ -3866,19 +3866,19 @@ class StorageEngine:
             char_list = list(char_set)
             for i in range(len(char_list)):
                 for j in range(i + 1, len(char_list)):
-                    a, b = char_list[i], char_list[j]
-                    if a not in co_occurrence:
-                        co_occurrence[a] = {}
-                    if b not in co_occurrence[a]:
-                        co_occurrence[a][b] = 0
-                    co_occurrence[a][b] += 1
+                    first_char, second_char = char_list[i], char_list[j]
+                    if first_char not in co_occurrence:
+                        co_occurrence[first_char] = {}
+                    if second_char not in co_occurrence[first_char]:
+                        co_occurrence[first_char][second_char] = 0
+                    co_occurrence[first_char][second_char] += 1
 
         # 构建边列表
         edges = []
         seen_pairs = set()
-        for a, partners in co_occurrence.items():
-            for b, count in partners.items():
-                pair_key = tuple(sorted([a, b]))
+        for primary_char, partners in co_occurrence.items():
+            for partner_char, count in partners.items():
+                pair_key = tuple(sorted([primary_char, partner_char]))
                 if pair_key in seen_pairs:
                     continue
                 seen_pairs.add(pair_key)
@@ -8332,8 +8332,8 @@ class StorageEngine:
             # 两两共现计数
             for i in range(len(chars_in_scene)):
                 for j in range(i + 1, len(chars_in_scene)):
-                    a, b = chars_in_scene[i], chars_in_scene[j]
-                    key = (a, b) if a <= b else (b, a)
+                    first_char, second_char = chars_in_scene[i], chars_in_scene[j]
+                    key = (first_char, second_char) if first_char <= second_char else (second_char, first_char)
                     if key not in pair_stats:
                         pair_stats[key] = {
                             "co_scenes": 0,
