@@ -31,7 +31,7 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.3.7"
+    __version__ = "5.3.9"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -134,6 +134,7 @@ class MindForge:
         self._index: Optional[IndexEngine] = None
         self._query: Optional[QueryEngine] = None
         self._multi_agent = None
+        self._intent_router = None  # v5.3.9 lazy
 
         if self.config.encrypted:
             self._init_encryption()
@@ -2786,3 +2787,184 @@ class MindForge:
                 from modules.multi_agent import MultiAgentMemoryManager
             self._multi_agent = MultiAgentMemoryManager(self._storage)
         return self._multi_agent
+
+    # ===== v5.3.9 五大能力增强 API =====
+
+    # --- 1. 意图分类路由 ---
+    def classify_intent(self, text: str, force: Optional[str] = None) -> Dict[str, Any]:
+        """意图分类路由（v5.3.9 新增）
+
+        三层路由：规则正则 → 关键词加权 → （可选）LLM 兜底。
+        """
+        try:
+            from ..modules.intent_router import IntentRouter
+        except (ImportError, ValueError):
+            from modules.intent_router import IntentRouter
+        if self._intent_router is None:
+            self._intent_router = IntentRouter()
+        result = self._intent_router.classify((text or "")[:4096], force_override=force)
+        out = result.to_dict()
+        out["routing_target"] = self._intent_router.routing_target(result.intent)
+        return out
+
+    # --- 2. 矛盾检测 + 自动衰减 ---
+    def scan_conflicts(self,
+                       category: Optional[str] = None,
+                       limit: int = 500,
+                       apply_decay: bool = False) -> Dict[str, Any]:
+        """扫描记忆中的矛盾（反义词/属性值/时间线）并可自动衰减（v5.3.9 新增）"""
+        try:
+            from ..modules.conflict_detector import ConflictDetector
+        except (ImportError, ValueError):
+            from modules.conflict_detector import ConflictDetector
+        entries = self._storage.list_memories(
+            category=category, limit=max(1, min(5000, int(limit))), offset=0,
+        )
+        mem_dicts = []
+        by_id: Dict[str, Dict[str, Any]] = {}
+        for e in entries:
+            created_ts = 0.0
+            try:
+                created_ts = getattr(e, "created_at").timestamp()
+            except Exception:
+                pass
+            d = {"id": str(e.id), "content": str(e.content),
+                 "created_at": created_ts, "importance": getattr(e, "importance", None),
+                 "tags": list(getattr(e, "tags", None) or [])}
+            mem_dicts.append(d)
+            by_id[d["id"]] = d
+        detector = ConflictDetector()
+        conflicts = detector.scan_memories(mem_dicts)
+        actions = detector.plan_decay(conflicts, by_id)
+        if apply_decay:
+            applied = 0
+            for act in actions:
+                try:
+                    self._storage.adjust_importance(act.memory_id, act.delta_importance)
+                    if act.added_tags:
+                        self._storage.append_tags(act.memory_id, act.added_tags)
+                    applied += 1
+                except Exception:
+                    pass
+            return {
+                "conflicts_found": len(conflicts),
+                "conflicts": [c.to_dict() for c in conflicts[:50]],
+                "decay_planned": [a.to_dict() for a in actions[:100]],
+                "decay_applied": applied,
+            }
+        return {
+            "conflicts_found": len(conflicts),
+            "conflicts": [c.to_dict() for c in conflicts[:100]],
+            "decay_plan": [a.to_dict() for a in actions[:200]],
+        }
+
+    # --- 3. 记忆 → 技能转化 ---
+    def extract_skills(self, category: Optional[str] = None,
+                       limit: int = 2000,
+                       min_cluster_size: int = 2) -> Dict[str, Any]:
+        """从记忆中抽取可复用的技能模板（v5.3.9 新增）"""
+        try:
+            from ..modules.skill_extractor import SkillExtractor
+        except (ImportError, ValueError):
+            from modules.skill_extractor import SkillExtractor
+        entries = self._storage.list_memories(
+            category=category, limit=max(1, min(10000, int(limit))), offset=0,
+        )
+        mem_dicts = []
+        for e in entries:
+            mem_dicts.append({
+                "id": str(e.id), "content": str(e.content),
+                "tags": list(getattr(e, "tags", None) or []),
+                "category": getattr(e, "category", ""),
+            })
+        extractor = SkillExtractor(min_cluster_size=max(1, int(min_cluster_size)))
+        skills = extractor.extract(mem_dicts)
+        return {
+            "memories_processed": len(mem_dicts),
+            "skills_found": len(skills),
+            "skills": [s.to_dict() for s in skills[:50]],
+        }
+
+    # --- 4. 混合检索增强：查询扩展 + Cross-Encoder 重排 ---
+    def search_enhanced(self, query: str,
+                        max_results: int = 20,
+                        min_relevance: float = 0.0,
+                        rerank_top_k: int = 20,
+                        expand: bool = True,
+                        rerank: bool = True) -> Dict[str, Any]:
+        """混合检索增强版：查询扩展 + 三路召回 + Cross-Encoder 重排（v5.3.9 新增）"""
+        try:
+            from ..modules.hybrid_search import QueryExpander, CrossEncoderReranker
+        except (ImportError, ValueError):
+            from modules.hybrid_search import QueryExpander, CrossEncoderReranker
+
+        q = (query or "")[:2048]
+        expansion = None
+        search_query = q
+        if expand:
+            expander = QueryExpander()
+            expansion = expander.expand(q)
+            # 用 rewrite 列表里多个查询的并集作为召回（取第一个 rewrite 为主查询）
+            search_query = " ".join(expansion.rewrites[:3]) if expansion.rewrites else q
+
+        base = self.search(
+            query=search_query,
+            max_results=max(1, min(200, int(max_results) * 3)),
+            min_relevance=float(min_relevance),
+        )
+        if not rerank:
+            return {
+                "query_original": q,
+                "query_expansion": expansion.to_dict() if expansion else None,
+                "chunks": [{"memory_id": c.memory_id, "content": c.content,
+                            "relevance_score": float(c.relevance_score)}
+                           for c in base.chunks[:max_results]],
+                "rerank": False,
+            }
+        # 转成重排输入
+        cands = []
+        for c in base.chunks:
+            meta = {"memory_id": c.memory_id}
+            try:
+                entry = self._storage.get_memory(c.memory_id)
+                if entry is not None:
+                    meta["importance"] = getattr(entry, "importance", None)
+                    meta["category"] = getattr(entry, "category", None)
+                    meta["layer"] = getattr(entry, "layer", None)
+            except Exception:
+                pass
+            cands.append({
+                "memory_id": c.memory_id,
+                "content": c.content,
+                "original_score": float(c.relevance_score),
+                **meta,
+            })
+        reranker = CrossEncoderReranker()
+        reranked = reranker.rerank(q, cands, top_k=max(1, int(rerank_top_k)))
+        reranked = reranked[:max(1, int(max_results))]
+        return {
+            "query_original": q,
+            "query_expansion": expansion.to_dict() if expansion else None,
+            "initial_count": len(base.chunks),
+            "reranked_count": len(reranked),
+            "reranked": [r.to_dict() for r in reranked],
+        }
+
+    # --- 5. 会话焦点增强 ---
+    def session_focus(self, messages: List[Dict[str, Any]],
+                      window_size: int = 40,
+                      augment_query: Optional[str] = None) -> Dict[str, Any]:
+        """会话焦点聚类 + 漂移检测 + 查询增强（v5.3.9 新增）
+
+        messages: [{id, role, content, timestamp}]
+        """
+        try:
+            from ..modules.session_focus import SessionFocus
+        except (ImportError, ValueError):
+            from modules.session_focus import SessionFocus
+        engine = SessionFocus(max_messages_per_window=max(5, int(window_size)))
+        summary = engine.summarize(messages or [], window_size=max(5, int(window_size)))
+        out = summary.to_dict()
+        if augment_query:
+            out["enhanced_query"] = summary.enhance_query(str(augment_query))
+        return out

@@ -72,7 +72,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.3.7"
+    __version__ = "5.3.9"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -3074,6 +3074,39 @@ def main():
     p_char_rel.add_argument("char1", help="角色 1 ID")
     p_char_rel.add_argument("char2", help="角色 2 ID")
 
+    # ===== v5.3.9 新增五大能力 CLI =====
+    p_intent_router = sub.add_parser("intent-router", help="意图分类路由（v5.3.9 新增）")
+    p_intent_router.add_argument("text", help="要分类的文本（用引号包裹）")
+    p_intent_router.add_argument("--force", help="强制指定意图 ID 用于 debug")
+    p_intent_router.add_argument("--json", action="store_true", help="以 JSON 格式输出完整结果")
+
+    p_conflict_scan = sub.add_parser("conflict-scan", help="矛盾扫描 + 自动衰减（v5.3.9 新增）")
+    p_conflict_scan.add_argument("--category", help="只扫描指定类别")
+    p_conflict_scan.add_argument("--limit", type=int, default=500, help="扫描最多多少条记忆")
+    p_conflict_scan.add_argument("--apply-decay", action="store_true",
+                                 help="应用衰减动作（降低重要性 + 打 conflict 标签）")
+    p_conflict_scan.add_argument("--json", action="store_true", help="以 JSON 格式输出完整结果")
+
+    p_skill_extract = sub.add_parser("skill-extract", help="从记忆抽取可复用技能模板（v5.3.9 新增）")
+    p_skill_extract.add_argument("--category", help="只抽取指定类别")
+    p_skill_extract.add_argument("--limit", type=int, default=2000, help="处理最多多少条记忆")
+    p_skill_extract.add_argument("--min-cluster", type=int, default=2, help="最小聚类规模（2+）")
+    p_skill_extract.add_argument("--json", action="store_true", help="以 JSON 格式输出完整结果")
+
+    p_rerank_search = sub.add_parser("rerank-search", help="混合检索（查询扩展 + Cross-Encoder 重排）（v5.3.9 新增）")
+    p_rerank_search.add_argument("query", help="查询文本")
+    p_rerank_search.add_argument("--top", type=int, default=10, help="返回 Top N 条（默认 10）")
+    p_rerank_search.add_argument("--no-expand", action="store_true", help="关闭查询扩展")
+    p_rerank_search.add_argument("--no-rerank", action="store_true", help="关闭 Cross-Encoder 重排")
+    p_rerank_search.add_argument("--json", action="store_true", help="以 JSON 格式输出完整结果")
+
+    p_session_focus = sub.add_parser("session-focus", help="会话焦点聚类 + 漂移检测（v5.3.9 新增）")
+    p_session_focus.add_argument("--messages", "-m", action="append", required=True,
+                                  help='消息条目 "role:内容"，可多次传入')
+    p_session_focus.add_argument("--window", type=int, default=40, help="滑动窗口大小（默认 40）")
+    p_session_focus.add_argument("--augment", help="若指定，输出针对该 query 的增强查询")
+    p_session_focus.add_argument("--json", action="store_true", help="以 JSON 格式输出完整结果")
+
     args = parser.parse_args()
 
     # v5.2.8 修复：统一展开逗号分隔的标签（覆盖全部 nargs="+" 的 --tags 命令）
@@ -3430,6 +3463,252 @@ def cmd_char_relationship(args):
     return 0
 
 
+# ===== v5.3.9 新增五大能力 CLI 命令实现 =====
+
+def cmd_intent_router(args):
+    """意图分类路由 CLI 入口"""
+    cm = _get_memory(args)
+    print(c(f"\n🧭 意图分类路由（v5.3.9）", "bold"))
+    print("=" * 60)
+    try:
+        result = cm.classify_intent(args.text, force=getattr(args, "force", None))
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+    if getattr(args, "json", False):
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        cm.close()
+        return 0
+    print(f"  输入文本:    {(args.text or '')[:60]}...")
+    print(f"  意图 ID:     {c(result['intent'], 'cyan')}")
+    print(f"  意图名:      {result['label']}")
+    print(f"  置信度:      {result['confidence']:.3f}")
+    print(f"  路由目标:    {result.get('routing_target', result.get('routing', '—'))}")
+    matched = result.get("matched_rules") or []
+    if matched:
+        print(f"  命中规则:    {', '.join(matched[:5])}")
+    top_keywords = result.get("top_keywords_hits") or []
+    if not top_keywords:
+        kw_hits = result.get("keyword_hits") or {}
+        if kw_hits:
+            top_keywords = [(k, kw_hits[k]) for k in list(kw_hits)[:5]]
+    if top_keywords:
+        print(f"  关键词命中:  {', '.join([f'{k}({w})' for k, w in top_keywords[:5]])}")
+    print(f"  层级:        {'规则' if result['level'] == 0 else ('关键词' if result['level'] == 1 else 'LLM 兜底')}")
+    cm.close()
+    return 0
+
+
+def cmd_conflict_scan(args):
+    """矛盾扫描 + 自动衰减 CLI 入口"""
+    cm = _get_memory(args)
+    print(c(f"\n⚡ 矛盾扫描 + 自动衰减（v5.3.9）", "bold"))
+    print("=" * 60)
+    try:
+        result = cm.scan_conflicts(
+            category=getattr(args, "category", None),
+            limit=max(1, int(getattr(args, "limit", 500))),
+            apply_decay=bool(getattr(args, "apply_decay", False)),
+        )
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+    if getattr(args, "json", False):
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        cm.close()
+        return 0
+    print(f"  扫描范围:    {getattr(args, 'category', '全部')}  (limit={getattr(args, 'limit', 500)})")
+    print(f"  模式:        {'只读扫描' if not getattr(args, 'apply_decay', False) else c('已应用衰减！', 'red')}")
+    print(f"  矛盾总数:    {c(str(result['conflicts_found']), 'red' if result['conflicts_found'] else 'green')}")
+    if result["conflicts_found"] == 0:
+        print(c("\n✅ 未发现明显矛盾", "green"))
+        cm.close()
+        return 0
+    type_cnt: Dict[str, int] = {}
+    for p in result.get("conflicts", []):
+        t = p.get("conflict_type", "unknown")
+        type_cnt[t] = type_cnt.get(t, 0) + 1
+    print(f"  矛盾类型:    {', '.join([f'{k}({v})' for k, v in type_cnt.items()])}")
+    print(c("\n📋 前 8 条矛盾：", "cyan"))
+    for i, p in enumerate(result.get("conflicts", [])[:8], 1):
+        ids = (p.get("id_a") or "")[:6] + " ↔ " + (p.get("id_b") or "")[:6]
+        print(f"  [{i}] {c(p['conflict_type'], 'yellow')}  sev={p['severity']:.2f}  ids={ids}")
+        print(f"       {p.get('suggestion', '')[:80]}")
+    plan = result.get("decay_plan") or result.get("decay_planned") or []
+    if plan:
+        print(c(f"\n📉 衰减计划（共 {len(plan)} 条，前 5 条）：", "cyan"))
+        for a in plan[:5]:
+            tags = ", ".join(a.get("added_tags") or [])
+            print(f"   • {a.get('memory_id', '')[:8]}  Δimp={a.get('delta_importance', 0):+.2f} "
+                  f"tags=[{tags}]  reason={a.get('reason', '')[:30]}")
+    if "decay_applied" in result:
+        print(c(f"\n✅ 已应用衰减 {result['decay_applied']} 条", "green"))
+    cm.close()
+    return 0
+
+
+def cmd_skill_extract(args):
+    """记忆→技能模板抽取 CLI 入口"""
+    cm = _get_memory(args)
+    print(c(f"\n🧠 记忆 → 技能模板抽取（v5.3.9）", "bold"))
+    print("=" * 60)
+    try:
+        result = cm.extract_skills(
+            category=getattr(args, "category", None),
+            limit=max(1, int(getattr(args, "limit", 2000))),
+            min_cluster_size=max(1, int(getattr(args, "min_cluster", 2))),
+        )
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+    if getattr(args, "json", False):
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        cm.close()
+        return 0
+    print(f"  处理记忆数:  {result['memories_processed']}")
+    print(f"  抽取出技能:  {c(str(result['skills_found']), 'green' if result['skills_found'] else 'yellow')}")
+    if not result["skills_found"]:
+        print(c("\n⚠️  未抽取出可用技能（增加记忆量或降低 --min-cluster）", "yellow"))
+        cm.close()
+        return 0
+    for i, s in enumerate(result["skills"][:8], 1):
+        print(c(f"\n  [技能 {i}] {s['name']}  (cluster={s['cluster_size']})", "bold"))
+        triggers = s.get("triggers") or []
+        if triggers:
+            print(f"       触发词: {', '.join(triggers[:8])}")
+        slots = s.get("slots") or []
+        if slots:
+            print(f"       槽位:   {', '.join([sl.get('name','?') for sl in slots[:8]])}")
+        steps = s.get("steps") or []
+        if steps:
+            print(f"       步骤 ({len(steps)}):")
+            for j, st in enumerate(steps[:6], 1):
+                action = st if isinstance(st, str) else st.get("action", str(st))
+                print(f"         {j}. {action[:70]}{'…' if len(action) > 70 else ''}")
+        samples = s.get("examples") or []
+        if samples:
+            print(f"       样例 ({len(samples)}):")
+            for ex in samples[:2]:
+                print(f"         - {(ex or '')[:60]}…")
+    cm.close()
+    return 0
+
+
+def cmd_rerank_search(args):
+    """混合检索增强（查询扩展 + Cross-Encoder 重排）CLI 入口"""
+    cm = _get_memory(args)
+    print(c(f"\n🔍 混合检索增强（查询扩展 + Cross-Encoder 重排）（v5.3.9）", "bold"))
+    print("=" * 60)
+    try:
+        result = cm.search_enhanced(
+            query=args.query,
+            max_results=max(1, int(getattr(args, "top", 10))),
+            expand=not bool(getattr(args, "no_expand", False)),
+            rerank=not bool(getattr(args, "no_rerank", False)),
+        )
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+    if getattr(args, "json", False):
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        cm.close()
+        return 0
+    print(f"  查询:        {args.query[:70]}")
+    print(f"  查询扩展:    {'启用' if not getattr(args, 'no_expand', False) else '关闭'}")
+    print(f"  Cross-Enc:   {'启用' if not getattr(args, 'no_rerank', False) else '关闭'}")
+    exp = result.get("query_expansion") or {}
+    if exp:
+        print(c("\n✨ 查询扩展：", "cyan"))
+        terms = exp.get("expanded_terms") or []
+        rewrites = exp.get("rewrites") or []
+        if terms:
+            print(f"     扩展词:   {', '.join(terms[:12])}")
+        if rewrites:
+            for r in rewrites[:3]:
+                print(f"     Rewrite:  {r}")
+    if not result.get("reranked"):
+        chunks = result.get("chunks") or []
+        if not chunks:
+            print(c("\n⚠️  无匹配结果", "yellow"))
+        else:
+            print(c(f"\n📄 召回 {len(chunks)} 条（不重排，前 8）：", "cyan"))
+            for i, c_ in enumerate(chunks[:8], 1):
+                print(f"  [{i}] score={c_.get('relevance_score', 0):.3f}  id={c_['memory_id'][:8]}")
+                print(f"       {(c_.get('content') or '')[:90]}…")
+        cm.close()
+        return 0
+    print(f"  初始召回:    {result.get('initial_count', 0)}")
+    print(f"  重排后输出:  {result.get('reranked_count', 0)}")
+    print(c("\n📄 重排结果（前 8）：", "cyan"))
+    for i, rk in enumerate(result["reranked"][:8], 1):
+        delta = rk.get("delta_rank") or 0
+        mark = "↑" if delta < 0 else ("↓" if delta > 0 else "→")
+        print(f"  [{i}] fused={rk.get('fused_score', 0):.3f}  orig={rk.get('original_score', 0):.3f}  "
+              f"{mark}{abs(delta)}  id={rk['memory_id'][:8]}")
+        print(f"       {(rk.get('content') or '')[:90]}…")
+    cm.close()
+    return 0
+
+
+def cmd_session_focus(args):
+    """会话焦点聚类 + 漂移检测 CLI 入口"""
+    cm = _get_memory(args)
+    print(c(f"\n🎯 会话焦点分析（v5.3.9）", "bold"))
+    print("=" * 60)
+    # 解析 --messages/-m role:content
+    msgs: List[Dict[str, Any]] = []
+    for idx, entry in enumerate(args.messages or [], 1):
+        if ":" in entry:
+            role, content = entry.split(":", 1)
+        else:
+            role, content = "user", entry
+        msgs.append({
+            "id": f"m{idx}",
+            "role": role.strip().lower() or "user",
+            "content": content.strip(),
+            "timestamp": float(idx),
+        })
+    window = max(5, int(getattr(args, "window", 40)))
+    augment = getattr(args, "augment", None)
+    try:
+        result = cm.session_focus(msgs, window_size=window, augment_query=augment)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+    if getattr(args, "json", False):
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        cm.close()
+        return 0
+    print(f"  消息数:      {len(msgs)}")
+    print(f"  窗口大小:    {window}")
+    print(f"  聚类数:      {len(result.get('clusters', []))}")
+    drift = result.get("drift_score", 0.0)
+    drift_color = "green" if drift < 0.3 else ("yellow" if drift < 0.6 else "red")
+    print(f"  漂移得分:    {c(f'{drift:.3f}', drift_color)}  ({'稳定' if drift < 0.3 else ('轻微漂移' if drift < 0.6 else '严重漂移')})")
+    kw = result.get("focus_keywords") or []
+    if kw:
+        print(f"  当前焦点:    {', '.join([f'{k}({w:.2f})' for k, w in kw[:10]])}")
+    recent_shifts = result.get("recent_shifts") or []
+    if recent_shifts:
+        print(c("\n🔄 最近主题切换：", "cyan"))
+        for sh in recent_shifts[:4]:
+            print(f"     t={sh.get('window_index')}  top1={sh.get('top_keyword', '—')} "
+                  f"jaccard={sh.get('jaccard', 0):.2f}")
+    if augment:
+        eq = result.get("enhanced_query")
+        if eq:
+            print(c("\n✨ 增强查询：", "cyan"))
+            print(f"     原始: {augment}")
+            print(f"     增强: {eq}")
+    cm.close()
+    return 0
+
+
 def _main_dispatch(args):
     """命令分发（v5.3.7 重构：将 commands dict 和 dispatch 逻辑独立）"""
     commands = {
@@ -3607,6 +3886,12 @@ def _main_dispatch(args):
         "drama-genre-trend": cmd_drama_genre_trend,
         "drama-binge-score": cmd_drama_binge_score,
         "char-relationship": cmd_char_relationship,
+        # v5.3.9 新增五大能力
+        "intent-router": cmd_intent_router,
+        "conflict-scan": cmd_conflict_scan,
+        "skill-extract": cmd_skill_extract,
+        "rerank-search": cmd_rerank_search,
+        "session-focus": cmd_session_focus,
     }
 
     cmd = commands.get(args.command)

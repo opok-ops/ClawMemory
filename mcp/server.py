@@ -46,6 +46,9 @@ def _import_mindforge():
                      "modules.knowledge_graph", "modules.personality",
                      "modules.federated", "modules.privacy", "modules.multimodal",
                      "modules.evolution", "modules.categorizer",
+                     "modules.intent_router", "modules.conflict_detector",
+                     "modules.skill_extractor", "modules.hybrid_search",
+                     "modules.session_focus",
                      "adapters", "cli", "cli.main", "mcp", "mcp.server"):
             try:
                 __import__("MindForge." + _sub)
@@ -233,6 +236,75 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "properties": {"drama_id": {"type": "string"}},
         },
     },
+    # ===== v5.3.9 新增五大能力 =====
+    {
+        "name": "intent_router",
+        "description": "意图分类路由（规则正则→关键词加权→LLM 兜底）。返回 intent / label / confidence / routing_target。",
+        "inputSchema": {
+            "type": "object",
+            "required": ["text"],
+            "properties": {
+                "text": {"type": "string", "description": "要分类的文本"},
+                "force": {"type": "string", "description": "强制指定意图 ID（debug 用）"},
+            },
+        },
+    },
+    {
+        "name": "conflict_scan",
+        "description": "记忆矛盾扫描：反义词对 / 属性值不一致 / 时间线冲突，并可自动衰减（降重要性 + 打标签）。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "category": {"type": "string", "description": "只扫描指定分类"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 500},
+                "apply_decay": {"type": "boolean", "default": False,
+                                "description": "若 true，直接写入衰减动作"},
+            },
+        },
+    },
+    {
+        "name": "skill_extract",
+        "description": "从记忆中抽取可复用的技能模板（聚类→槽位→步骤→触发词）。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "category": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 2000},
+                "min_cluster_size": {"type": "integer", "minimum": 1, "default": 2},
+            },
+        },
+    },
+    {
+        "name": "rerank_search",
+        "description": "混合检索增强：同义词/上位词查询扩展 + 三路召回 + Cross-Encoder 重排。",
+        "inputSchema": {
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string"},
+                "max_results": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+                "expand": {"type": "boolean", "default": True},
+                "rerank": {"type": "boolean", "default": True},
+            },
+        },
+    },
+    {
+        "name": "session_focus",
+        "description": "会话焦点分析：主题聚类、焦点词、漂移检测、可生成增强查询。",
+        "inputSchema": {
+            "type": "object",
+            "required": ["messages"],
+            "properties": {
+                "messages": {
+                    "type": "array",
+                    "description": '每条为 {"id","role","content","timestamp?"} 或 {"role":"user","content":"..."}',
+                    "items": {"type": "object"},
+                },
+                "window_size": {"type": "integer", "minimum": 5, "maximum": 400, "default": 40},
+                "augment_query": {"type": "string", "description": "若提供，生成带焦点的增强查询"},
+            },
+        },
+    },
 ]
 
 
@@ -404,6 +476,57 @@ def h_drama_binge_score(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     return {"drama_id": drama_id, "result": _clean(mf.storage.drama_binge_score(drama_id))}
 
 
+# ===== v5.3.9 五大能力 MCP handlers =====
+
+def h_intent_router(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    result = mf.classify_intent(str(args["text"]), force=args.get("force"))
+    return _clean(result)
+
+
+def h_conflict_scan(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    return _clean(mf.scan_conflicts(
+        category=args.get("category"),
+        limit=int(args.get("limit", 500)),
+        apply_decay=bool(args.get("apply_decay", False)),
+    ))
+
+
+def h_skill_extract(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    return _clean(mf.extract_skills(
+        category=args.get("category"),
+        limit=int(args.get("limit", 2000)),
+        min_cluster_size=max(1, int(args.get("min_cluster_size", 2))),
+    ))
+
+
+def h_rerank_search(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    return _clean(mf.search_enhanced(
+        query=str(args["query"]),
+        max_results=min(50, max(1, int(args.get("max_results", 10)))),
+        expand=bool(args.get("expand", True)),
+        rerank=bool(args.get("rerank", True)),
+    ))
+
+
+def h_session_focus(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    raw_msgs = args.get("messages") or []
+    msgs: List[Dict[str, Any]] = []
+    for i, m in enumerate(raw_msgs, 1):
+        if not isinstance(m, dict):
+            continue
+        msgs.append({
+            "id": str(m.get("id") or f"m{i}"),
+            "role": str(m.get("role") or "user").lower(),
+            "content": str(m.get("content") or ""),
+            "timestamp": float(m.get("timestamp") or i),
+        })
+    return _clean(mf.session_focus(
+        msgs,
+        window_size=max(5, int(args.get("window_size", 40))),
+        augment_query=args.get("augment_query"),
+    ))
+
+
 HANDLERS: Dict[str, Any] = {
     "memory_add": h_memory_add,
     "memory_search": h_memory_search,
@@ -415,6 +538,12 @@ HANDLERS: Dict[str, Any] = {
     "char_relationship": h_char_relationship,
     "drama_genre_trend": h_drama_genre_trend,
     "drama_binge_score": h_drama_binge_score,
+    # v5.3.9 新增
+    "intent_router": h_intent_router,
+    "conflict_scan": h_conflict_scan,
+    "skill_extract": h_skill_extract,
+    "rerank_search": h_rerank_search,
+    "session_focus": h_session_focus,
 }
 
 
@@ -427,7 +556,7 @@ def _handle_initialize(request: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "protocolVersion": "2024-11-05",
         "capabilities": {"tools": {}, "logging": {}},
-        "serverInfo": {"name": "mindforge", "version": "5.3.7"},
+        "serverInfo": {"name": "mindforge", "version": "5.3.9"},
     }
 
 

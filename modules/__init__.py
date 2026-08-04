@@ -13,6 +13,13 @@ from .categorizer import TaxonomyManager
 from .privacy import PrivacyEngine, PrivacyScanResult
 from .integrator import MemoryIntegrator
 from .multi_agent import MultiAgentMemoryManager, AgentSpace, SpaceMember, SpaceRole
+# v5.3.9 新增五大能力
+from .intent_router import IntentRouter, IntentResult, INTENT_DEFS, DEFAULT_INTENT
+from .conflict_detector import ConflictDetector, ConflictPair, DecayAction, ANTONYM_PAIRS
+from .skill_extractor import SkillExtractor, SkillTemplate, SkillSlot
+from .hybrid_search import (QueryExpander, ExpansionResult,
+                            CrossEncoderReranker, RerankResult, RerankWeights)
+from .session_focus import SessionFocus, TopicCluster, FocusSummary
 
 __all__ = [
     "RecallEngine",
@@ -36,4 +43,24 @@ __all__ = [
     "AgentSpace",
     "SpaceMember",
     "SpaceRole",
+    # v5.3.9
+    "IntentRouter",
+    "IntentResult",
+    "INTENT_DEFS",
+    "DEFAULT_INTENT",
+    "ConflictDetector",
+    "ConflictPair",
+    "DecayAction",
+    "ANTONYM_PAIRS",
+    "SkillExtractor",
+    "SkillTemplate",
+    "SkillSlot",
+    "QueryExpander",
+    "ExpansionResult",
+    "CrossEncoderReranker",
+    "RerankResult",
+    "RerankWeights",
+    "SessionFocus",
+    "TopicCluster",
+    "FocusSummary",
 ]
