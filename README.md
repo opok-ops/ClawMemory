@@ -6,7 +6,7 @@
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.3.7-green.svg)](https://github.com/opok-ops/ClawMemory)
+[![Version](https://img.shields.io/badge/version-5.3.9-green.svg)](https://github.com/opok-ops/ClawMemory)
 
 ---
 
@@ -52,19 +52,21 @@ for chunk in results.chunks:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      MindForge v5.3.7                          │
+│                      MindForge v5.3.9                          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  ┌─────────────────────────────────────────────────────────┐ │
 │  │  Cognitive Layer（认知层）                                 │ │
 │  │  PersonalityEngine · KnowledgeGraph · MemoryEvolution   │ │
-│  │  FederatedMemory · AgentProfiling                       │ │
+│  │  FederatedMemory · AgentProfiling · IntentRouter         │ │
 │  └───────────────────────────┬─────────────────────────────┘ │
 │                               │                               │
 │  ┌───────────────────────────┴─────────────────────────────┐ │
 │  │  Function Layer（功能层）                                  │ │
 │  │  RecallEngine · Categorizer · PrivacyEngine             │ │
 │  │  Integrator · MultimodalMemory · ImportanceScorer       │ │
+│  │  ConflictDetector · SkillExtractor · SessionFocus       │ │
+│  │  HybridSearch (QueryExpander + CrossEncoder)             │ │
 │  └───────────────────────────┬─────────────────────────────┘ │
 │                               │                               │
 │  ┌───────────────────────────┴─────────────────────────────┐ │
@@ -76,6 +78,7 @@ for chunk in results.chunks:
 │  ┌───────────────────────────┴─────────────────────────────┐ │
 │  │  Adapter Layer（适配层）                                   │ │
 │  │  OpenClaw · Claude Code · Generic API · CLI / SDK       │ │
+│  │  MCP Server (tools: intent_router, conflict_scan, ...) │ │
 │  └─────────────────────────────────────────────────────────┘ │
 │                                                               │
 └─────────────────────────────────────────────────────────────┘
@@ -140,6 +143,11 @@ for chunk in results.chunks:
 | **Federated Memory** | 多 Agent P2P 记忆共享，信任等级，访问策略控制 |
 | **Privacy Engine** | 四级隔离（PUBLIC / INTERNAL / PRIVATE / STRICT）+ AES-256-GCM + PBKDF2-SHA256 |
 | **Short Drama Analytics** | 类型趋势、追剧粘性评分、节奏分析、角色关系、互动矩阵 |
+| **Intent Router** | 三层路由架构（规则正则→关键词加权→LLM 兜底），支持 10+ 业务意图分类 |
+| **Conflict Detector** | 反义词对 / 属性值不一致 / 时间线冲突三类检测 + 自动衰减策略 |
+| **Skill Extractor** | 从记忆聚类中抽取槽位、步骤、触发词，生成可复用技能模板 |
+| **Hybrid Search Enhanced** | 查询扩展（同义/上位/缩写/纠错）+ Cross-Encoder 多特征融合重排 |
+| **Session Focus** | 滑动窗口主题聚类、焦点漂移检测、面向当前会话的增强查询生成 |
 
 ---
 
@@ -201,6 +209,13 @@ MindForge export-md <file>
 
 # Web UI（可视化界面）
 MindForge serve [--port]
+
+# v5.3.9 五大能力
+MindForge intent-router <text> [--force] [--json]
+MindForge conflict-scan [--category] [--limit] [--apply-decay] [--json]
+MindForge skill-extract [--category] [--limit] [--min-cluster] [--json]
+MindForge rerank-search <query> [--top] [--no-expand] [--no-rerank] [--json]
+MindForge session-focus -m "role:内容" [--window] [--augment] [--json]
 ```
 
 ---
@@ -223,7 +238,12 @@ MindForge/
 │   ├── federated.py           # P2P 联邦记忆
 │   ├── privacy.py             # 隐私隔离引擎
 │   ├── multimodal.py          # 多模态记忆支持
-│   └── integrator.py          # 记忆整合器
+│   ├── integrator.py          # 记忆整合器
+│   ├── intent_router.py       # 意图分类路由（v5.3.9 新增）
+│   ├── conflict_detector.py   # 矛盾检测 + 自动衰减（v5.3.9 新增）
+│   ├── skill_extractor.py     # 记忆→技能模板（v5.3.9 新增）
+│   ├── hybrid_search.py       # 查询扩展 + Cross-Encoder 重排（v5.3.9 新增）
+│   └── session_focus.py       # 会话焦点聚类 + 漂移检测（v5.3.9 新增）
 ├── adapters/                  # 适配层 Adapter Layer
 │   ├── openclaw_adapter.py    # OpenClaw 集成
 │   ├── claude_adapter.py      # Claude Code 集成
@@ -265,6 +285,41 @@ context = adapter.get_context("database optimization")
 ---
 
 ## Changelog（版本记录）
+
+### v5.3.9 (2026-08-04)
+
+**五大能力增强**
+
+1. **Intent Router（意图分类路由）** — 三层路由架构（规则正则 → 关键词加权 → LLM 兜底），10+ 业务意图分类（记忆存储/检索/问答/任务规划/闲聊/创作等），带缓存加速。
+   - API: `classify_intent(text, force=None)`
+   - CLI: `MindForge intent-router <text> [--force] [--json]`
+   - MCP: `intent_router`
+
+2. **Conflict Detector（矛盾检测 + 自动衰减）** — 三类冲突检测：反义词对、属性值不一致、时间线冲突。自动生成衰减动作（降低重要性 + 打标签），保护核心记忆。
+   - API: `scan_conflicts(category?, limit?, apply_decay?)`
+   - CLI: `MindForge conflict-scan [--category] [--limit] [--apply-decay] [--json]`
+   - MCP: `conflict_scan`
+
+3. **Skill Extractor（记忆 → 技能转化）** — 从记忆中聚类抽取可复用技能模板：槽位识别（`{{参数}}`/`<参数>`）、步骤提炼（步骤1/首先/然后）、触发词归纳、示例采样。
+   - API: `extract_skills(category?, limit?, min_cluster_size?)`
+   - CLI: `MindForge skill-extract [--category] [--limit] [--min-cluster] [--json]`
+   - MCP: `skill_extract`
+
+4. **Hybrid Search Enhanced（混合检索增强）** — 查询扩展（同义词/上位词/缩写还原/纠错）+ CPU 版 Cross-Encoder 多特征融合重排（token overlap/phrase hit/ngram overlap/属性匹配/重要度加权）。
+   - API: `search_enhanced(query, max_results?, expand?, rerank?)`
+   - CLI: `MindForge rerank-search <query> [--top] [--no-expand] [--no-rerank] [--json]`
+   - MCP: `rerank_search`
+
+5. **Session Focus（会话焦点增强）** — 滑动窗口主题聚类（token/2-gram 频率 k-means），焦点漂移检测（新旧主题词 Jaccard 变化率），面向当前会话的增强查询生成。
+   - API: `session_focus(messages, window_size?, augment_query?)`
+   - CLI: `MindForge session-focus -m "role:内容" [--window] [--augment] [--json]`
+   - MCP: `session_focus`
+
+**其他更新**
+- MCP Server 工具数从 10 → 15，新增 5 个 v5.3.9 工具
+- 版本徽章、架构图、Core Features、Project Structure 同步更新至 v5.3.9
+- 五大模块在 `modules/__init__.py` 统一注册，支持 lazy import
+- 单元冒烟测试全部通过 + E2E 测试覆盖主类 API / CLI / MCP 三层
 
 ### v5.3.7 (2026-08-03)
 
