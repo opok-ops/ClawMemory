@@ -29,6 +29,7 @@ Source = "https://github.com/opok-ops/ClawMemory"
 
 [project.scripts]
 MindForge = "cli.main:main"
+MindForge-mcp = "mcp.server:main"
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov"]
