@@ -161,7 +161,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
     },
     {
         "name": "memory_list",
-        "description": "分页列出记忆条目。",
+        "description": "分页列出记忆条目，支持按分类/层级/重要性过滤和排序。",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -215,11 +215,15 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
     },
     {
         "name": "char_relationship",
-        "description": "短剧角色关系分析：六型分类 + 情感弧线 + 强度。",
+        "description": "短剧角色关系分析：六型分类（ally/rival/romance/family/mentor/stranger）+ 情感弧线 + 强度。需同时提供 char1_id 和 char2_id。",
         "inputSchema": {
             "type": "object",
             "required": ["drama_id"],
-            "properties": {"drama_id": {"type": "string"}},
+            "properties": {
+                "drama_id": {"type": "string"},
+                "char1_id": {"type": "string", "description": "角色 1 ID（可选，用于特定角色关系分析）"},
+                "char2_id": {"type": "string", "description": "角色 2 ID（可选，用于特定角色关系分析）"},
+            },
         },
     },
     {
@@ -451,7 +455,7 @@ def h_memory_context(mf, args: Dict[str, Any]) -> Dict[str, Any]:
         "agent_id": agent_id,
         "query": query,
         "token_budget": token_budget,
-        "result": _clean(mf.storage.memory_context(agent_id, query, token_budget=token_budget)),
+        "result": _clean(mf.storage.memory_context(agent_id, query, max_tokens=token_budget)),
     }
 
 
@@ -464,7 +468,17 @@ def h_agent_emotion(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 
 def h_char_relationship(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     drama_id = str(args["drama_id"])
-    return {"drama_id": drama_id, "result": _clean(mf.storage.char_relationship(drama_id))}
+    char1_id = str(args.get("char1_id") or "")
+    char2_id = str(args.get("char2_id") or "")
+    if not char1_id or not char2_id:
+        return {
+            "drama_id": drama_id,
+            "error": "char_relationship 需要同时提供 char1_id 和 char2_id",
+            "hint": "传 char1_id + char2_id 可分析特定角色关系；仅传 drama_id 不足以完成分析",
+        }
+    result = mf.storage.char_relationship(drama_id, char1_id, char2_id)
+    return {"drama_id": drama_id, "char1_id": char1_id, "char2_id": char2_id,
+            "result": _clean(result)}
 
 
 def h_drama_genre_trend(mf, _args: Dict[str, Any]) -> Dict[str, Any]:
