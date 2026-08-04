@@ -342,6 +342,24 @@ def _to_list_str(v) -> List[str]:
 # Serialization helpers
 # ---------------------------------------------------------------------------
 
+def _safe_int(v: Any, default: int = 0, lo: Optional[int] = None, hi: Optional[int] = None) -> int:
+    """Safely coerce arbitrary input to int, with optional range clamping.
+
+    Returns *default* for None / empty / non-numeric strings instead of raising.
+    """
+    if v is None or v == "":
+        return default
+    try:
+        iv = int(v)
+    except (ValueError, TypeError):
+        return default
+    if lo is not None and iv < lo:
+        iv = lo
+    if hi is not None and iv > hi:
+        iv = hi
+    return iv
+
+
 def _clean(v: Any) -> Any:
     if isinstance(v, dict):
         return {str(k): _clean(x) for k, x in v.items()}
@@ -392,23 +410,26 @@ def _entry_to_dict(m) -> Dict[str, Any]:
 
 def h_memory_add(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     from MindForge import Importance, MemoryLayer, PrivacyLevel
-    entry = mf.add(
-        content=str(args["content"]),
-        category=args.get("category") or "general",
-        tags=_to_list_str(args.get("tags")),
-        importance=_to_importance(args.get("importance"), Importance.MEDIUM),
-        layer=_to_layer(args.get("layer"), MemoryLayer.SHORT_TERM),
-        privacy=PrivacyLevel.INTERNAL,
-        source_agent=args.get("agent_id") or "",
-    )
-    return {"ok": True, "memory": _entry_to_dict(entry)}
+    try:
+        entry = mf.add(
+            content=str(args["content"]),
+            category=args.get("category") or "general",
+            tags=_to_list_str(args.get("tags")),
+            importance=_to_importance(args.get("importance"), Importance.MEDIUM),
+            layer=_to_layer(args.get("layer"), MemoryLayer.SHORT_TERM),
+            privacy=PrivacyLevel.INTERNAL,
+            source_agent=args.get("agent_id") or "",
+        )
+        return {"ok": True, "memory": _entry_to_dict(entry)}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
 
 
 def h_memory_search(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     categories = [args["category"]] if args.get("category") else None
     res = mf.search(
         query=str(args["query"]),
-        max_results=int(args.get("max_results", 5)),
+        max_results=_safe_int(args.get("max_results", 5), 5, 1, 100),
         min_relevance=float(args.get("min_relevance", 0.0)),
         categories=categories,
         agent_id=args.get("agent_id") or "",
@@ -430,8 +451,8 @@ def h_memory_list(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     entries = mf.list(
         category=args.get("category") or None,
         layer=_to_layer(args.get("layer"), None),
-        limit=int(args.get("limit", 20)),
-        offset=int(args.get("offset", 0)),
+        limit=_safe_int(args.get("limit", 20), 20, 1, 10000),
+        offset=_safe_int(args.get("offset", 0), 0, 0),
         sort_by=str(args.get("sort_by", "created_at")),
     )
     return {"count": len(entries), "results": [_entry_to_dict(e) for e in entries]}
@@ -450,7 +471,7 @@ def h_memory_importance(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 def h_memory_context(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     agent_id = str(args["agent_id"])
     query = str(args["query"])
-    token_budget = int(args.get("token_budget", 4000))
+    token_budget = _safe_int(args.get("token_budget", 4000), 4000, 256, 65536)
     return {
         "agent_id": agent_id,
         "query": query,
@@ -461,7 +482,7 @@ def h_memory_context(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 
 def h_agent_emotion(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     agent_id = str(args["agent_id"])
-    days = int(args.get("days", 30))
+    days = _safe_int(args.get("days", 30), 30, 1, 3650)
     return {"agent_id": agent_id, "days": days,
             "result": _clean(mf.storage.agent_emotion(agent_id, days=days))}
 
@@ -500,7 +521,7 @@ def h_intent_router(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 def h_conflict_scan(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     return _clean(mf.scan_conflicts(
         category=args.get("category"),
-        limit=int(args.get("limit", 500)),
+        limit=_safe_int(args.get("limit", 500), 500, 1, 5000),
         apply_decay=bool(args.get("apply_decay", False)),
     ))
 
@@ -508,15 +529,15 @@ def h_conflict_scan(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 def h_skill_extract(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     return _clean(mf.extract_skills(
         category=args.get("category"),
-        limit=int(args.get("limit", 2000)),
-        min_cluster_size=max(1, int(args.get("min_cluster_size", 2))),
+        limit=_safe_int(args.get("limit", 2000), 2000, 1, 50000),
+        min_cluster_size=max(1, _safe_int(args.get("min_cluster_size", 2), 2, 1, 100)),
     ))
 
 
 def h_rerank_search(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     return _clean(mf.search_enhanced(
         query=str(args["query"]),
-        max_results=min(50, max(1, int(args.get("max_results", 10)))),
+        max_results=min(50, max(1, _safe_int(args.get("max_results", 10), 10, 1, 50))),
         expand=bool(args.get("expand", True)),
         rerank=bool(args.get("rerank", True)),
     ))
@@ -536,7 +557,7 @@ def h_session_focus(mf, args: Dict[str, Any]) -> Dict[str, Any]:
         })
     return _clean(mf.session_focus(
         msgs,
-        window_size=max(5, int(args.get("window_size", 40))),
+        window_size=max(5, _safe_int(args.get("window_size", 40), 40, 5, 500)),
         augment_query=args.get("augment_query"),
     ))
 

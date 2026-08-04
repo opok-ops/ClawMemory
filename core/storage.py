@@ -583,10 +583,10 @@ class StorageEngine:
                    starred: bool = False,
                    metadata: Optional[Dict[str, Any]] = None) -> MemoryEntry:
         """添加记忆"""
-        # v5.3.0 安全加固：内容长度上限防 DoS
+        # v5.3.9 安全加固：内容长度上限防 DoS（超限直接拒绝，不做静默截断）
         MAX_CONTENT_LEN = 50000
         if content and isinstance(content, str) and len(content) > MAX_CONTENT_LEN:
-            content = content[:MAX_CONTENT_LEN]
+            raise ValueError(f"content exceeds {MAX_CONTENT_LEN} chars (got {len(content)})")
         if category and isinstance(category, str) and len(category) > 128:
             category = category[:128]
         if source_agent and isinstance(source_agent, str) and len(source_agent) > 128:
