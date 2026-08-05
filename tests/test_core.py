@@ -1,4 +1,4 @@
-"""MindForge v5.0 单元测试"""
+"""MindForge v5.3.9 单元测试"""
 import sys
 from pathlib import Path
 
@@ -624,6 +624,160 @@ class TestMultiAgentMemory(unittest.TestCase):
         self.assertTrue(ma.create_space("dup", owner_agent="a")["success"])
         self.assertFalse(ma.create_space("dup", owner_agent="b")["success"])
         cm.close()
+
+
+class TestIntentRouter(unittest.TestCase):
+    """v5.3.9 意图分类路由测试"""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp(prefix="mf_intent_")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_rule_matching(self):
+        """规则正则匹配"""
+        from modules.intent_router import IntentRouter
+        router = IntentRouter()
+        result = router.classify("记住：用户偏好深色主题")
+        self.assertEqual(result.label, "记忆存储")
+        self.assertGreater(result.confidence, 0.3)
+
+    def test_keyword_matching(self):
+        """关键词加权匹配"""
+        from modules.intent_router import IntentRouter
+        router = IntentRouter()
+        result = router.classify("搜索一下之前的部署记录")
+        self.assertEqual(result.label, "记忆检索")
+
+    def test_force_override(self):
+        """强制覆盖意图"""
+        from modules.intent_router import IntentRouter
+        router = IntentRouter()
+        result = router.classify("随便说点什么", force_override="memory_store")
+        self.assertEqual(result.intent, "memory_store")
+
+
+class TestConflictDetector(unittest.TestCase):
+    """v5.3.9 矛盾检测测试"""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp(prefix="mf_conflict_")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_antonym_detection(self):
+        """反义词对检测"""
+        from modules.conflict_detector import ConflictDetector
+        detector = ConflictDetector()
+        conflicts = detector.detect_antonym(
+            "MySQL 已启用，启动成功", "MySQL 已禁用，启动失败", "id1", "id2"
+        )
+        self.assertIsNotNone(conflicts)
+        self.assertGreaterEqual(conflicts.severity, 0.5)
+
+    def test_empty_memories(self):
+        """空记忆列表安全"""
+        from modules.conflict_detector import ConflictDetector
+        detector = ConflictDetector()
+        result = detector.scan_memories([])
+        self.assertEqual(len(result), 0)
+
+
+class TestSkillExtractor(unittest.TestCase):
+    """v5.3.9 技能转化测试"""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp(prefix="mf_skill_")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_extract_from_devops(self):
+        """从 DevOps 记忆中抽取技能"""
+        from modules.skill_extractor import SkillExtractor
+        extractor = SkillExtractor()
+        memories = [
+            {"id": "1", "content": "部署步骤1 安装依赖 步骤2 初始化 步骤3 启动", "category": "devops"},
+            {"id": "2", "content": "部署步骤1 检查环境 步骤2 执行部署 步骤3 验证", "category": "devops"},
+        ]
+        skills = extractor.extract(memories)
+        self.assertIsInstance(skills, list)
+
+    def test_empty_memories(self):
+        """空记忆列表安全"""
+        from modules.skill_extractor import SkillExtractor
+        extractor = SkillExtractor()
+        skills = extractor.extract([])
+        self.assertEqual(len(skills), 0)
+
+
+class TestHybridSearch(unittest.TestCase):
+    """v5.3.9 混合检索增强测试"""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp(prefix="mf_hybrid_")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_query_expansion(self):
+        """查询扩展"""
+        from modules.hybrid_search import QueryExpander
+        expander = QueryExpander()
+        result = expander.expand("MySQL 部署")
+        self.assertIsNotNone(result)
+        self.assertGreater(len(result.expanded_terms), 0)
+
+    def test_reranker(self):
+        """Cross-Encoder 重排"""
+        from modules.hybrid_search import CrossEncoderReranker
+        reranker = CrossEncoderReranker()
+        candidates = [
+            {"id": "1", "content": "MySQL 部署成功", "importance": 0.8},
+            {"id": "2", "content": "Python 安装教程", "importance": 0.5},
+            {"id": "3", "content": "MySQL 启动失败 端口占用", "importance": 0.7},
+        ]
+        results = reranker.rerank("MySQL 部署启动", candidates)
+        self.assertEqual(len(results), 3)
+        # MySQL 相关结果应排在前面
+        self.assertIn(results[0].memory_id, ["1", "3"])
+
+
+class TestSessionFocus(unittest.TestCase):
+    """v5.3.9 会话焦点测试"""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp(prefix="mf_focus_")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_focus_summary(self):
+        """焦点摘要"""
+        from modules.session_focus import SessionFocus
+        sf = SessionFocus()
+        messages = [
+            {"id": "m1", "role": "user", "content": "MySQL 怎么部署?"},
+            {"id": "m2", "role": "assistant", "content": "先安装再启动"},
+            {"id": "m3", "role": "user", "content": "报错了端口占用"},
+        ]
+        summary = sf.summarize(messages)
+        self.assertIsNotNone(summary)
+        self.assertGreater(len(summary.focus_keywords), 0)
+
+    def test_empty_messages(self):
+        """空消息安全"""
+        from modules.session_focus import SessionFocus
+        sf = SessionFocus()
+        summary = sf.summarize([])
+        self.assertIsNotNone(summary)
 
 
 if __name__ == "__main__":

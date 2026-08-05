@@ -274,7 +274,7 @@ class SkillExtractor:
             for t in SkillExtractor._tags_of(m):
                 tags.add(t)
             c = str(m.get("content", ""))
-            first_line = re.split(r"[\n，,。；;]", c, 1)[0][:40].strip()
+            first_line = re.split(r"[\n，,。；;]", c, maxsplit=1)[0][:40].strip()
             if first_line:
                 first_lines.append(first_line)
         tags_list = sorted(tags)

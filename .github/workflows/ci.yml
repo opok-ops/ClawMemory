@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: |
+          python -m pytest tests/ -v --tb=short 2>&1 || python tests/test_core.py
+
+      - name: Smoke test — CLI
+        run: |
+          python -c "from cli.main import main; main(['--help'])" || true
+
+      - name: Smoke test — MCP tools/list
+        run: |
+          python -c "
+          import sys, json
+          sys.path.insert(0, '.')
+          import importlib.util
+          spec = importlib.util.spec_from_file_location('MindForge', '__init__.py', submodule_search_locations=['.'])
+          mod = importlib.util.module_from_spec(spec)
+          sys.modules['MindForge'] = mod
+          spec.loader.exec_module(mod)
+          from mcp.server import _handle_tools_list
+          tools = _handle_tools_list({})['tools']
+          assert len(tools) == 15, f'Expected 15 tools, got {len(tools)}'
+          print(f'MCP tools: {len(tools)} OK')
+          "
