@@ -4557,6 +4557,8 @@ def cmd_import_url(args):
 
     try:
         import urllib.request
+        import http.client
+        import ssl
         import re
         from urllib.parse import urlparse
 
@@ -4564,18 +4566,27 @@ def cmd_import_url(args):
         safe_ip = _validate_url_safe(args.url)
         parsed = urlparse(args.url)
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        # 构建 IP 直连 URL，保留原始 Host header
-        direct_url = f"{parsed.scheme}://{safe_ip}:{port}{parsed.path}"
+        path = parsed.path or "/"
         if parsed.query:
-            direct_url += f"?{parsed.query}"
+            path += f"?{parsed.query}"
 
-        req = urllib.request.Request(direct_url, headers={
+        # v5.4.2 修复：HTTPS 时用自定义连接，连接 safe_ip 但 TLS 握手用原始域名校验
+        if parsed.scheme == "https":
+            ctx = ssl.create_default_context()
+            conn = http.client.HTTPSConnection(
+                host=safe_ip, port=port, timeout=10,
+                context=ctx, server_hostname=parsed.hostname,
+            )
+        else:
+            conn = http.client.HTTPConnection(host=safe_ip, port=port, timeout=10)
+
+        conn.request("GET", path, headers={
             "Host": parsed.hostname,
             "User-Agent": "MindForge/5.4 URL Importer",
         })
-
-        with urllib.request.urlopen(req, timeout=10) as response:
-            content = response.read(5 * 1024 * 1024).decode("utf-8", errors="ignore")
+        resp = conn.getresponse()
+        content = resp.read(5 * 1024 * 1024).decode("utf-8", errors="ignore")
+        conn.close()
 
         title_match = re.search(r"<title>([^<]+)</title>", content, re.IGNORECASE)
         title = title_match.group(1).strip() if title_match else "网页内容"

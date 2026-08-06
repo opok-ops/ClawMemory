@@ -3539,17 +3539,15 @@ class StorageEngine:
 
         conn.execute(f"DELETE FROM memories WHERE id IN ({placeholders})", ids)
 
-        # 审计日志
-        try:
-            conn.execute(
-                "INSERT INTO audit_log(action, actor, session_id, details, created_at) "
-                "VALUES(?, ?, ?, ?, ?)",
-                ("agent_purge", actor[:64], session_id[:64],
-                 f'{{"agent_id": "{aid}", "count": {total}}}',
-                 __import__("time").time())
-            )
-        except Exception:
-            pass
+        # v5.4.2 修复：改走 _add_audit，享受 fail-closed 保护（审计失败时拒绝操作）
+        self._add_audit(
+            action="agent_purge",
+            memory_id=aid,
+            actor=actor,
+            session_id=session_id,
+            privacy_level="INTERNAL",
+            details={"agent_id": aid, "count": total},
+        )
 
         conn.commit()
         return {"agent_id": aid, "total_found": total, "purged": total, "dry_run": False}
@@ -5443,9 +5441,12 @@ class StorageEngine:
                           "forget", "share", "accept", "reject",
                           # v5.4.2 联邦 ACL + 共享冲突审计动作
                           "acl_deny", "acl_add_rule", "acl_remove_rule",
-                          "conflict_detected", "conflict_resolved", "conflict_dismiss"}
+                          "conflict_detected", "conflict_resolved", "conflict_dismiss",
+                          # v5.4.2 agent 高敏操作变体
+                          "agent_purge", "agent_forget", "agent_merge", "agent_clean"}
         # v5.4.2：高敏感操作，审计失败时 fail-closed
-        HIGH_SENSITIVE_ACTIONS = {"delete", "purge", "grant", "revoke", "forget"}
+        HIGH_SENSITIVE_ACTIONS = {"delete", "purge", "grant", "revoke", "forget",
+                                  "agent_purge", "agent_forget"}
         if action not in ACTION_WHITELIST:
             action = "other"  # 非白名单降级为 other
         memory_id = self._strip_control(str(memory_id))[:64]
