@@ -27,11 +27,14 @@ def _is_suspicious_windows_path(comp: str) -> bool:
     """检测 Windows 短文件名绕过模式（如 PROGRA~1、FILE~1.TXT）"""
     if not comp or len(comp) == 0:
         return False
-    # 匹配 短名模式：基础名 + ~N + 可选扩展名
     import re as _re
+    # v5.3.7 修复：豁免 Windows 盘符根（如 C:\、D:），之前误报导致所有导出功能失效
+    if len(comp) <= 3 and _re.match(r'^[A-Za-z]:\\?$', comp):
+        return False
+    # 匹配 短名模式：基础名 + ~N + 可选扩展名
     if _re.match(r'^[^~]{1,6}~\d(\..{1,3})?$', comp, _re.IGNORECASE):
         return True
-    # 包含 / 或 \ 在不应该的位置
+    # 包含 / 或 \ 在不应该的位置；盘符内的 : 已在上文豁免
     if any(s in comp for s in ('..', '/', '\\', '\x00', ':')):
         return True
     return False
@@ -141,6 +144,18 @@ def _limited_fetch(cursor, limit: int = 10000):
     if len(rows) > limit:
         raise ValueError(f"查询结果超过行数上限 {limit}")
     return rows
+
+
+# v5.3.7 安全加固：Unicode 控制字符过滤，防止双向字符（RLO/LRO）显示欺骗
+def _filter_unicode_ctrl(s: str) -> str:
+    """过滤 Unicode Cf/Cc 类控制字符（保留 \\n\\r\\t），防止路径/ID 显示欺骗"""
+    if not isinstance(s, str) or not s:
+        return s
+    import unicodedata
+    return ''.join(
+        ch for ch in s
+        if unicodedata.category(ch) not in ('Cf', 'Cc') or ch in '\n\r\t'
+    )
 
 
 # v5.3.3 安全加固：LIKE 通配符转义，防止 % 和 _ 被解释为 SQL LIKE 通配符
@@ -568,10 +583,10 @@ class StorageEngine:
                    starred: bool = False,
                    metadata: Optional[Dict[str, Any]] = None) -> MemoryEntry:
         """添加记忆"""
-        # v5.3.0 安全加固：内容长度上限防 DoS
+        # v5.3.9 安全加固：内容长度上限防 DoS（超限直接拒绝，不做静默截断）
         MAX_CONTENT_LEN = 50000
         if content and isinstance(content, str) and len(content) > MAX_CONTENT_LEN:
-            content = content[:MAX_CONTENT_LEN]
+            raise ValueError(f"content exceeds {MAX_CONTENT_LEN} chars (got {len(content)})")
         if category and isinstance(category, str) and len(category) > 128:
             category = category[:128]
         if source_agent and isinstance(source_agent, str) and len(source_agent) > 128:
@@ -2925,7 +2940,7 @@ class StorageEngine:
             匹配的记忆列表
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         kw = keyword[:200] if isinstance(keyword, str) else ""
         if not aid or not kw:
             return []
@@ -3158,7 +3173,7 @@ class StorageEngine:
             差异报告字典
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
 
@@ -3234,7 +3249,7 @@ class StorageEngine:
             清理结果字典
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
 
@@ -3523,7 +3538,7 @@ class StorageEngine:
             时间线分析结果：按天计数、按小时分布、活跃峰、趋势
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
 
@@ -3615,7 +3630,7 @@ class StorageEngine:
             热力图矩阵：分类行 × 重要度列的计数矩阵
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
 
@@ -3809,7 +3824,7 @@ class StorageEngine:
             角色关系网络：节点列表 + 边列表（含共同出场次数）
         """
         conn = self._get_conn()
-        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
         if not did:
             return {"error": "短剧 ID 不能为空"}
 
@@ -3851,19 +3866,19 @@ class StorageEngine:
             char_list = list(char_set)
             for i in range(len(char_list)):
                 for j in range(i + 1, len(char_list)):
-                    a, b = char_list[i], char_list[j]
-                    if a not in co_occurrence:
-                        co_occurrence[a] = {}
-                    if b not in co_occurrence[a]:
-                        co_occurrence[a][b] = 0
-                    co_occurrence[a][b] += 1
+                    first_char, second_char = char_list[i], char_list[j]
+                    if first_char not in co_occurrence:
+                        co_occurrence[first_char] = {}
+                    if second_char not in co_occurrence[first_char]:
+                        co_occurrence[first_char][second_char] = 0
+                    co_occurrence[first_char][second_char] += 1
 
         # 构建边列表
         edges = []
         seen_pairs = set()
-        for a, partners in co_occurrence.items():
-            for b, count in partners.items():
-                pair_key = tuple(sorted([a, b]))
+        for primary_char, partners in co_occurrence.items():
+            for partner_char, count in partners.items():
+                pair_key = tuple(sorted([primary_char, partner_char]))
                 if pair_key in seen_pairs:
                     continue
                 seen_pairs.add(pair_key)
@@ -3918,7 +3933,7 @@ class StorageEngine:
             情感分析结果：正面/负面/中性计数、情感分布、主导情感
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
 
@@ -4020,7 +4035,7 @@ class StorageEngine:
             衰减分析结果：平均衰减率、高危记忆数、各衰减级别分布
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
 
@@ -4197,7 +4212,7 @@ class StorageEngine:
             角色成长弧线数据：按场景的台词量变化、活跃峰值、成长阶段
         """
         conn = self._get_conn()
-        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
         cid = character_id[:64] if isinstance(character_id, str) and character_id else ""
         if not did or not cid:
             return {"error": "短剧 ID 和角色 ID 不能为空"}
@@ -4291,7 +4306,7 @@ class StorageEngine:
             主题聚类结果：各主题簇列表、核心词、主题标签
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
 
@@ -4450,7 +4465,7 @@ class StorageEngine:
             行为洞察报告
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
 
@@ -4637,7 +4652,7 @@ class StorageEngine:
             剧情摘要、核心角色、关键场景索引
         """
         conn = self._get_conn()
-        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
         if not did:
             return {"error": "短剧 ID 不能为空"}
         max_length = max(100, min(2000, int(max_length)))
@@ -4785,7 +4800,7 @@ class StorageEngine:
             张力排行、各场景张力曲线、高潮场景索引
         """
         conn = self._get_conn()
-        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
         if not did:
             return {"error": "短剧 ID 不能为空"}
         top_k = max(1, min(50, int(top_k)))
@@ -7804,8 +7819,8 @@ class StorageEngine:
             关联记忆列表（含关联类型与关联强度）、关联图谱摘要
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
-        mid = memory_id[:64] if isinstance(memory_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        mid = _filter_unicode_ctrl(memory_id[:64]) if isinstance(memory_id, str) else ""
         if not aid or not mid:
             return {"error": "Agent ID 和记忆 ID 不能为空"}
         top_k = max(1, min(50, int(top_k)))
@@ -7962,8 +7977,8 @@ class StorageEngine:
             召回记忆列表（含召回分、匹配关键词）、召回统计
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
-        q = query[:500] if isinstance(query, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        q = _filter_unicode_ctrl(query[:500]) if isinstance(query, str) else ""
         if not aid or not q:
             return {"error": "Agent ID 和查询文本不能为空"}
         top_k = max(1, min(50, int(top_k)))
@@ -8087,7 +8102,7 @@ class StorageEngine:
             节奏分布、拖沓/密集段、节奏健康度
         """
         conn = self._get_conn()
-        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
         if not did:
             return {"error": "短剧 ID 不能为空"}
         window = max(1, min(10, int(window)))
@@ -8253,7 +8268,7 @@ class StorageEngine:
             互动矩阵、Top 互动关系、核心角色识别
         """
         conn = self._get_conn()
-        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
         if not did:
             return {"error": "短剧 ID 不能为空"}
         top_k = max(1, min(50, int(top_k)))
@@ -8317,8 +8332,8 @@ class StorageEngine:
             # 两两共现计数
             for i in range(len(chars_in_scene)):
                 for j in range(i + 1, len(chars_in_scene)):
-                    a, b = chars_in_scene[i], chars_in_scene[j]
-                    key = (a, b) if a <= b else (b, a)
+                    first_char, second_char = chars_in_scene[i], chars_in_scene[j]
+                    key = (first_char, second_char) if first_char <= second_char else (second_char, first_char)
                     if key not in pair_stats:
                         pair_stats[key] = {
                             "co_scenes": 0,
@@ -8424,7 +8439,7 @@ class StorageEngine:
         参考 Mem0 的动态记忆评分机制。
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
         days = max(1, min(365, int(days)))
@@ -8450,7 +8465,7 @@ class StorageEngine:
                 "drift_analysis": {},
                 "underrated": [],
                 "overrated": [],
-                "re-evaluation_suggestions": [],
+                "re_evaluation_suggestions": [],
             }
 
         # 重要度分布
@@ -8536,7 +8551,7 @@ class StorageEngine:
             "drift_analysis": drift,
             "underrated": underrated[:20],
             "overrated": overrated[:20],
-            "re-evaluation_suggestions": suggestions,
+            "re_evaluation_suggestions": suggestions,
         }
 
     def memory_context(self,
@@ -8549,8 +8564,8 @@ class StorageEngine:
         参考 Letta 的上下文窗口管理。
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
-        q = query[:500] if isinstance(query, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        q = _filter_unicode_ctrl(query[:500]) if isinstance(query, str) else ""
         if not aid or not q:
             return {"error": "Agent ID 和查询文本不能为空"}
         max_tokens = max(500, min(32000, int(max_tokens)))
@@ -8681,7 +8696,7 @@ class StorageEngine:
         主导情感与波动性评分。参考 Zep 的情感记忆功能。
         """
         conn = self._get_conn()
-        aid = agent_id[:128] if isinstance(agent_id, str) else ""
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
         if not aid:
             return {"error": "Agent ID 不能为空"}
         days = max(1, min(365, int(days)))
@@ -8889,7 +8904,7 @@ class StorageEngine:
         互动密度 20% + 经典台词比 15% + 完成率 15%。
         """
         conn = self._get_conn()
-        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
         if not did:
             return {"error": "短剧 ID 不能为空"}
 
@@ -9058,9 +9073,9 @@ class StorageEngine:
         分析两个特定角色之间的关系。
         """
         conn = self._get_conn()
-        did = drama_id[:64] if isinstance(drama_id, str) and drama_id else ""
-        c1 = char1_id[:64] if isinstance(char1_id, str) and char1_id else ""
-        c2 = char2_id[:64] if isinstance(char2_id, str) and char2_id else ""
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
+        c1 = _filter_unicode_ctrl(char1_id[:64]) if isinstance(char1_id, str) and char1_id else ""
+        c2 = _filter_unicode_ctrl(char2_id[:64]) if isinstance(char2_id, str) and char2_id else ""
         if not did:
             return {"error": "短剧 ID 不能为空"}
         if not c1 or not c2:

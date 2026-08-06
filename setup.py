@@ -45,6 +45,7 @@ setup(
     entry_points={
         "console_scripts": [
             "MindForge=cli.main:main",
+            "MindForge-mcp=mcp.server:main",
         ],
     },
     project_urls={

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -57,7 +57,7 @@
   <div class="hero-inner">
     <div class="hero-badge">
       <span class="badge-dot"></span>
-      <span>v5.3.6 全新升级 · 记忆关联推理 + 智能召回</span>
+      <span>v5.3.7 全新升级 · 记忆重要度分析 + 上下文注入</span>
     </div>
     <h1 class="hero-title">
       让 AI Agent
@@ -379,9 +379,27 @@
     <div class="changelog-list">
       <div class="cl-item">
         <div class="cl-left">
+          <span class="cl-ver">v5.3.7</span>
+          <span class="cl-date">2026-08-03</span>
+          <span class="cl-badge latest">最新</span>
+        </div>
+        <div class="cl-body">
+          <h4>🧠 记忆重要度/上下文注入/情感追踪 · 🎬 类型趋势/追剧粘性/角色关系</h4>
+          <ul>
+            <li><code>memory-importance</code> 记忆重要度分析（漂移分析+低估/高估识别）</li>
+            <li><code>memory-context</code> 上下文记忆注入（token 预算感知+格式化）</li>
+            <li><code>agent-emotion</code> Agent 情感追踪（情感时间线+波动性评分）</li>
+            <li><code>drama-genre-trend</code> 短剧类型趋势分析（rising/declining/stable）</li>
+            <li><code>drama-binge-score</code> 追剧粘性评分（多因子加权评级）</li>
+            <li><code>char-relationship</code> 角色关系深度分析（六型分类+情感弧线）</li>
+            <li>安全：_row_to_entry 防御性 JSON + Unicode 过滤 + 行数上限</li>
+          </ul>
+        </div>
+      </div>
+      <div class="cl-item">
+        <div class="cl-left">
           <span class="cl-ver">v5.3.6</span>
           <span class="cl-date">2026-08-02</span>
-          <span class="cl-badge latest">最新</span>
         </div>
         <div class="cl-body">
           <h4>✨ 记忆关联推理 · 🔍 智能召回 · 🎬 节奏/互动分析</h4>
