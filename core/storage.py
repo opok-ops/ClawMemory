@@ -5,6 +5,7 @@ MindForge v5.2.9 存储引擎
 
 import sqlite3
 import json
+import math
 import uuid
 import time
 from pathlib import Path
@@ -582,6 +583,133 @@ class StorageEngine:
         """)
         conn.commit()
 
+    @staticmethod
+    def _strip_control(text: Optional[str]) -> str:
+        """v5.4.0 安全加固：过滤控制字符（保留 \\t\\n\\r，过滤 \\x00-\\x1f 和 \\x7f）。
+        同时做 str 类型强制，非字符串转空串。"""
+        if text is None:
+            return ""
+        if not isinstance(text, str):
+            text = str(text)
+        out_chars = []
+        for c in text:
+            cp = ord(c)
+            if cp >= 0x20 and cp != 0x7F:
+                out_chars.append(c)
+            elif c in "\n\r\t":
+                out_chars.append(c)
+        return "".join(out_chars)
+
+    @staticmethod
+    def _sanitize_tags(tags: Optional[List[Any]],
+                       max_tag_len: int = 64,
+                       max_tags: int = 64) -> List[str]:
+        """v5.4.0 安全加固：tags 列表清洗——类型强制 + 控制字符过滤 + 长度限制 + 去重。"""
+        if tags is None:
+            return []
+        # 只接受 list/tuple/set/frozenset；其他（str、dict 等）直接返回空防误转
+        if isinstance(tags, str):
+            return []
+        if not isinstance(tags, (list, tuple, set, frozenset)):
+            return []
+        tags_list = list(tags)
+        seen: set[str] = set()
+        cleaned: list[str] = []
+        for t in tags_list:
+            if t is None:
+                continue
+            s = StorageEngine._strip_control(str(t)).strip()
+            if not s:
+                continue
+            if len(s) > max_tag_len:
+                s = s[:max_tag_len]
+            if s in seen:
+                continue
+            seen.add(s)
+            cleaned.append(s)
+            if len(cleaned) >= max_tags:
+                break
+        return cleaned
+
+    @staticmethod
+    def _sanitize_metadata(metadata: Optional[Dict[str, Any]],
+                           max_depth: int = 5,
+                           max_string_len: int = 2000) -> Dict[str, Any]:
+        """v5.4.0 安全加固：metadata 递归清洗——控制字符过滤 + 深度限制 + 字符串长度限制。"""
+        if metadata is None:
+            return {}
+        if not isinstance(metadata, dict):
+            return {}
+
+        def _sanitize(v, depth):
+            if depth > max_depth:
+                return None
+            if v is None:
+                return None
+            if isinstance(v, bool):
+                return v
+            if isinstance(v, int):
+                return v if abs(v) <= 2**63 else int(v // 2)
+            if isinstance(v, float):
+                if math.isnan(v) or math.isinf(v):
+                    return None  # NaN/Inf JSON 不可序列化，剔除
+                return v
+            if isinstance(v, str):
+                s = StorageEngine._strip_control(v)
+                if len(s) > max_string_len:
+                    s = s[:max_string_len]
+                # 全空白字符串返回空串而非 None（用户可能存空格占位）
+                return s
+            if isinstance(v, (list, tuple, set, frozenset)):
+                out = []
+                for item in list(v)[:256]:
+                    cleaned = _sanitize(item, depth + 1)
+                    if cleaned is not None:
+                        out.append(cleaned)
+                return out
+            if isinstance(v, dict):
+                out = {}
+                for k, val in list(v.items())[:256]:
+                    raw_key = StorageEngine._strip_control(str(k))
+                    cleaned_key = raw_key.strip()[:128]
+                    if not cleaned_key:
+                        continue
+                    cleaned_val = _sanitize(val, depth + 1)
+                    if cleaned_val is not None:
+                        out[cleaned_key] = cleaned_val
+                return out
+            return None
+
+        result = _sanitize(metadata, 0)
+        return result if isinstance(result, dict) else {}
+
+    @staticmethod
+    def _downgrade_enum(value: Any, enum_cls: type, default: Any) -> Any:
+        """v5.4.0 安全加固：枚举值降级——非法值自动降级到默认值。
+        同时支持大小写（.value 匹配 / 原始大小写 / .name 匹配）。
+        """
+        if isinstance(value, enum_cls):
+            return value
+        if value is None:
+            return default
+        sval = str(value).strip()
+        if not sval:
+            return default
+        # 1) value 精确匹配（大小写不敏感）
+        for m in enum_cls:
+            if m.value.lower() == sval.lower():
+                return m
+        # 2) name 精确匹配（大小写不敏感）
+        try:
+            return enum_cls[sval.upper()]
+        except KeyError:
+            pass
+        try:
+            return enum_cls[sval]
+        except KeyError:
+            pass
+        return default
+
     def add_memory(self,
                    content: str,
                    category: str = "general",
@@ -602,6 +730,25 @@ class StorageEngine:
             category = category[:128]
         if source_agent and isinstance(source_agent, str) and len(source_agent) > 128:
             source_agent = source_agent[:128]
+        if source_session and isinstance(source_session, str) and len(source_session) > 128:
+            source_session = source_session[:128]
+
+        # v5.4.0 安全加固：控制字符过滤（所有字符串字段 + tags + metadata 递归）
+        content = self._strip_control(content)
+        category = self._strip_control(category)
+        source_session = self._strip_control(source_session)
+        source_agent = self._strip_control(source_agent)
+        clean_tags = self._sanitize_tags(tags)
+        clean_metadata = self._sanitize_metadata(metadata)
+
+        # v5.4.0 安全加固：枚举值降级（非法值自动降级到默认值）
+        importance = self._downgrade_enum(importance, Importance, Importance.MEDIUM)
+        privacy = self._downgrade_enum(privacy, PrivacyLevel, PrivacyLevel.INTERNAL)
+        layer = self._downgrade_enum(layer, MemoryLayer, MemoryLayer.SHORT_TERM)
+        memory_type = self._downgrade_enum(memory_type, MemoryType, MemoryType.TEXT)
+
+        # starred 类型强制
+        starred = bool(starred)
 
         now = time.time()
         entry_id = str(uuid.uuid4())
@@ -622,7 +769,7 @@ class StorageEngine:
             id=entry_id,
             content=stored_content,
             category=category,
-            tags=tags or [],
+            tags=clean_tags,
             privacy=privacy,
             importance=importance,
             memory_type=memory_type,
@@ -632,7 +779,7 @@ class StorageEngine:
             created_at=now,
             updated_at=now,
             last_accessed_at=now,
-            metadata=metadata or {},
+            metadata=clean_metadata,
             starred=starred,
             encrypted=self.encrypted,
             ciphertext=ciphertext,
@@ -664,7 +811,7 @@ class StorageEngine:
             conn.execute("""
                 INSERT INTO memory_fts (rowid, content, category, tags)
                 VALUES ((SELECT rowid FROM memories WHERE id = ?), ?, ?, ?)
-            """, (entry.id, content, category, json.dumps(tags or [], ensure_ascii=False)))
+            """, (entry.id, content, category, json.dumps(clean_tags, ensure_ascii=False)))
 
         conn.commit()
         self._add_audit("add", entry.id, source_agent, source_session, privacy.value)
@@ -795,6 +942,26 @@ class StorageEngine:
         conn = self._get_conn()
         now = time.time()
 
+        # v5.4.0 安全加固：长度限制
+        MAX_CONTENT_LEN = 50000
+        if content is not None:
+            if isinstance(content, str) and len(content) > MAX_CONTENT_LEN:
+                raise ValueError(f"content exceeds {MAX_CONTENT_LEN} chars (got {len(content)})")
+            content = self._strip_control(content)
+        if category is not None:
+            if isinstance(category, str) and len(category) > 128:
+                category = category[:128]
+            category = self._strip_control(category)
+
+        # v5.4.0 安全加固：控制字符过滤 + 枚举降级
+        clean_tags = self._sanitize_tags(tags) if tags is not None else None
+        clean_metadata = self._sanitize_metadata(metadata) if metadata is not None else None
+        privacy_v = self._downgrade_enum(privacy, PrivacyLevel, None) if privacy is not None else None
+        importance_v = self._downgrade_enum(importance, Importance, None) if importance is not None else None
+        layer_v = self._downgrade_enum(layer, MemoryLayer, None) if layer is not None else None
+        actor = self._strip_control(actor)[:128]
+        session_id = self._strip_control(session_id)[:128]
+
         updates = []
         params = []
         fts_dirty = False  # 是否需要刷新 FTS
@@ -819,28 +986,28 @@ class StorageEngine:
             updates.append("category = ?")
             params.append(category)
             fts_dirty = True
-        if tags is not None:
+        if clean_tags is not None:
             updates.append("tags = ?")
-            params.append(json.dumps(tags, ensure_ascii=False))
+            params.append(json.dumps(clean_tags, ensure_ascii=False))
             fts_dirty = True
-        if privacy is not None:
+        if privacy_v is not None:
             updates.append("privacy = ?")
-            params.append(privacy.value)
-        if importance is not None:
+            params.append(privacy_v.value)
+        if importance_v is not None:
             updates.append("importance = ?")
-            params.append(importance.value)
-        if layer is not None:
+            params.append(importance_v.value)
+        if layer_v is not None:
             updates.append("layer = ?")
-            params.append(layer.value)
+            params.append(layer_v.value)
         if starred is not None:
             updates.append("starred = ?")
-            params.append(1 if starred else 0)
+            params.append(1 if bool(starred) else 0)
         if pinned is not None:
             updates.append("pinned = ?")
-            params.append(1 if pinned else 0)
-        if metadata is not None:
+            params.append(1 if bool(pinned) else 0)
+        if clean_metadata is not None:
             updates.append("metadata = ?")
-            params.append(json.dumps(metadata, ensure_ascii=False))
+            params.append(json.dumps(clean_metadata, ensure_ascii=False))
 
         if not updates:
             return False
@@ -920,7 +1087,8 @@ class StorageEngine:
 
         conn.commit()
 
-        self._add_audit("update", entry_id, actor, session_id, privacy.value if privacy else "")
+        self._add_audit("update", entry_id, actor, session_id,
+                        privacy_v.value if privacy_v else "")
         return True
 
     def _refresh_fts(self, conn: sqlite3.Connection, entry_id: str):
@@ -1059,6 +1227,11 @@ class StorageEngine:
         注意：contentless FTS5 表（content=''）不支持标准 DELETE，
         必须用 'delete' 特殊命令。
         """
+        # v5.4.0 安全加固：actor/session_id 控制字符过滤 + 长度限制
+        actor = self._strip_control(actor)[:128]
+        session_id = self._strip_control(session_id)[:128]
+        hard_delete = bool(hard_delete)
+
         conn = self._get_conn()
 
         if hard_delete:
@@ -1067,6 +1240,13 @@ class StorageEngine:
                 "SELECT rowid, content, category, tags FROM memories WHERE id = ?",
                 (entry_id,)
             ).fetchone()
+            # v5.4.1 修复：先清理带外键的从表，再删主表，避免 FOREIGN KEY 约束失败
+            conn.execute("DELETE FROM memory_versions WHERE memory_id = ?", (entry_id,))
+            conn.execute("DELETE FROM review_schedules WHERE memory_id = ?", (entry_id,))
+            try:
+                conn.execute("DELETE FROM kg_edges WHERE source = ? OR target = ?", (entry_id, entry_id))
+            except sqlite3.OperationalError:
+                pass
             conn.execute("DELETE FROM memories WHERE id = ?", (entry_id,))
             if row:
                 try:
@@ -1116,8 +1296,15 @@ class StorageEngine:
 
         v5.0.5 修复：硬删除时同步清理 FTS 索引（用 'delete' 特殊命令）。
         """
+        # v5.4.0 安全加固
+        category = self._strip_control(category)[:128] if category else None
+        layer = self._downgrade_enum(layer, MemoryLayer, None) if layer is not None else None
+        hard_delete = bool(hard_delete)
+        actor = self._strip_control(actor)[:128]
+        session_id = self._strip_control(session_id)[:128]
+
         conn = self._get_conn()
-        query = "SELECT id, rowid, content, category, tags FROM memories WHERE 1=1"
+        query = "SELECT id, rowid, content, category, tags, metadata FROM memories WHERE 1=1"
         params = []
 
         if category:
@@ -1128,13 +1315,23 @@ class StorageEngine:
             params.append(layer.value)
         if starred is not None:
             query += " AND starred = ?"
-            params.append(1 if starred else 0)
+            params.append(1 if bool(starred) else 0)
         if created_after is not None:
-            query += " AND created_at >= ?"
-            params.append(created_after)
+            try:
+                _ca = float(created_after)
+                if math.isfinite(_ca):
+                    query += " AND created_at >= ?"
+                    params.append(_ca)
+            except (TypeError, ValueError):
+                pass
         if created_before is not None:
-            query += " AND created_at <= ?"
-            params.append(created_before)
+            try:
+                _cb = float(created_before)
+                if math.isfinite(_cb):
+                    query += " AND created_at <= ?"
+                    params.append(_cb)
+            except (TypeError, ValueError):
+                pass
 
         rows = conn.execute(query, params).fetchall()
 
@@ -1146,6 +1343,16 @@ class StorageEngine:
 
         if hard_delete:
             placeholders = ",".join(["?"] * len(ids))
+            # v5.4.1 修复：先清从表外键再删主表
+            conn.execute(f"DELETE FROM memory_versions WHERE memory_id IN ({placeholders})", ids)
+            conn.execute(f"DELETE FROM review_schedules WHERE memory_id IN ({placeholders})", ids)
+            try:
+                conn.execute(
+                    f"DELETE FROM kg_edges WHERE source IN ({placeholders}) OR target IN ({placeholders})",
+                    ids + ids
+                )
+            except sqlite3.OperationalError:
+                pass
             conn.execute(f"DELETE FROM memories WHERE id IN ({placeholders})", ids)
             # 同步清理 FTS（contentless FTS5 用 'delete' 命令）
             for row in rows:
@@ -1161,7 +1368,7 @@ class StorageEngine:
             # v5.1.1 修复：批量软删除时也保存原分类到 metadata
             for row in rows:
                 try:
-                    meta = json.loads(row["metadata"]) if row.get("metadata") else {}
+                    meta = json.loads(row["metadata"]) if row["metadata"] else {}
                 except (json.JSONDecodeError, TypeError):
                     meta = {}
                 meta["_original_category"] = row["category"]
@@ -5222,17 +5429,32 @@ class StorageEngine:
     def _add_audit(self, action: str, memory_id: str, actor: str,
                    session_id: str, privacy_level: str, details: Optional[dict] = None):
         """添加审计记录"""
+        # v5.4.0 安全加固：所有字段控制字符过滤 + 长度限制，防御审计日志污染
+        ACTION_WHITELIST = {"add", "update", "delete", "restore", "purge", "export", "import",
+                          "grant", "revoke", "merge", "access", "consolidate",
+                          "forget", "share", "accept", "reject"}
+        if action not in ACTION_WHITELIST:
+            action = "other"  # 非白名单降级为 other
+        memory_id = self._strip_control(str(memory_id))[:64]
+        actor = self._strip_control(str(actor))[:128]
+        session_id = self._strip_control(str(session_id))[:128]
+        privacy_level = self._strip_control(str(privacy_level))[:32]
+        clean_details = self._sanitize_metadata(details or {}, max_depth=3, max_string_len=500)
+
         conn = self._get_conn()
         record_id = str(uuid.uuid4())
         now = time.time()
-        conn.execute("""
-            INSERT INTO audit_log (id, action, memory_id, actor, session_id, privacy_level, timestamp, details)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            record_id, action, memory_id, actor, session_id,
-            privacy_level, now, json.dumps(details or {}, ensure_ascii=False)
-        ))
-        conn.commit()
+        try:
+            conn.execute("""
+                INSERT INTO audit_log (id, action, memory_id, actor, session_id, privacy_level, timestamp, details)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                record_id, action, memory_id, actor, session_id,
+                privacy_level, now, json.dumps(clean_details, ensure_ascii=False)
+            ))
+            conn.commit()
+        except Exception:
+            pass  # 审计失败不能阻断主流程
 
     def close(self):
         if self._conn:

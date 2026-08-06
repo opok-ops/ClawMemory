@@ -9,6 +9,7 @@ Launch options:
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import traceback
@@ -240,68 +241,6 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "properties": {"drama_id": {"type": "string"}},
         },
     },
-    # ===== v5.4.1 新增六大能力 =====
-    {
-        "name": "memory_reflection",
-        "description": "记忆反思（元认知）：主题分布、情感基调、关键经验、焦点漂移与结构化反思报告。",
-        "inputSchema": {
-            "type": "object",
-            "required": ["agent_id"],
-            "properties": {
-                "agent_id": {"type": "string"},
-                "days": {"type": "integer", "minimum": 1, "maximum": 365, "default": 30},
-            },
-        },
-    },
-    {
-        "name": "memory_lineage",
-        "description": "记忆血缘溯源：单条记忆的版本历史、关联链接、审计事件与生命周期时间线。",
-        "inputSchema": {
-            "type": "object",
-            "required": ["memory_id"],
-            "properties": {"memory_id": {"type": "string"}},
-        },
-    },
-    {
-        "name": "memory_reinforce",
-        "description": "记忆强化候选：识别高价值但正在衰减的记忆，给出强化排序与推荐动作。",
-        "inputSchema": {
-            "type": "object",
-            "required": ["agent_id"],
-            "properties": {
-                "agent_id": {"type": "string"},
-                "days": {"type": "integer", "minimum": 1, "maximum": 365, "default": 90},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
-            },
-        },
-    },
-    {
-        "name": "drama_plot_thread",
-        "description": "剧情伏笔线索追踪：识别伏笔埋设与回收，输出线索列表、未回收线索与回收率。",
-        "inputSchema": {
-            "type": "object",
-            "required": ["drama_id"],
-            "properties": {"drama_id": {"type": "string"}},
-        },
-    },
-    {
-        "name": "drama_episode_curve",
-        "description": "分集张力曲线：按集聚合张力指标，输出全剧曲线、高潮集、波动率与形态分类。",
-        "inputSchema": {
-            "type": "object",
-            "required": ["drama_id"],
-            "properties": {"drama_id": {"type": "string"}},
-        },
-    },
-    {
-        "name": "drama_screen_time",
-        "description": "角色戏份平衡：角色台词量/字数/出场占比 + 基尼系数 + 独角戏/双核/群像结构判定。",
-        "inputSchema": {
-            "type": "object",
-            "required": ["drama_id"],
-            "properties": {"drama_id": {"type": "string"}},
-        },
-    },
     # ===== v5.3.9 新增五大能力 =====
     {
         "name": "intent_router",
@@ -422,6 +361,26 @@ def _safe_int(v: Any, default: int = 0, lo: Optional[int] = None, hi: Optional[i
     return iv
 
 
+def _safe_float(v: Any, default: float = 0.0,
+                lo: Optional[float] = None, hi: Optional[float] = None) -> float:
+    """v5.4.0 安全加固：安全 coerce 任意输入到 float，含范围夹紧。
+    返回 default 对应 None/空/非数字字符串（包括 nan/inf 污染）。
+    """
+    if v is None or v == "":
+        return default
+    try:
+        fv = float(v)
+        if math.isnan(fv) or math.isinf(fv):
+            return default
+    except (ValueError, TypeError):
+        return default
+    if lo is not None and fv < lo:
+        fv = lo
+    if hi is not None and fv > hi:
+        fv = hi
+    return fv
+
+
 def _clean(v: Any) -> Any:
     if isinstance(v, dict):
         return {str(k): _clean(x) for k, x in v.items()}
@@ -492,14 +451,14 @@ def h_memory_search(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     res = mf.search(
         query=str(args["query"]),
         max_results=_safe_int(args.get("max_results", 5), 5, 1, 100),
-        min_relevance=float(args.get("min_relevance", 0.0)),
+        min_relevance=_safe_float(args.get("min_relevance", 0.0), 0.0, 0.0, 1.0),
         categories=categories,
         agent_id=args.get("agent_id") or "",
     )
     items = []
     for c in res.chunks:
         items.append({
-            "relevance_score": float(c.relevance_score),
+            "relevance_score": _safe_float(getattr(c, "relevance_score", 0.0), 0.0, 0.0, 10.0),
             "memory_id": str(c.memory_id),
             "content": str(c.content),
             "category": str(c.category),
@@ -573,44 +532,6 @@ def h_drama_binge_score(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     return {"drama_id": drama_id, "result": _clean(mf.storage.drama_binge_score(drama_id))}
 
 
-# ===== v5.4.1 六大能力 MCP handlers =====
-
-def h_memory_reflection(mf, args: Dict[str, Any]) -> Dict[str, Any]:
-    agent_id = str(args["agent_id"])
-    days = _safe_int(args.get("days", 30), 30, 1, 365)
-    return {"agent_id": agent_id, "days": days,
-            "result": _clean(mf.storage.memory_reflection(agent_id, days))}
-
-
-def h_memory_lineage(mf, args: Dict[str, Any]) -> Dict[str, Any]:
-    memory_id = str(args["memory_id"])
-    return {"memory_id": memory_id,
-            "result": _clean(mf.storage.memory_lineage(memory_id))}
-
-
-def h_memory_reinforce(mf, args: Dict[str, Any]) -> Dict[str, Any]:
-    agent_id = str(args["agent_id"])
-    days = _safe_int(args.get("days", 90), 90, 1, 365)
-    limit = _safe_int(args.get("limit", 10), 10, 1, 50)
-    return {"agent_id": agent_id, "days": days, "limit": limit,
-            "result": _clean(mf.storage.memory_reinforce(agent_id, days, limit))}
-
-
-def h_drama_plot_thread(mf, args: Dict[str, Any]) -> Dict[str, Any]:
-    drama_id = str(args["drama_id"])
-    return {"drama_id": drama_id, "result": _clean(mf.storage.drama_plot_thread(drama_id))}
-
-
-def h_drama_episode_curve(mf, args: Dict[str, Any]) -> Dict[str, Any]:
-    drama_id = str(args["drama_id"])
-    return {"drama_id": drama_id, "result": _clean(mf.storage.drama_episode_curve(drama_id))}
-
-
-def h_drama_screen_time(mf, args: Dict[str, Any]) -> Dict[str, Any]:
-    drama_id = str(args["drama_id"])
-    return {"drama_id": drama_id, "result": _clean(mf.storage.drama_screen_time(drama_id))}
-
-
 # ===== v5.3.9 五大能力 MCP handlers =====
 
 def h_intent_router(mf, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -653,7 +574,7 @@ def h_session_focus(mf, args: Dict[str, Any]) -> Dict[str, Any]:
             "id": str(m.get("id") or f"m{i}"),
             "role": str(m.get("role") or "user").lower(),
             "content": str(m.get("content") or ""),
-            "timestamp": float(m.get("timestamp") or i),
+            "timestamp": _safe_float(m.get("timestamp") or i, float(i), 0.0, 4.1e9),
         })
     return _clean(mf.session_focus(
         msgs,
@@ -673,13 +594,6 @@ HANDLERS: Dict[str, Any] = {
     "char_relationship": h_char_relationship,
     "drama_genre_trend": h_drama_genre_trend,
     "drama_binge_score": h_drama_binge_score,
-    # v5.4.1 新增
-    "memory_reflection": h_memory_reflection,
-    "memory_lineage": h_memory_lineage,
-    "memory_reinforce": h_memory_reinforce,
-    "drama_plot_thread": h_drama_plot_thread,
-    "drama_episode_curve": h_drama_episode_curve,
-    "drama_screen_time": h_drama_screen_time,
     # v5.3.9 新增
     "intent_router": h_intent_router,
     "conflict_scan": h_conflict_scan,
@@ -698,7 +612,7 @@ def _handle_initialize(request: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "protocolVersion": "2024-11-05",
         "capabilities": {"tools": {}, "logging": {}},
-        "serverInfo": {"name": "mindforge", "version": "5.4.1"},
+        "serverInfo": {"name": "mindforge", "version": "5.4.0"},
     }
 
 

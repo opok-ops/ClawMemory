@@ -8,7 +8,8 @@ from .knowledge_graph import KnowledgeGraph, KnowledgeEntity, KnowledgeRelation
 from .evolution import MemoryEvolution, ForgettingCurve
 from .personality import PersonalityEngine, UserProfile
 from .multimodal import MultimodalMemory, MultimodalType
-from .federated import FederatedMemory, FederatedPeer
+from .federated import (FederatedMemory, FederatedPeer, PeerStatus,
+                        AccessLevel, ACLRule, MemoryProvenance, SharedMemory)
 from .categorizer import TaxonomyManager
 from .privacy import PrivacyEngine, PrivacyScanResult
 from .integrator import MemoryIntegrator
@@ -20,6 +21,8 @@ from .skill_extractor import SkillExtractor, SkillTemplate, SkillSlot
 from .hybrid_search import (QueryExpander, ExpansionResult,
                             CrossEncoderReranker, RerankResult, RerankWeights)
 from .session_focus import SessionFocus, TopicCluster, FocusSummary
+# v5.4.0 新增：联邦冲突解决
+from .consensus import ConsensusEngine, ReplicaState, MergeResult
 
 __all__ = [
     "RecallEngine",
@@ -35,6 +38,11 @@ __all__ = [
     "MultimodalType",
     "FederatedMemory",
     "FederatedPeer",
+    "PeerStatus",
+    "AccessLevel",
+    "ACLRule",
+    "MemoryProvenance",
+    "SharedMemory",
     "TaxonomyManager",
     "PrivacyEngine",
     "PrivacyScanResult",
@@ -63,4 +71,8 @@ __all__ = [
     "SessionFocus",
     "TopicCluster",
     "FocusSummary",
+    # v5.4.0
+    "ConsensusEngine",
+    "ReplicaState",
+    "MergeResult",
 ]
