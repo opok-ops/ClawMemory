@@ -97,7 +97,7 @@ pip install -e .
 ---
 
 ## 项目链接
-- **GitHub 仓库**：[https://github.com/opok-ops/ClawMemory](https://github.com/opok-ops/ClawMemory)
-- **官方文档**：[https://opok-ops.github.io/ClawMemory/](https://opok-ops.github.io/ClawMemory/)
+- **GitHub 仓库**：[https://github.com/opok-ops/MindForge](https://github.com/opok-ops/MindForge)
+- **官方文档**：[https://opok-ops.github.io/MindForge/](https://opok-ops.github.io/MindForge/)
 
 感谢所有贡献者和用户对 MindForge 项目的支持。v6.0.0，敬请期待多 Agent 协作的完整形态。
