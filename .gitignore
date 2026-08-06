@@ -15,3 +15,7 @@ dist/
 *.egg
 test_v533.py
 .gh-pages-tmp/
+
+# WorkBuddy / IDE artifacts
+.workbuddy/
+overview.md
