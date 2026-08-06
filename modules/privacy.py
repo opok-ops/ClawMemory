@@ -7,12 +7,18 @@ import re
 import json
 import hashlib
 import hmac
+import time
+import uuid
+import sqlite3
+import logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple, Any
 from datetime import datetime
 
 from core.storage import StorageEngine, MemoryEntry
 from core.types import PrivacyLevel
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -63,6 +69,57 @@ class PrivacyEngine:
         self._grants: Dict[str, List[AccessGrant]] = {}
         # v5.3.3 安全修复：二次验证令牌存储（替代始终返回 True 的漏洞）
         self._second_factor_tokens: Dict[str, str] = {}
+        # v5.4.2 安全修复：持久化 grants 和 2FA tokens 到 SQLite，重启不丢失
+        self._init_persistence()
+        self._load_persisted_data()
+
+    def _init_persistence(self):
+        """创建持久化表（如不存在）"""
+        try:
+            conn = self.storage._get_conn()
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS access_grants (
+                    grant_id TEXT PRIMARY KEY,
+                    memory_id TEXT NOT NULL,
+                    grantee TEXT NOT NULL,
+                    granted_by TEXT NOT NULL,
+                    granted_at REAL NOT NULL,
+                    expires_at REAL,
+                    access_level TEXT DEFAULT 'read'
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS second_factor_tokens (
+                    actor TEXT PRIMARY KEY,
+                    token_hash TEXT NOT NULL,
+                    created_at REAL NOT NULL
+                )
+            """)
+            conn.commit()
+        except sqlite3.Error as e:
+            logger.error("隐私持久化表创建失败: %s", e)
+
+    def _load_persisted_data(self):
+        """从 SQLite 加载 grants 和 2FA tokens"""
+        try:
+            conn = self.storage._get_conn()
+            # 加载 grants
+            rows = conn.execute("SELECT grant_id, memory_id, grantee, granted_by, granted_at, expires_at, access_level FROM access_grants").fetchall()
+            for row in rows:
+                grant = AccessGrant(
+                    grant_id=row[0], memory_id=row[1], grantee=row[2],
+                    granted_by=row[3], granted_at=row[4],
+                    expires_at=row[5], access_level=row[6]
+                )
+                if row[1] not in self._grants:
+                    self._grants[row[1]] = []
+                self._grants[row[1]].append(grant)
+            # 2FA tokens 不加载明文（仅保留 actor 列表，令牌需重新注册）
+            token_rows = conn.execute("SELECT actor FROM second_factor_tokens").fetchall()
+            for row in token_rows:
+                self._second_factor_tokens[row[0]] = ""  # 标记已注册，但令牌需重新验证
+        except sqlite3.Error as e:
+            logger.error("隐私持久化数据加载失败: %s", e)
 
     def scan(self, text: str) -> PrivacyScanResult:
         """扫描文本中的敏感信息"""
@@ -146,9 +203,6 @@ class PrivacyEngine:
                      duration_hours: Optional[float] = None,
                      access_level: str = "read") -> AccessGrant:
         """授予访问权限"""
-        import time
-        import uuid
-
         grant = AccessGrant(
             grant_id=str(uuid.uuid4()),
             memory_id=memory_id,
@@ -163,6 +217,17 @@ class PrivacyEngine:
             self._grants[memory_id] = []
         self._grants[memory_id].append(grant)
 
+        # v5.4.2：持久化到 SQLite
+        try:
+            conn = self.storage._get_conn()
+            conn.execute(
+                "INSERT OR REPLACE INTO access_grants (grant_id, memory_id, grantee, granted_by, granted_at, expires_at, access_level) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (grant.grant_id, grant.memory_id, grant.grantee, grant.granted_by, grant.granted_at, grant.expires_at, grant.access_level)
+            )
+            conn.commit()
+        except sqlite3.Error as e:
+            logger.error("授权持久化失败: %s", e)
+
         return grant
 
     def revoke_access(self, memory_id: str, grantee: str) -> bool:
@@ -174,6 +239,13 @@ class PrivacyEngine:
             g for g in self._grants[memory_id]
             if g.grantee != grantee
         ]
+        # v5.4.2：同步删除持久化记录
+        try:
+            conn = self.storage._get_conn()
+            conn.execute("DELETE FROM access_grants WHERE memory_id = ? AND grantee = ?", (memory_id, grantee))
+            conn.commit()
+        except sqlite3.Error as e:
+            logger.error("撤销授权持久化失败: %s", e)
         return True
 
     def _check_grant(self, memory_id: str, actor: str) -> bool:
@@ -212,6 +284,8 @@ class PrivacyEngine:
     def register_second_factor(self, actor: str, token: str) -> bool:
         """注册二次验证令牌（v5.3.3 新增）
 
+        v5.4.2 安全加固：令牌以 SHA-256 hash 存储，不明文持久化。
+
         Args:
             actor: 需要二次验证的用户/Agent
             token: 验证令牌（如 TOTP 密钥、一次性密码）
@@ -222,6 +296,17 @@ class PrivacyEngine:
         if not actor or not token:
             return False
         self._second_factor_tokens[actor] = token
+        # v5.4.2：持久化 hash 到 SQLite（不明文存储）
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        try:
+            conn = self.storage._get_conn()
+            conn.execute(
+                "INSERT OR REPLACE INTO second_factor_tokens (actor, token_hash, created_at) VALUES (?, ?, ?)",
+                (actor, token_hash, time.time())
+            )
+            conn.commit()
+        except sqlite3.Error as e:
+            logger.error("2FA 令牌持久化失败: %s", e)
         return True
 
     def verify_second_factor_with_code(self, actor: str, code: str) -> bool:

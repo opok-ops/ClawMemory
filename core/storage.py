@@ -8,17 +8,20 @@ import json
 import math
 import uuid
 import time
+import logging
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 from .types import (
     PrivacyLevel, Importance, MemoryType, MemoryLayer,
     DramaGenre, DramaStatus, DramaSeries, DramaScene,
     DramaCharacter, DramaLine,
 )
-from .encryption import EncryptionEngine, EncryptedBlob
+from .encryption import EncryptionEngine, EncryptedBlob, SecurityError
 
 
 # ===== 路径安全校验（v5.2.9 新增：存储层统一防护）=====
@@ -5428,7 +5431,12 @@ class StorageEngine:
 
     def _add_audit(self, action: str, memory_id: str, actor: str,
                    session_id: str, privacy_level: str, details: Optional[dict] = None):
-        """添加审计记录"""
+        """添加审计记录
+
+        v5.4.2 安全修复：审计写入失败不再静默吞没，改为 logging.error 记录。
+        对 delete/purge/grant/revoke 等高敏操作，审计失败时抛出异常（fail-closed），
+        防止在无审计记录下完成敏感操作。
+        """
         # v5.4.0 安全加固：所有字段控制字符过滤 + 长度限制，防御审计日志污染
         ACTION_WHITELIST = {"add", "update", "delete", "restore", "purge", "export", "import",
                           "grant", "revoke", "merge", "access", "consolidate",
@@ -5436,6 +5444,8 @@ class StorageEngine:
                           # v5.4.2 联邦 ACL + 共享冲突审计动作
                           "acl_deny", "acl_add_rule", "acl_remove_rule",
                           "conflict_detected", "conflict_resolved", "conflict_dismiss"}
+        # v5.4.2：高敏感操作，审计失败时 fail-closed
+        HIGH_SENSITIVE_ACTIONS = {"delete", "purge", "grant", "revoke", "forget"}
         if action not in ACTION_WHITELIST:
             action = "other"  # 非白名单降级为 other
         memory_id = self._strip_control(str(memory_id))[:64]
@@ -5456,8 +5466,14 @@ class StorageEngine:
                 privacy_level, now, json.dumps(clean_details, ensure_ascii=False)
             ))
             conn.commit()
-        except Exception:
-            pass  # 审计失败不能阻断主流程
+        except sqlite3.Error as e:
+            logger.error("审计日志写入失败 action=%s memory_id=%s error=%s", action, memory_id, e)
+            if action in HIGH_SENSITIVE_ACTIONS:
+                raise SecurityError(f"高敏感操作审计失败，拒绝执行: {action}") from e
+        except Exception as e:
+            logger.error("审计日志写入异常 action=%s memory_id=%s error=%s", action, memory_id, e)
+            if action in HIGH_SENSITIVE_ACTIONS:
+                raise SecurityError(f"高敏感操作审计失败，拒绝执行: {action}") from e
 
     def close(self):
         if self._conn:

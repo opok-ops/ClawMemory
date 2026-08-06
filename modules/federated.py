@@ -332,11 +332,37 @@ class FederatedMemory:
         except sqlite3.OperationalError:
             return False
 
+    def _compute_signature(self, data: Dict, peer_id: str) -> str:
+        """计算 HMAC-SHA256 签名
+
+        使用 peer 的 public_key 作为 HMAC 密钥，对排序后的 JSON 数据签名。
+        """
+        peer = self.peers.get(peer_id)
+        if not peer or not peer.public_key:
+            return ""
+        key = peer.public_key.encode("utf-8")
+        msg = json.dumps(data, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        return hmac.new(key, msg, hashlib.sha256).hexdigest()
+
     def _verify_signature(self, data: Dict, signature: str, peer_id: str) -> bool:
-        """验证签名（简化版）"""
+        """验证 HMAC-SHA256 签名
+
+        v5.4.2 安全修复：替代此前"任意非空 signature 都返回 True"的占位实现。
+        使用 peer 的 public_key 作为 HMAC 密钥验证签名，防止伪造记忆注入。
+        """
         if not signature:
+            # 无签名时仅允许已注册 peer 的非敏感操作（保持向后兼容）
             return peer_id in self.peers
-        return True
+        peer = self.peers.get(peer_id)
+        if not peer:
+            return False
+        if not peer.public_key:
+            # peer 未配置公钥，拒绝签名验证（fail-closed）
+            return False
+        expected = self._compute_signature(data, peer_id)
+        if not expected:
+            return False
+        return hmac.compare_digest(signature, expected)
 
     def compute_federated_stats(self) -> Dict:
         """计算联邦统计"""

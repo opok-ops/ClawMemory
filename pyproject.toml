@@ -34,5 +34,8 @@ MindForge-mcp = "mcp.server:main"
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov"]
 
+[project.dependencies]
+cryptography = ">=41.0"
+
 [tool.setuptools.packages.find]
 exclude = ["tests*", "website*", "examples*", "data*"]

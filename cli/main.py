@@ -4509,7 +4509,11 @@ def _is_private_ip(ip_str):
 
 
 def _validate_url_safe(url):
-    """校验 URL 安全性，防止 SSRF"""
+    """校验 URL 安全性，防止 SSRF
+
+    v5.4.2 安全修复：返回解析到的安全 IP，调用方用 IP 直连绕过 DNS Rebinding TOCTOU。
+    同时拦截 0.0.0.0、::、::ffff:* 等 IPv6 映射地址。
+    """
     if len(url) > 2048:
         raise ValueError("URL 过长")
     parsed = urlparse(url)
@@ -4523,16 +4527,28 @@ def _validate_url_safe(url):
         raise ValueError("不允许十进制 IP 编码")
     if hostname.lower().startswith("0x"):
         raise ValueError("不允许十六进制 IP 编码")
+    # 拦截 0.0.0.0 和 IPv6 映射地址
+    if hostname in ("0.0.0.0", "::", "::0"):
+        raise ValueError(f"不允许的特殊地址: {hostname}")
     # DNS 解析并检查所有 IP
     try:
         infos = socket.getaddrinfo(hostname, None)
     except socket.gaierror:
         raise ValueError("DNS 解析失败")
+    safe_ip = None
     for info in infos:
         ip = info[4][0]
+        # 拦截 IPv6 映射的 IPv4 地址（如 ::ffff:127.0.0.1）
+        if "::ffff:" in ip.lower():
+            mapped = ip.split(":")[-1]
+            if _is_private_ip(mapped):
+                raise ValueError(f"hostname 解析到 IPv6 映射内网地址: {ip}")
         if _is_private_ip(ip):
             raise ValueError(f"hostname 解析到内网地址: {ip}")
-    return url
+        if safe_ip is None:
+            safe_ip = ip
+    # 返回安全 IP 供调用方直连，避免 DNS Rebinding TOCTOU
+    return safe_ip
 
 
 def cmd_import_url(args):
@@ -4544,9 +4560,21 @@ def cmd_import_url(args):
         import re
         from urllib.parse import urlparse
 
-        _validate_url_safe(args.url)
+        # v5.4.2：校验后获取安全 IP，用 IP 直连绕过 DNS Rebinding
+        safe_ip = _validate_url_safe(args.url)
+        parsed = urlparse(args.url)
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        # 构建 IP 直连 URL，保留原始 Host header
+        direct_url = f"{parsed.scheme}://{safe_ip}:{port}{parsed.path}"
+        if parsed.query:
+            direct_url += f"?{parsed.query}"
 
-        with urllib.request.urlopen(args.url, timeout=10) as response:
+        req = urllib.request.Request(direct_url, headers={
+            "Host": parsed.hostname,
+            "User-Agent": "MindForge/5.4 URL Importer",
+        })
+
+        with urllib.request.urlopen(req, timeout=10) as response:
             content = response.read(5 * 1024 * 1024).decode("utf-8", errors="ignore")
 
         title_match = re.search(r"<title>([^<]+)</title>", content, re.IGNORECASE)

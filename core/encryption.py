@@ -43,6 +43,7 @@ class EncryptedBlob:
     nonce: bytes
     salt: bytes
     tag: Optional[bytes] = None
+    algorithm: str = "AES-256-GCM"  # v5.4.2：标记加密算法，降级时为 EXPERIMENTAL_HMAC_XOR
 
     def to_dict(self) -> dict:
         return {
@@ -50,6 +51,7 @@ class EncryptedBlob:
             "nonce": base64.b64encode(self.nonce).decode(),
             "salt": base64.b64encode(self.salt).decode(),
             "tag": base64.b64encode(self.tag).decode() if self.tag else None,
+            "algorithm": self.algorithm,
         }
 
     @classmethod
@@ -59,6 +61,7 @@ class EncryptedBlob:
             nonce=base64.b64decode(data["nonce"]),
             salt=base64.b64decode(data["salt"]),
             tag=base64.b64decode(data["tag"]) if data.get("tag") else None,
+            algorithm=data.get("algorithm", "AES-256-GCM"),
         )
 
 
@@ -103,10 +106,10 @@ class EncryptionEngine:
 
         if self._aesgcm is not None:
             ciphertext = self._aesgcm.encrypt(nonce, plaintext_bytes, None)
-            return EncryptedBlob(ciphertext=ciphertext, nonce=nonce, salt=salt)
+            return EncryptedBlob(ciphertext=ciphertext, nonce=nonce, salt=salt, algorithm="AES-256-GCM")
         else:
             ciphertext = self._simple_encrypt(plaintext_bytes, nonce)
-            return EncryptedBlob(ciphertext=ciphertext, nonce=nonce, salt=salt)
+            return EncryptedBlob(ciphertext=ciphertext, nonce=nonce, salt=salt, algorithm="EXPERIMENTAL_HMAC_XOR")
 
     def decrypt(self, blob: EncryptedBlob) -> str:
         """解密文本"""
@@ -200,13 +203,27 @@ def init_engine(password: str, key_file: str = "./data/.key") -> EncryptionEngin
                 "kdf": "PBKDF2-SHA256",
                 "iterations": _PBKDF2_ITERATIONS,
             }, f, indent=2)
-        # 设置严格的文件权限（仅所有者可读写）- 防止密钥泄露
-        try:
-            import stat
-            key_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
-        except (OSError, AttributeError):
-            # Windows 或其他不支持 chmod 的系统跳过
-            pass
+        # v5.4.2 安全修复：设置严格的文件权限（仅所有者可读写）- 防止密钥泄露
+        import sys
+        if sys.platform == "win32":
+            # Windows: 使用 icacls 设置 ACL，仅允许当前用户访问
+            try:
+                import subprocess
+                import os as _os
+                username = _os.getlogin()
+                subprocess.run(
+                    ["icacls", str(key_path), "/inheritance:r", "/grant:r", f"{username}:F"],
+                    capture_output=True, timeout=5, check=False
+                )
+            except Exception:
+                pass  # icacls 失败不阻断流程，但已尝试设置权限
+        else:
+            # Unix/Linux/macOS: chmod 600
+            try:
+                import stat
+                key_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+            except (OSError, AttributeError):
+                pass
 
     _global_engine = engine
     return engine
