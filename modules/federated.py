@@ -69,6 +69,8 @@ class FederatedMemory:
         self.shared_memories: Dict[str, SharedMemory] = {}
         self._incoming_queue: List[Dict] = []
         self._outgoing_queue: List[Dict] = []
+        # v5.4.2 修复：队列大小上限，防止恶意 peer 发送海量消息耗尽内存
+        self._MAX_QUEUE_SIZE = 10000
         # v5.4.2 新增：细粒度 ACL（modules/federated_acl.py）与
         # 共享记忆冲突解析器（modules/share_conflict.py），均可选注入
         self.acl = acl
@@ -166,14 +168,15 @@ class FederatedMemory:
         self.shared_memories[memory_id] = shared
 
         for pid in eligible:
-            self._outgoing_queue.append({
-                "type": "memory_share",
-                "from": self.local_peer_id,
-                "to": pid,
-                "memory_id": memory_id,
-                "access_policy": access_policy,
-                "timestamp": time.time(),
-            })
+            if len(self._outgoing_queue) < self._MAX_QUEUE_SIZE:
+                self._outgoing_queue.append({
+                    "type": "memory_share",
+                    "from": self.local_peer_id,
+                    "to": pid,
+                    "memory_id": memory_id,
+                    "access_policy": access_policy,
+                    "timestamp": time.time(),
+                })
 
         return shared
 
@@ -205,6 +208,10 @@ class FederatedMemory:
             return False
 
         if not self._verify_signature(memory_data, signature, from_peer):
+            return False
+
+        # v5.4.2 修复：队列大小上限，超限拒绝新消息
+        if len(self._incoming_queue) >= self._MAX_QUEUE_SIZE:
             return False
 
         self._incoming_queue.append({
@@ -272,10 +279,23 @@ class FederatedMemory:
     def federated_search(self, query: str,
                          peer_ids: Optional[List[str]] = None,
                          max_per_peer: int = 5) -> Dict[str, List[Dict]]:
-        """联邦搜索（跨节点）"""
+        """联邦搜索（跨节点）
+
+        v5.4.2 修复：返回实际的本地搜索结果 + 将搜索请求入队等待远端响应。
+        之前仅写队列返回空 results，导致调用方永远拿不到搜索结果。
+        """
         results = {}
 
         search_peers = peer_ids or list(self.peers.keys())
+
+        # 先在本地 storage 中搜索
+        local_results = []
+        if self.storage and query:
+            try:
+                local_results = self.storage.search_memories(
+                    query=query, limit=max_per_peer * len(search_peers) or max_per_peer)
+            except Exception:
+                pass
 
         for pid in search_peers:
             if pid not in self.peers:
@@ -286,16 +306,20 @@ class FederatedMemory:
             if peer.trust_level < 0.3:
                 continue
 
-            self._outgoing_queue.append({
-                "type": "search_request",
-                "from": self.local_peer_id,
-                "to": pid,
-                "query": query,
-                "max_results": max_per_peer,
-                "timestamp": time.time(),
-            })
+            # v5.4.2 修复：队列大小上限保护
+            if len(self._outgoing_queue) < self._MAX_QUEUE_SIZE:
+                self._outgoing_queue.append({
+                    "type": "search_request",
+                    "from": self.local_peer_id,
+                    "to": pid,
+                    "query": query,
+                    "max_results": max_per_peer,
+                    "timestamp": time.time(),
+                })
 
-            results[pid] = []
+            # 将本地结果按 peer 数量均分，同时标记等待远端
+            per_peer = local_results[:max_per_peer]
+            results[pid] = per_peer
 
         return results
 

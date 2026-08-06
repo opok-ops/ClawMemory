@@ -237,10 +237,30 @@ class SharedConflictResolver:
                         list(local.tags or []), local.importance, actor="conflict-lww")
                 except Exception:
                     pass
-                self.storage.update_memory(local_id, content=incoming_content,
-                                           actor=actor or from_peer)
-                resolution = "lww_incoming"
-                resolved_memory_id = local_id
+                # v5.4.2 修复：检查 update_memory 返回值，失败时回退到 keep_both
+                updated = self.storage.update_memory(local_id, content=incoming_content,
+                                                     actor=actor or from_peer)
+                if not updated:
+                    # 更新失败（如记忆已被并发删除），回退到 keep_both 策略
+                    try:
+                        new_entry = self.storage.add_memory(
+                            content=incoming_content,
+                            category=local.category or "federated",
+                            tags=["conflict:lww_fallback", f"from:{from_peer}"] if from_peer
+                                 else ["conflict:lww_fallback"],
+                            source_agent=f"federated:{from_peer}" if from_peer else "conflict",
+                            metadata={
+                                "conflict_parent": local_id,
+                                "conflict_id": conflict_id,
+                                "fallback": "update_failed",
+                            })
+                        resolved_memory_id = new_entry.id
+                    except (ValueError, TypeError):
+                        return {"success": False, "error": "LWW 更新失败且回退分支创建失败"}
+                    resolution = "lww_incoming_fallback"
+                else:
+                    resolution = "lww_incoming"
+                    resolved_memory_id = local_id
             else:
                 resolution = "lww_local"
                 resolved_memory_id = local_id
