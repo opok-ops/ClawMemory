@@ -21,6 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+dependencies = ["cryptography>=41.0"]
 
 [project.urls]
 Homepage = "https://opok-ops.github.io/ClawMemory/"
@@ -33,9 +34,6 @@ MindForge-mcp = "mcp.server:main"
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov"]
-
-[project.dependencies]
-cryptography = ">=41.0"
 
 [tool.setuptools.packages.find]
 exclude = ["tests*", "website*", "examples*", "data*"]

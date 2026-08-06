@@ -19,3 +19,7 @@ test_v533.py
 # WorkBuddy / IDE artifacts
 .workbuddy/
 overview.md
+
+# Test artifacts
+.coverage
+.pytest_cache/
