@@ -57,7 +57,7 @@
   <div class="hero-inner">
     <div class="hero-badge">
       <span class="badge-dot"></span>
-      <span>v5.4.1 全新升级 · 记忆反思/血缘溯源 + 短剧伏笔追踪</span>
+      <span>v5.4.2 全新升级 · 联邦记忆细粒度 ACL + 共享冲突解决</span>
     </div>
     <h1 class="hero-title">
       让 AI Agent
@@ -379,9 +379,25 @@
     <div class="changelog-list">
       <div class="cl-item">
         <div class="cl-left">
-          <span class="cl-ver">v5.4.1</span>
+          <span class="cl-ver">v5.4.2</span>
           <span class="cl-date">2026-08-06</span>
           <span class="cl-badge latest">最新</span>
+        </div>
+        <div class="cl-body">
+          <h4>🛡️ 联邦记忆细粒度 ACL · ⚔️ 共享记忆冲突解决</h4>
+          <ul>
+            <li><code>fed-acl-*</code> 细粒度访问控制（主体×资源×操作，默认拒绝+优先级+信任阈值+过期）</li>
+            <li><code>share-conflict-*</code> 共享冲突检测与解决（lww/keep_both/manual + 态势统计）</li>
+            <li>修复 <code>share_memory</code> 信任过滤失效（低信任/未注册节点混入 shared_with）</li>
+            <li><code>accept_incoming</code> 自动检测共享冲突并按策略处置</li>
+            <li>MCP 工具 21 → 30，新增 9 个 v5.4.2 工具</li>
+          </ul>
+        </div>
+      </div>
+      <div class="cl-item">
+        <div class="cl-left">
+          <span class="cl-ver">v5.4.1</span>
+          <span class="cl-date">2026-08-06</span>
         </div>
         <div class="cl-body">
           <h4>🪞 记忆反思/血缘溯源/强化候选 · 🎬 伏笔追踪/分集张力/角色戏份</h4>

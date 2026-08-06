@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.4.1 CLI - 命令行工具
+MindForge v5.4.2 CLI - 命令行工具
 =================================
 
 Usage:
@@ -50,6 +50,16 @@ Commands:
     drama-plot-thread   剧情伏笔线索追踪
     drama-episode-curve 分集张力曲线
     drama-screen-time   角色戏份平衡
+    --- v5.4.2+ ---
+    fed-acl-add         联邦 ACL：添加规则
+    fed-acl-remove      联邦 ACL：删除规则
+    fed-acl-list        联邦 ACL：规则列表
+    fed-acl-check       联邦 ACL：访问评估
+    fed-acl-stats       联邦 ACL：统计
+    share-conflicts     共享冲突：列表
+    share-conflict-resolve 共享冲突：解决（lww/keep_both）
+    share-conflict-dismiss 共享冲突：关闭
+    share-conflict-stats   共享冲突：统计
 """
 
 import sys
@@ -79,7 +89,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.4.1"
+    __version__ = "5.4.2"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -3104,6 +3114,58 @@ def main():
     p_screen_time = sub.add_parser("drama-screen-time", help="角色戏份平衡分析（v5.4.1 新增）")
     p_screen_time.add_argument("drama_id", help="短剧 ID")
 
+    # ===== v5.4.2 新增联邦 ACL 命令 =====
+    p_acl_add = sub.add_parser("fed-acl-add", help="联邦 ACL：添加规则（v5.4.2 新增）")
+    p_acl_add.add_argument("--principal", "-p", required=True, help="主体（peer ID 或 * 表示任意节点）")
+    p_acl_add.add_argument("--resource", "-r", required=True,
+                           help="资源表达式：all / memory:<id> / category:<名> / tag:<名>")
+    p_acl_add.add_argument("--operations", "-o", default="read",
+                           help="操作：read/write/reshare/*（逗号分隔，默认 read）")
+    p_acl_add.add_argument("--effect", "-e", default="allow", choices=["allow", "deny"],
+                           help="效果（默认 allow）")
+    p_acl_add.add_argument("--priority", type=int, default=100, help="优先级（越大越先评估，默认 100）")
+    p_acl_add.add_argument("--trust-min", type=float, default=0.0,
+                           help="peer 信任阈值（0-1，默认 0 不校验）")
+    p_acl_add.add_argument("--expires-hours", type=float, default=None, help="规则有效时长（小时）")
+    p_acl_add.add_argument("--note", "-n", default="", help="备注")
+
+    p_acl_remove = sub.add_parser("fed-acl-remove", help="联邦 ACL：删除规则（v5.4.2 新增）")
+    p_acl_remove.add_argument("rule_id", help="规则 ID")
+
+    p_acl_list = sub.add_parser("fed-acl-list", help="联邦 ACL：规则列表（v5.4.2 新增）")
+    p_acl_list.add_argument("--principal", "-p", default=None, help="按主体过滤（含通配规则）")
+    p_acl_list.add_argument("--effect", "-e", default=None, choices=["allow", "deny"], help="按效果过滤")
+    p_acl_list.add_argument("--limit", "-l", type=int, default=200, help="返回上限（默认 200）")
+
+    p_acl_check = sub.add_parser("fed-acl-check", help="联邦 ACL：访问评估（v5.4.2 新增）")
+    p_acl_check.add_argument("peer", help="Peer ID")
+    p_acl_check.add_argument("memory_id", help="记忆 ID")
+    p_acl_check.add_argument("--operation", "-o", default="read",
+                             choices=["read", "write", "reshare"], help="操作（默认 read）")
+    p_acl_check.add_argument("--trust", type=float, default=None, help="peer 信任度（0-1）")
+    p_acl_check.add_argument("--category", default=None, help="记忆分类（参与 category 规则匹配）")
+    p_acl_check.add_argument("--tags", nargs="+", default=None, help="记忆标签（参与 tag 规则匹配）")
+
+    p_acl_stats = sub.add_parser("fed-acl-stats", help="联邦 ACL：统计（v5.4.2 新增）")
+
+    # ===== v5.4.2 新增共享冲突命令 =====
+    p_cfl_list = sub.add_parser("share-conflicts", help="共享冲突：列表（v5.4.2 新增）")
+    p_cfl_list.add_argument("--status", "-s", default=None,
+                            choices=["open", "resolved", "dismissed"], help="按状态过滤")
+    p_cfl_list.add_argument("--limit", "-l", type=int, default=50, help="返回上限（默认 50）")
+
+    p_cfl_resolve = sub.add_parser("share-conflict-resolve", help="共享冲突：解决（v5.4.2 新增）")
+    p_cfl_resolve.add_argument("conflict_id", help="冲突 ID")
+    p_cfl_resolve.add_argument("--strategy", "-s", required=True,
+                               choices=["lww", "keep_both"], help="解决策略")
+    p_cfl_resolve.add_argument("--actor", "-a", default="", help="操作者")
+
+    p_cfl_dismiss = sub.add_parser("share-conflict-dismiss", help="共享冲突：关闭（v5.4.2 新增）")
+    p_cfl_dismiss.add_argument("conflict_id", help="冲突 ID")
+    p_cfl_dismiss.add_argument("--actor", "-a", default="", help="操作者")
+
+    p_cfl_stats = sub.add_parser("share-conflict-stats", help="共享冲突：统计（v5.4.2 新增）")
+
     # ===== v5.3.9 新增五大能力 CLI =====
     p_intent_router = sub.add_parser("intent-router", help="意图分类路由（v5.3.9 新增）")
     p_intent_router.add_argument("text", help="要分类的文本（用引号包裹）")
@@ -3763,6 +3825,182 @@ def cmd_drama_screen_time(args):
     return 0
 
 
+# ===== v5.4.2 新增能力 CLI 命令实现 =====
+
+def cmd_fed_acl_add(args):
+    """联邦 ACL：添加规则（v5.4.2 新增）"""
+    cm = _get_memory(args)
+    result = cm.federated_acl.add_rule(
+        principal=args.principal, resource=args.resource,
+        operations=args.operations, effect=args.effect,
+        priority=args.priority, trust_min=args.trust_min,
+        expires_hours=args.expires_hours, note=args.note)
+    if result.get("success"):
+        print(c(f"\n✅ ACL 规则已添加", "green"))
+        print(f"   规则 ID:   {result['rule_id']}")
+        print(f"   主体:      {result['principal']}")
+        print(f"   资源:      {result['resource']}")
+        print(f"   操作:      {result['operations']}")
+        print(f"   效果:      {result['effect']} (priority={args.priority})")
+    else:
+        print(c(f"\n❌ {result.get('error', '添加失败')}", "red"))
+    cm.close()
+    return 0 if result.get("success") else 1
+
+
+def cmd_fed_acl_remove(args):
+    """联邦 ACL：删除规则（v5.4.2 新增）"""
+    cm = _get_memory(args)
+    result = cm.federated_acl.remove_rule(args.rule_id)
+    if result.get("success"):
+        print(c(f"\n✅ ACL 规则已删除: {args.rule_id}", "green"))
+    else:
+        print(c(f"\n❌ {result.get('error', '删除失败')}", "red"))
+    cm.close()
+    return 0 if result.get("success") else 1
+
+
+def cmd_fed_acl_list(args):
+    """联邦 ACL：规则列表（v5.4.2 新增）"""
+    cm = _get_memory(args)
+    rules = cm.federated_acl.list_rules(principal=args.principal,
+                                        effect=args.effect, limit=args.limit)
+    print(c(f"\n🛡️  联邦 ACL 规则（共 {len(rules)} 条）", "bold"))
+    print("=" * 70)
+    if not rules:
+        print(c("  暂无规则（注意：无规则匹配时访问将被默认拒绝）", "yellow"))
+        cm.close()
+        return 0
+    now = time.time()
+    for r in rules:
+        expired = bool(r["expires_at"] and r["expires_at"] < now)
+        effect_str = c(r["effect"], "green" if r["effect"] == "allow" else "red")
+        res = "all" if r["resource_type"] == "all" else f"{r['resource_type']}:{r['resource_value']}"
+        extra = ""
+        if r["trust_min"] > 0:
+            extra += f" trust>={r['trust_min']}"
+        if r["expires_at"]:
+            extra += "（已过期）" if expired else f"（至 {format_time(r['expires_at'])}）"
+        print(f"  {c(r['rule_id'][:12], 'cyan')} [{effect_str}] {r['principal']:<12} "
+              f"{res:<28} ops={r['operations']} prio={r['priority']}{extra}")
+        if r.get("note"):
+            print(f"      ↳ {r['note']}")
+    cm.close()
+    return 0
+
+
+def cmd_fed_acl_check(args):
+    """联邦 ACL：访问评估（v5.4.2 新增）"""
+    cm = _get_memory(args)
+    result = cm.federated_acl.check_access(
+        peer_id=args.peer, memory_id=args.memory_id,
+        operation=args.operation, peer_trust=args.trust,
+        memory_category=args.category, memory_tags=args.tags)
+    if result["allowed"]:
+        print(c(f"\n✅ 允许访问", "green"))
+    else:
+        print(c(f"\n❌ 拒绝访问", "red"))
+    print(f"   Peer:      {args.peer}")
+    print(f"   记忆:      {args.memory_id}")
+    print(f"   操作:      {args.operation}")
+    print(f"   判定:      {result['effect']}")
+    print(f"   原因:      {result['reason']}")
+    cm.close()
+    return 0 if result["allowed"] else 2
+
+
+def cmd_fed_acl_stats(args):
+    """联邦 ACL：统计（v5.4.2 新增）"""
+    cm = _get_memory(args)
+    s = cm.federated_acl.acl_stats()
+    print(c(f"\n🛡️  联邦 ACL 统计", "bold"))
+    print("=" * 40)
+    print(f"   规则总数:     {s['total_rules']}")
+    for eff, cnt in s.get("by_effect", {}).items():
+        print(f"   {eff} 规则:    {cnt}")
+    for rt, cnt in s.get("by_resource_type", {}).items():
+        print(f"   资源[{rt}]:  {cnt}")
+    print(f"   已过期规则:   {s['expired_rules']}")
+    print(c(f"   拒绝审计事件: {s['deny_audit_events']}",
+            "yellow" if s["deny_audit_events"] else "green"))
+    cm.close()
+    return 0
+
+
+def cmd_share_conflicts(args):
+    """共享冲突：列表（v5.4.2 新增）"""
+    cm = _get_memory(args)
+    conflicts = cm.share_conflict.list_conflicts(status=args.status, limit=args.limit)
+    print(c(f"\n⚔️  共享记忆冲突（共 {len(conflicts)} 条）", "bold"))
+    print("=" * 70)
+    if not conflicts:
+        print(c("  暂无冲突记录", "green"))
+        cm.close()
+        return 0
+    status_color = {"open": "red", "resolved": "green", "dismissed": "yellow"}
+    for cf in conflicts:
+        print(f"  {c(cf['conflict_id'][:12], 'cyan')} [{c(cf['status'], status_color.get(cf['status'], 'yellow'))}] "
+              f"{cf['conflict_type']:<10} 本地记忆: {cf['local_memory_id'][:12]}…")
+        local_prev = cf["local_snapshot"].get("content_preview", "")
+        incoming_prev = cf["incoming_snapshot"].get("content_preview", "")
+        peer = cf.get("incoming_peer") or "-"
+        print(f"      本地:   {local_prev[:50]}")
+        print(f"      传入:   {incoming_prev[:50]}  (from: {peer})")
+        if cf["status"] == "resolved":
+            print(c(f"      ↳ 已按 {cf['resolution']} 解决 → {cf['resolved_memory_id'] or '-'}", "green"))
+    cm.close()
+    return 0
+
+
+def cmd_share_conflict_resolve(args):
+    """共享冲突：解决（v5.4.2 新增）"""
+    cm = _get_memory(args)
+    result = cm.share_conflict.resolve(args.conflict_id, args.strategy, actor=args.actor)
+    if result.get("success"):
+        print(c(f"\n✅ 冲突已解决", "green"))
+        print(f"   冲突 ID:   {args.conflict_id}")
+        print(f"   策略:      {args.strategy}")
+        print(f"   结果:      {result['resolution']}")
+        print(f"   目标记忆:  {result.get('resolved_memory_id') or '-'}")
+        if result.get("note"):
+            print(c(f"   备注:      {result['note']}", "yellow"))
+    else:
+        print(c(f"\n❌ {result.get('error', '解决失败')}", "red"))
+    cm.close()
+    return 0 if result.get("success") else 1
+
+
+def cmd_share_conflict_dismiss(args):
+    """共享冲突：关闭（v5.4.2 新增）"""
+    cm = _get_memory(args)
+    result = cm.share_conflict.dismiss(args.conflict_id, actor=args.actor)
+    if result.get("success"):
+        print(c(f"\n✅ 冲突已关闭: {args.conflict_id}", "green"))
+    else:
+        print(c(f"\n❌ {result.get('error', '关闭失败')}", "red"))
+    cm.close()
+    return 0 if result.get("success") else 1
+
+
+def cmd_share_conflict_stats(args):
+    """共享冲突：统计（v5.4.2 新增）"""
+    cm = _get_memory(args)
+    s = cm.share_conflict.stats()
+    print(c(f"\n⚔️  共享冲突统计", "bold"))
+    print("=" * 40)
+    print(f"   冲突总数:   {s['total_conflicts']}")
+    print(c(f"   待处理:     {s['open']}", "red" if s["open"] else "green"))
+    print(f"   已解决:     {s['resolved']}")
+    print(f"   已关闭:     {s['dismissed']}")
+    for ct, cnt in s.get("by_type", {}).items():
+        print(f"   类型[{ct}]: {cnt}")
+    for res, cnt in s.get("by_resolution", {}).items():
+        if res:
+            print(f"   解决[{res}]: {cnt}")
+    cm.close()
+    return 0
+
+
 # ===== v5.3.9 新增五大能力 CLI 命令实现 =====
 
 def cmd_intent_router(args):
@@ -4193,6 +4431,16 @@ def _main_dispatch(args):
         "drama-plot-thread": cmd_drama_plot_thread,
         "drama-episode-curve": cmd_drama_episode_curve,
         "drama-screen-time": cmd_drama_screen_time,
+        # v5.4.2 新增
+        "fed-acl-add": cmd_fed_acl_add,
+        "fed-acl-remove": cmd_fed_acl_remove,
+        "fed-acl-list": cmd_fed_acl_list,
+        "fed-acl-check": cmd_fed_acl_check,
+        "fed-acl-stats": cmd_fed_acl_stats,
+        "share-conflicts": cmd_share_conflicts,
+        "share-conflict-resolve": cmd_share_conflict_resolve,
+        "share-conflict-dismiss": cmd_share_conflict_dismiss,
+        "share-conflict-stats": cmd_share_conflict_stats,
         # v5.3.9 新增五大能力
         "intent-router": cmd_intent_router,
         "conflict-scan": cmd_conflict_scan,

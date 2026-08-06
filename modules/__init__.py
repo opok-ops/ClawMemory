@@ -20,6 +20,9 @@ from .skill_extractor import SkillExtractor, SkillTemplate, SkillSlot
 from .hybrid_search import (QueryExpander, ExpansionResult,
                             CrossEncoderReranker, RerankResult, RerankWeights)
 from .session_focus import SessionFocus, TopicCluster, FocusSummary
+# v5.4.2 新增两大能力
+from .federated_acl import FederatedACLManager
+from .share_conflict import SharedConflictResolver
 
 __all__ = [
     "RecallEngine",
@@ -63,4 +66,7 @@ __all__ = [
     "SessionFocus",
     "TopicCluster",
     "FocusSummary",
+    # v5.4.2
+    "FederatedACLManager",
+    "SharedConflictResolver",
 ]

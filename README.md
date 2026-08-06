@@ -6,7 +6,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.4.1-green.svg)](https://github.com/opok-ops/ClawMemory)
+[![Version](https://img.shields.io/badge/version-5.4.2-green.svg)](https://github.com/opok-ops/ClawMemory)
 [![CI](https://github.com/opok-ops/ClawMemory/actions/workflows/ci.yml/badge.svg)](https://github.com/opok-ops/ClawMemory/actions/workflows/ci.yml)
 
 ---
@@ -56,7 +56,7 @@ for chunk in results.chunks:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      MindForge v5.4.1                          │
+│                      MindForge v5.4.2                          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  ┌─────────────────────────────────────────────────────────┐ │
@@ -249,6 +249,17 @@ MindForge memory-reinforce <agent> [--days] [--limit]
 MindForge drama-plot-thread <drama_id>
 MindForge drama-episode-curve <drama_id>
 MindForge drama-screen-time <drama_id>
+
+# v5.4.2 联邦 ACL + 共享冲突
+MindForge fed-acl-add --principal <peer|*> --resource <all|memory:<id>|category:<名>|tag:<名>> [--operations] [--effect] [--priority] [--trust-min] [--expires-hours]
+MindForge fed-acl-remove <rule_id>
+MindForge fed-acl-list [--principal] [--effect] [--limit]
+MindForge fed-acl-check <peer> <memory_id> [--operation] [--trust] [--category] [--tags]
+MindForge fed-acl-stats
+MindForge share-conflicts [--status] [--limit]
+MindForge share-conflict-resolve <conflict_id> --strategy <lww|keep_both> [--actor]
+MindForge share-conflict-dismiss <conflict_id> [--actor]
+MindForge share-conflict-stats
 ```
 
 ---
@@ -276,14 +287,16 @@ MindForge/
 │   ├── conflict_detector.py   # 矛盾检测 + 自动衰减（v5.3.9 新增）
 │   ├── skill_extractor.py     # 记忆→技能模板（v5.3.9 新增）
 │   ├── hybrid_search.py       # 查询扩展 + Cross-Encoder 重排（v5.3.9 新增）
-│   └── session_focus.py       # 会话焦点聚类 + 漂移检测（v5.3.9 新增）
+│   ├── session_focus.py       # 会话焦点聚类 + 漂移检测（v5.3.9 新增）
+│   ├── federated_acl.py       # 联邦记忆细粒度 ACL（v5.4.2 新增）
+│   └── share_conflict.py      # 共享记忆冲突检测与解决（v5.4.2 新增）
 ├── adapters/                  # 适配层 Adapter Layer
 │   ├── openclaw_adapter.py    # OpenClaw 集成
 │   ├── claude_adapter.py      # Claude Code 集成
 │   └── generic_api.py         # 通用 REST API
 ├── cli/                       # 命令行界面
 │   └── main.py                # 基于 argparse 的 60+ 命令 CLI
-├── tests/                     # 测试套件（54 个用例）
+├── tests/                     # 测试套件（74 个用例）
 ├── website/                   # 官方网站
 └── examples/                  # 用法示例
 ```
@@ -318,6 +331,31 @@ context = adapter.get_context("database optimization")
 ---
 
 ## Changelog（版本记录）
+
+### v5.4.2 (2026-08-06)
+
+**两大能力增强（联邦记忆细粒度 ACL + 共享记忆冲突解决）**
+
+1. **Federated ACL（联邦记忆细粒度访问控制）** — 按「主体（peer/通配）× 资源（记忆/分类/标签/全部）× 操作（read/write/reshare）」配置 allow/deny 规则；支持优先级、信任阈值与过期时间。评估语义参考 IAM/RBAC：**默认拒绝**，规则按 priority 从高到低评估，同优先级下 deny 优先；所有拒绝决策写入审计日志（`acl_deny`）。
+   - API: `MindForge.federated_acl`（add_rule / remove_rule / list_rules / check_access / filter_peers / acl_stats）
+   - CLI: `MindForge fed-acl-add / fed-acl-remove / fed-acl-list / fed-acl-check / fed-acl-stats`
+   - MCP: `fed_acl_add` / `fed_acl_remove` / `fed_acl_list` / `fed_acl_check` / `fed_acl_stats`
+
+2. **Shared Conflict（共享记忆冲突解决）** — 联邦/多 Agent 并发更新同一条共享记忆时自动检测冲突并持久化记录；支持三种处置：**lww**（按版本+时间戳+peer 决胜，新者覆盖并自动备份旧版本）、**keep_both**（传入内容另存分支记忆并建立 `conflict_branch` 关联）、**manual**（挂起等待人工处理）；另支持 dismiss 关闭与态势统计。
+   - API: `MindForge.share_conflict`（detect_incoming / resolve / list_conflicts / dismiss / stats）
+   - CLI: `MindForge share-conflicts / share-conflict-resolve / share-conflict-dismiss / share-conflict-stats`
+   - MCP: `share_conflict_list` / `share_conflict_resolve` / `share_conflict_dismiss` / `share_conflict_stats`
+
+**修复与集成**
+- **修复 `FederatedMemory.share_memory` 信任过滤失效** — 此前过滤循环为空操作（dead code），未注册或低信任度（<0.3）节点仍会进入 `shared_with`；现真实过滤，并可叠加 ACL 逐节点评估，被跳过节点及原因记录在 `last_share_skipped`。
+- **`FederatedMemory.accept_incoming` 接入冲突解析器** — 传入更新指向本地已有记忆时自动检测冲突，按 `resolve_strategy`（lww/keep_both/manual）处置；未注入解析器时保持原有直接入库行为。
+- **`MindForge.federated` 属性接入主类** — 自动注入 ACL 与冲突解析器，开箱即用。
+
+**其他更新**
+- MCP Server 工具数从 21 → 30，新增 9 个 v5.4.2 工具，serverInfo 版本同步至 5.4.2
+- `modules/__init__.py` 注册 `FederatedACLManager` / `SharedConflictResolver`
+- 版本徽章、架构图、CLI 用法、Project Structure 同步更新至 v5.4.2
+- 单元测试从 54 → 74 个用例，全部通过（新增 ACL 与冲突解决共 20 项）
 
 ### v5.4.1 (2026-08-06)
 

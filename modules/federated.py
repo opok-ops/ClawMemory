@@ -61,13 +61,18 @@ class SharedMemory:
 class FederatedMemory:
     """联邦记忆管理器"""
 
-    def __init__(self, storage=None, local_peer_id: str = ""):
+    def __init__(self, storage=None, local_peer_id: str = "",
+                 acl=None, conflict_resolver=None):
         self.storage = storage
         self.local_peer_id = local_peer_id or str(uuid.uuid4())
         self.peers: Dict[str, FederatedPeer] = {}
         self.shared_memories: Dict[str, SharedMemory] = {}
         self._incoming_queue: List[Dict] = []
         self._outgoing_queue: List[Dict] = []
+        # v5.4.2 新增：细粒度 ACL（modules/federated_acl.py）与
+        # 共享记忆冲突解析器（modules/share_conflict.py），均可选注入
+        self.acl = acl
+        self.conflict_resolver = conflict_resolver
 
     def register_peer(self, peer_id: str, name: str,
                       trust_level: float = 0.5,
@@ -102,20 +107,57 @@ class FederatedMemory:
                      peer_ids: List[str],
                      access_policy: str = "read_only",
                      expires_hours: Optional[float] = None) -> Optional[SharedMemory]:
-        """共享记忆给其他节点"""
+        """共享记忆给其他节点
+
+        v5.4.2 修复：此前信任过滤循环为空操作（dead code），未注册或
+        低信任度（<0.3）节点仍会进入 shared_with。现实际过滤，并可叠加
+        细粒度 ACL（注入 self.acl 时按 read 操作逐节点评估）。
+        """
         if not self._verify_memory_exists(memory_id):
             return None
 
+        # v5.4.2 修复：真实过滤未注册 / 低信任节点
+        eligible: List[str] = []
+        skipped: Dict[str, str] = {}
         for pid in peer_ids:
             if pid not in self.peers:
+                skipped[pid] = "未注册的节点"
                 continue
             if self.peers[pid].trust_level < 0.3:
+                skipped[pid] = f"信任度不足（{self.peers[pid].trust_level:.2f} < 0.3）"
                 continue
+            eligible.append(pid)
+
+        # v5.4.2 新增：细粒度 ACL 过滤（按 read 操作评估）
+        if self.acl is not None and eligible:
+            memory_category = None
+            memory_tags: List[str] = []
+            if self.storage:
+                try:
+                    entry = self.storage.get_memory(memory_id)
+                    if entry is not None:
+                        memory_category = entry.category
+                        memory_tags = list(entry.tags or [])
+                except Exception:
+                    pass
+            trust_map = {pid: self.peers[pid].trust_level for pid in eligible}
+            verdict = self.acl.filter_peers(
+                memory_id=memory_id, peer_ids=eligible, operation="read",
+                trust_map=trust_map, memory_category=memory_category,
+                memory_tags=memory_tags)
+            for pid, reason in verdict["denied"].items():
+                skipped[pid] = f"ACL 拒绝: {reason}"
+            eligible = verdict["allowed"]
+
+        self.last_share_skipped = skipped
+
+        if not eligible:
+            return None
 
         shared = SharedMemory(
             memory_id=memory_id,
             original_peer=self.local_peer_id,
-            shared_with=peer_ids,
+            shared_with=eligible,
             shared_at=time.time(),
             expires_at=time.time() + expires_hours * 3600 if expires_hours else None,
             access_policy=access_policy,
@@ -123,7 +165,7 @@ class FederatedMemory:
 
         self.shared_memories[memory_id] = shared
 
-        for pid in peer_ids:
+        for pid in eligible:
             self._outgoing_queue.append({
                 "type": "memory_share",
                 "from": self.local_peer_id,
@@ -173,12 +215,41 @@ class FederatedMemory:
 
         return True
 
-    def accept_incoming(self, memory_index: int = -1) -> Optional[str]:
-        """接受传入的记忆"""
+    def accept_incoming(self, memory_index: int = -1,
+                        resolve_strategy: str = "manual") -> Optional[str]:
+        """接受传入的记忆
+
+        v5.4.2 新增：注入 conflict_resolver 时，对指向本地已有记忆的
+        传入更新做冲突检测与解决：
+        - resolve_strategy="lww"       按（版本, 时间戳, peer）决胜，新者覆盖
+        - resolve_strategy="keep_both" 传入内容另存分支记忆并建立关联
+        - resolve_strategy="manual"    冲突挂起，等待人工处理（返回 None）
+        未注入 conflict_resolver 时保持原有直接入库行为。
+        """
         if not self._incoming_queue:
             return None
 
         item = self._incoming_queue.pop(memory_index)
+
+        # v5.4.2 新增：冲突检测与解决
+        if self.conflict_resolver is not None and self.storage:
+            incoming = dict(item.get("data") or {})
+            incoming.setdefault("from_peer", item.get("from", ""))
+            try:
+                detection = self.conflict_resolver.detect_incoming(incoming)
+            except Exception:
+                detection = {"conflict": False, "action": "new"}
+            if detection.get("conflict"):
+                if resolve_strategy in ("lww", "keep_both"):
+                    resolution = self.conflict_resolver.resolve(
+                        detection["conflict_id"], resolve_strategy,
+                        actor=str(item.get("from", "")))
+                    if resolution.get("success"):
+                        return resolution.get("resolved_memory_id")
+                # manual 或解决失败：冲突挂起
+                return None
+            if detection.get("action") == "noop":
+                return detection.get("local_memory_id")
 
         if self.storage:
             try:

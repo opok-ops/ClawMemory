@@ -1,5 +1,5 @@
 """
-MindForge v5.4.1 主入口类
+MindForge v5.4.2 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,7 +31,7 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.4.1"
+    __version__ = "5.4.2"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -135,6 +135,9 @@ class MindForge:
         self._query: Optional[QueryEngine] = None
         self._multi_agent = None
         self._intent_router = None  # v5.3.9 lazy
+        self._federated = None          # v5.4.2 lazy
+        self._federated_acl = None      # v5.4.2 lazy
+        self._share_conflict = None     # v5.4.2 lazy
 
         if self.config.encrypted:
             self._init_encryption()
@@ -2887,6 +2890,58 @@ class MindForge:
                 from modules.multi_agent import MultiAgentMemoryManager
             self._multi_agent = MultiAgentMemoryManager(self._storage)
         return self._multi_agent
+
+    # ===== 联邦记忆细粒度 ACL / 共享冲突解决（v5.4.2）=====
+
+    @property
+    def federated_acl(self):
+        """联邦记忆细粒度 ACL 管理器（v5.4.2 新增）
+
+        按「主体（peer）× 资源（记忆/分类/标签/全部）× 操作」配置
+        allow/deny 规则，支持优先级、信任阈值与过期时间；默认拒绝。
+        """
+        if self._federated_acl is None:
+            try:
+                from ..modules.federated_acl import FederatedACLManager
+            except (ImportError, ValueError):
+                from modules.federated_acl import FederatedACLManager
+            self._federated_acl = FederatedACLManager(self._storage)
+        return self._federated_acl
+
+    @property
+    def share_conflict(self):
+        """共享记忆冲突解析器（v5.4.2 新增）
+
+        联邦/多 Agent 并发更新的冲突检测与解决：
+        lww（版本+时间戳决胜）/ keep_both（分支保留）/ 人工挂起。
+        """
+        if self._share_conflict is None:
+            try:
+                from ..modules.share_conflict import SharedConflictResolver
+            except (ImportError, ValueError):
+                from modules.share_conflict import SharedConflictResolver
+            self._share_conflict = SharedConflictResolver(self._storage)
+        return self._share_conflict
+
+    @property
+    def federated(self):
+        """联邦记忆管理器（v5.4.2 接入主类）
+
+        自动注入细粒度 ACL 与共享冲突解析器：
+        share_memory 按信任度 + ACL 过滤节点，accept_incoming
+        自动检测共享记忆冲突。
+        """
+        if self._federated is None:
+            try:
+                from ..modules.federated import FederatedMemory
+            except (ImportError, ValueError):
+                from modules.federated import FederatedMemory
+            self._federated = FederatedMemory(
+                storage=self._storage,
+                acl=self.federated_acl,
+                conflict_resolver=self.share_conflict,
+            )
+        return self._federated
 
     # ===== v5.3.9 五大能力增强 API =====
 

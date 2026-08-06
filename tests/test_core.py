@@ -1,4 +1,4 @@
-"""MindForge v5.4.1 单元测试"""
+"""MindForge v5.4.2 单元测试"""
 import sys
 from pathlib import Path
 
@@ -1097,6 +1097,311 @@ class TestContentLengthGuard(unittest.TestCase):
         storage = StorageEngine(db_path=self.db_path)
         with self.assertRaises(ValueError):
             storage.add_memory(content="z" * 50001)
+
+
+# ===== v5.4.2 新增能力测试 =====
+
+class TestFederatedACL(unittest.TestCase):
+    """v5.4.2 联邦记忆细粒度 ACL 测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp(prefix="mf_acl_")
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_default_deny(self):
+        from core.storage import StorageEngine
+        from modules.federated_acl import FederatedACLManager
+        storage = StorageEngine(db_path=self.db_path)
+        acl = FederatedACLManager(storage)
+        result = acl.check_access("peerA", "mem1", "read")
+        self.assertFalse(result["allowed"])
+        self.assertEqual(result["effect"], "deny")
+        self.assertIsNone(result["matched_rule"])
+
+    def test_allow_rule_grants_access(self):
+        from core.storage import StorageEngine
+        from modules.federated_acl import FederatedACLManager
+        storage = StorageEngine(db_path=self.db_path)
+        acl = FederatedACLManager(storage)
+        add = acl.add_rule("peerA", "memory:mem1", "read", effect="allow")
+        self.assertTrue(add["success"])
+        result = acl.check_access("peerA", "mem1", "read")
+        self.assertTrue(result["allowed"])
+        self.assertEqual(result["matched_rule"], add["rule_id"])
+        # 其他 peer 不受影响（仍默认拒绝）
+        self.assertFalse(acl.check_access("peerB", "mem1", "read")["allowed"])
+        # 其他操作不受影响
+        self.assertFalse(acl.check_access("peerA", "mem1", "write")["allowed"])
+
+    def test_deny_overrides_at_same_priority(self):
+        from core.storage import StorageEngine
+        from modules.federated_acl import FederatedACLManager
+        storage = StorageEngine(db_path=self.db_path)
+        acl = FederatedACLManager(storage)
+        acl.add_rule("peerA", "all", "read", effect="allow", priority=100)
+        acl.add_rule("peerA", "all", "read", effect="deny", priority=100)
+        result = acl.check_access("peerA", "mem1", "read")
+        self.assertFalse(result["allowed"])
+
+    def test_higher_priority_wins(self):
+        from core.storage import StorageEngine
+        from modules.federated_acl import FederatedACLManager
+        storage = StorageEngine(db_path=self.db_path)
+        acl = FederatedACLManager(storage)
+        acl.add_rule("peerA", "all", "read", effect="deny", priority=50)
+        acl.add_rule("peerA", "all", "read", effect="allow", priority=200)
+        result = acl.check_access("peerA", "mem1", "read")
+        self.assertTrue(result["allowed"])
+
+    def test_expired_rule_ignored(self):
+        from core.storage import StorageEngine
+        from modules.federated_acl import FederatedACLManager
+        storage = StorageEngine(db_path=self.db_path)
+        acl = FederatedACLManager(storage)
+        acl.add_rule("peerA", "all", "read", effect="allow", expires_hours=-1)
+        result = acl.check_access("peerA", "mem1", "read")
+        self.assertFalse(result["allowed"])
+
+    def test_trust_min_enforced(self):
+        from core.storage import StorageEngine
+        from modules.federated_acl import FederatedACLManager
+        storage = StorageEngine(db_path=self.db_path)
+        acl = FederatedACLManager(storage)
+        acl.add_rule("peerA", "all", "read", effect="allow", trust_min=0.7)
+        # 低信任：规则不生效 → 默认拒绝
+        self.assertFalse(acl.check_access("peerA", "m", "read", peer_trust=0.5)["allowed"])
+        # 高信任：规则生效
+        self.assertTrue(acl.check_access("peerA", "m", "read", peer_trust=0.9)["allowed"])
+
+    def test_category_and_tag_resources(self):
+        from core.storage import StorageEngine
+        from modules.federated_acl import FederatedACLManager
+        storage = StorageEngine(db_path=self.db_path)
+        acl = FederatedACLManager(storage)
+        acl.add_rule("peerA", "category:work", "read", effect="allow")
+        self.assertTrue(acl.check_access("peerA", "m", "read",
+                                         memory_category="work")["allowed"])
+        self.assertFalse(acl.check_access("peerA", "m", "read",
+                                          memory_category="life")["allowed"])
+        acl.add_rule("peerB", "tag:secret", "read", effect="allow")
+        self.assertTrue(acl.check_access("peerB", "m", "read",
+                                         memory_tags=["Secret"])["allowed"])
+        self.assertFalse(acl.check_access("peerB", "m", "read",
+                                          memory_tags=["public"])["allowed"])
+
+    def test_filter_peers(self):
+        from core.storage import StorageEngine
+        from modules.federated_acl import FederatedACLManager
+        storage = StorageEngine(db_path=self.db_path)
+        acl = FederatedACLManager(storage)
+        acl.add_rule("peerA", "all", "read", effect="allow")
+        verdict = acl.filter_peers("m1", ["peerA", "peerB", "peerC"], "read")
+        self.assertEqual(verdict["allowed"], ["peerA"])
+        self.assertEqual(verdict["denied_count"], 2)
+
+    def test_remove_rule_and_stats(self):
+        from core.storage import StorageEngine
+        from modules.federated_acl import FederatedACLManager
+        storage = StorageEngine(db_path=self.db_path)
+        acl = FederatedACLManager(storage)
+        add = acl.add_rule("peerA", "all", "read", effect="allow")
+        self.assertTrue(acl.check_access("peerA", "m", "read")["allowed"])
+        self.assertTrue(acl.remove_rule(add["rule_id"])["success"])
+        self.assertFalse(acl.check_access("peerA", "m", "read")["allowed"])
+        stats = acl.acl_stats()
+        self.assertEqual(stats["total_rules"], 0)
+        self.assertGreaterEqual(stats["deny_audit_events"], 1)
+
+    def test_invalid_inputs(self):
+        from core.storage import StorageEngine
+        from modules.federated_acl import FederatedACLManager
+        storage = StorageEngine(db_path=self.db_path)
+        acl = FederatedACLManager(storage)
+        self.assertFalse(acl.add_rule("", "all")["success"])
+        self.assertFalse(acl.add_rule("p", "badresource")["success"])
+        self.assertFalse(acl.add_rule("p", "all", "fly")["success"])
+        self.assertFalse(acl.add_rule("p", "all", "read", effect="maybe")["success"])
+
+
+class TestFederatedShareFiltering(unittest.TestCase):
+    """v5.4.2 修复：share_memory 信任过滤 + ACL 强制"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp(prefix="mf_fedshare_")
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_low_trust_peer_filtered(self):
+        from core.storage import StorageEngine
+        from modules.federated import FederatedMemory
+        storage = StorageEngine(db_path=self.db_path)
+        entry = storage.add_memory(content="待共享记忆")
+        fed = FederatedMemory(storage=storage, local_peer_id="local")
+        fed.register_peer("trusted", "可信节点", trust_level=0.8)
+        fed.register_peer("untrusted", "低信任节点", trust_level=0.1)
+        shared = fed.share_memory(entry.id, ["trusted", "untrusted", "ghost"])
+        self.assertIsNotNone(shared)
+        self.assertEqual(shared.shared_with, ["trusted"])
+        self.assertIn("untrusted", fed.last_share_skipped)
+        self.assertIn("ghost", fed.last_share_skipped)
+
+    def test_acl_blocks_share(self):
+        from core.storage import StorageEngine
+        from modules.federated import FederatedMemory
+        from modules.federated_acl import FederatedACLManager
+        storage = StorageEngine(db_path=self.db_path)
+        entry = storage.add_memory(content="受控记忆")
+        acl = FederatedACLManager(storage)
+        fed = FederatedMemory(storage=storage, local_peer_id="local", acl=acl)
+        fed.register_peer("peerA", "节点A", trust_level=0.8)
+        # 无 allow 规则 → 默认拒绝 → 无合格节点
+        self.assertIsNone(fed.share_memory(entry.id, ["peerA"]))
+        # 加 allow 规则后可共享
+        acl.add_rule("peerA", f"memory:{entry.id}", "read", effect="allow")
+        shared = fed.share_memory(entry.id, ["peerA"])
+        self.assertIsNotNone(shared)
+        self.assertEqual(shared.shared_with, ["peerA"])
+
+    def test_accept_incoming_conflict_manual(self):
+        from core.storage import StorageEngine
+        from modules.federated import FederatedMemory
+        from modules.share_conflict import SharedConflictResolver
+        storage = StorageEngine(db_path=self.db_path)
+        resolver = SharedConflictResolver(storage)
+        fed = FederatedMemory(storage=storage, local_peer_id="local",
+                              conflict_resolver=resolver)
+        local_entry = storage.add_memory(content="本地版本")
+        fed.register_peer("peerA", "节点A", trust_level=0.9)
+        ok = fed.receive_memory("peerA", {
+            "memory_id": local_entry.id,
+            "content": "远端不同版本",
+            "version": 1,
+        })
+        self.assertTrue(ok)
+        # manual 策略：冲突挂起，不入新库
+        result_id = fed.accept_incoming(resolve_strategy="manual")
+        self.assertIsNone(result_id)
+        conflicts = resolver.list_conflicts(status="open")
+        self.assertEqual(len(conflicts), 1)
+        # 本地内容未被改动
+        self.assertEqual(storage.get_memory(local_entry.id).content, "本地版本")
+
+
+class TestShareConflict(unittest.TestCase):
+    """v5.4.2 共享记忆冲突解决测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp(prefix="mf_cfl_")
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def _make(self):
+        from core.storage import StorageEngine
+        from modules.share_conflict import SharedConflictResolver
+        storage = StorageEngine(db_path=self.db_path)
+        return storage, SharedConflictResolver(storage)
+
+    def test_detect_new_and_noop(self):
+        storage, resolver = self._make()
+        # 本地无对应记忆 → new
+        det = resolver.detect_incoming({"memory_id": "no-such", "content": "x"})
+        self.assertFalse(det["conflict"])
+        self.assertEqual(det["action"], "new")
+        # 内容一致 → noop
+        entry = storage.add_memory(content="一致内容")
+        det = resolver.detect_incoming({"memory_id": entry.id, "content": "一致内容"})
+        self.assertFalse(det["conflict"])
+        self.assertEqual(det["action"], "noop")
+        self.assertEqual(det["local_memory_id"], entry.id)
+
+    def test_detect_conflict_and_stats(self):
+        storage, resolver = self._make()
+        entry = storage.add_memory(content="本地版本")
+        det = resolver.detect_incoming({
+            "memory_id": entry.id, "content": "远端版本",
+            "version": 3, "from_peer": "peerA"})
+        self.assertTrue(det["conflict"])
+        self.assertIn(det["conflict_type"], ("content", "version"))
+        stats = resolver.stats()
+        self.assertEqual(stats["total_conflicts"], 1)
+        self.assertEqual(stats["open"], 1)
+
+    def test_resolve_lww_incoming_wins(self):
+        storage, resolver = self._make()
+        entry = storage.add_memory(content="旧的本地内容")
+        det = resolver.detect_incoming({
+            "memory_id": entry.id, "content": "更新的远端内容",
+            "version": 5, "timestamp": 9999999999.0, "from_peer": "peerA"})
+        result = resolver.resolve(det["conflict_id"], "lww", actor="tester")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["resolution"], "lww_incoming")
+        self.assertEqual(result["resolved_memory_id"], entry.id)
+        self.assertEqual(storage.get_memory(entry.id).content, "更新的远端内容")
+        # 旧版本已备份到版本历史
+        versions = storage.list_versions(entry.id)
+        self.assertGreaterEqual(len(versions), 1)
+
+    def test_resolve_lww_local_wins(self):
+        storage, resolver = self._make()
+        entry = storage.add_memory(content="本地新内容")
+        det = resolver.detect_incoming({
+            "memory_id": entry.id, "content": "远端旧内容",
+            "version": 0, "timestamp": 1.0, "from_peer": "peerA"})
+        result = resolver.resolve(det["conflict_id"], "lww")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["resolution"], "lww_local")
+        self.assertEqual(storage.get_memory(entry.id).content, "本地新内容")
+
+    def test_resolve_keep_both(self):
+        storage, resolver = self._make()
+        entry = storage.add_memory(content="本地版本")
+        det = resolver.detect_incoming({
+            "memory_id": entry.id, "content": "远端分支版本", "from_peer": "peerB"})
+        result = resolver.resolve(det["conflict_id"], "keep_both")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["resolution"], "keep_both")
+        branch_id = result["resolved_memory_id"]
+        self.assertNotEqual(branch_id, entry.id)
+        branch = storage.get_memory(branch_id)
+        self.assertEqual(branch.content, "远端分支版本")
+        self.assertIn("conflict:branch", branch.tags)
+        # 本地原记忆不变
+        self.assertEqual(storage.get_memory(entry.id).content, "本地版本")
+        # 建立了关联
+        links = storage.list_links(entry.id)
+        self.assertTrue(any(l.get("link_type") == "conflict_branch" for l in links))
+
+    def test_dismiss_and_double_resolve(self):
+        storage, resolver = self._make()
+        entry = storage.add_memory(content="本地")
+        det = resolver.detect_incoming({"memory_id": entry.id, "content": "远端"})
+        # 重复解决前先测 dismiss 的另一条
+        entry2 = storage.add_memory(content="本地2")
+        det2 = resolver.detect_incoming({"memory_id": entry2.id, "content": "远端2"})
+        self.assertTrue(resolver.dismiss(det2["conflict_id"])["success"])
+        self.assertFalse(resolver.dismiss(det2["conflict_id"])["success"])
+        # 解决后再解决应失败
+        self.assertTrue(resolver.resolve(det["conflict_id"], "lww")["success"])
+        self.assertFalse(resolver.resolve(det["conflict_id"], "lww")["success"])
+        stats = resolver.stats()
+        self.assertEqual(stats["resolved"], 1)
+        self.assertEqual(stats["dismissed"], 1)
+
+    def test_invalid_strategy_and_missing(self):
+        storage, resolver = self._make()
+        self.assertFalse(resolver.resolve("cfl_none", "merge")["success"])
+        self.assertFalse(resolver.resolve("cfl_none", "lww")["success"])
+        self.assertFalse(resolver.dismiss("cfl_none")["success"])
 
 
 if __name__ == "__main__":

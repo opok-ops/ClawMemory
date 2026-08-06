@@ -302,6 +302,108 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "properties": {"drama_id": {"type": "string"}},
         },
     },
+    # ===== v5.4.2 新增两大能力 =====
+    {
+        "name": "fed_acl_add",
+        "description": "联邦记忆细粒度 ACL：添加规则（主体×资源×操作×allow/deny，支持优先级/信任阈值/过期）。",
+        "inputSchema": {
+            "type": "object",
+            "required": ["principal", "resource"],
+            "properties": {
+                "principal": {"type": "string", "description": "peer ID 或 * 表示任意节点"},
+                "resource": {"type": "string", "description": "all / memory:<id> / category:<名> / tag:<名>"},
+                "operations": {"type": "string", "default": "read", "description": "read/write/reshare/*，逗号分隔"},
+                "effect": {"type": "string", "enum": ["allow", "deny"], "default": "allow"},
+                "priority": {"type": "integer", "minimum": 0, "maximum": 10000, "default": 100},
+                "trust_min": {"type": "number", "minimum": 0, "maximum": 1, "default": 0},
+                "expires_hours": {"type": "number", "description": "规则有效时长（小时），缺省永久"},
+                "note": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "fed_acl_remove",
+        "description": "联邦记忆细粒度 ACL：删除规则。",
+        "inputSchema": {
+            "type": "object",
+            "required": ["rule_id"],
+            "properties": {"rule_id": {"type": "string"}},
+        },
+    },
+    {
+        "name": "fed_acl_list",
+        "description": "联邦记忆细粒度 ACL：规则列表（可按主体/效果过滤）。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "principal": {"type": "string"},
+                "effect": {"type": "string", "enum": ["allow", "deny"]},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 200},
+            },
+        },
+    },
+    {
+        "name": "fed_acl_check",
+        "description": "联邦记忆细粒度 ACL：访问评估（默认拒绝；返回 allowed/effect/reason/matched_rule）。",
+        "inputSchema": {
+            "type": "object",
+            "required": ["peer_id", "memory_id"],
+            "properties": {
+                "peer_id": {"type": "string"},
+                "memory_id": {"type": "string"},
+                "operation": {"type": "string", "enum": ["read", "write", "reshare"], "default": "read"},
+                "peer_trust": {"type": "number", "minimum": 0, "maximum": 1},
+                "memory_category": {"type": "string"},
+                "memory_tags": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+    },
+    {
+        "name": "fed_acl_stats",
+        "description": "联邦记忆细粒度 ACL：规则分布与拒绝审计统计。",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "share_conflict_list",
+        "description": "共享记忆冲突：冲突记录列表（可按状态过滤 open/resolved/dismissed）。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "enum": ["open", "resolved", "dismissed"]},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 50},
+            },
+        },
+    },
+    {
+        "name": "share_conflict_resolve",
+        "description": "共享记忆冲突：按策略解决 open 冲突（lww=版本+时间戳决胜覆盖；keep_both=另存分支并关联）。",
+        "inputSchema": {
+            "type": "object",
+            "required": ["conflict_id", "strategy"],
+            "properties": {
+                "conflict_id": {"type": "string"},
+                "strategy": {"type": "string", "enum": ["lww", "keep_both"]},
+                "actor": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "share_conflict_dismiss",
+        "description": "共享记忆冲突：人工关闭 open 冲突（判定无需处理）。",
+        "inputSchema": {
+            "type": "object",
+            "required": ["conflict_id"],
+            "properties": {
+                "conflict_id": {"type": "string"},
+                "actor": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "share_conflict_stats",
+        "description": "共享记忆冲突：冲突态势统计（按状态/类型/解决方式）。",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
     # ===== v5.3.9 新增五大能力 =====
     {
         "name": "intent_router",
@@ -611,6 +713,83 @@ def h_drama_screen_time(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     return {"drama_id": drama_id, "result": _clean(mf.storage.drama_screen_time(drama_id))}
 
 
+# ===== v5.4.2 两大能力 MCP handlers =====
+
+def h_fed_acl_add(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    expires_hours = args.get("expires_hours")
+    try:
+        expires_hours = float(expires_hours) if expires_hours is not None else None
+    except (TypeError, ValueError):
+        expires_hours = None
+    result = mf.federated_acl.add_rule(
+        principal=str(args["principal"]),
+        resource=str(args["resource"]),
+        operations=str(args.get("operations", "read")),
+        effect=str(args.get("effect", "allow")),
+        priority=_safe_int(args.get("priority", 100), 100, 0, 10000),
+        trust_min=float(args.get("trust_min", 0.0) or 0.0),
+        expires_hours=expires_hours,
+        note=str(args.get("note", "")))
+    return _clean(result)
+
+
+def h_fed_acl_remove(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    return _clean(mf.federated_acl.remove_rule(str(args["rule_id"])))
+
+
+def h_fed_acl_list(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    rules = mf.federated_acl.list_rules(
+        principal=args.get("principal"),
+        effect=args.get("effect"),
+        limit=_safe_int(args.get("limit", 200), 200, 1, 1000))
+    return {"count": len(rules), "rules": _clean(rules)}
+
+
+def h_fed_acl_check(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    peer_trust = args.get("peer_trust")
+    try:
+        peer_trust = float(peer_trust) if peer_trust is not None else None
+    except (TypeError, ValueError):
+        peer_trust = None
+    tags = args.get("memory_tags") or []
+    if isinstance(tags, str):
+        tags = [tags]
+    result = mf.federated_acl.check_access(
+        peer_id=str(args["peer_id"]),
+        memory_id=str(args["memory_id"]),
+        operation=str(args.get("operation", "read")),
+        peer_trust=peer_trust,
+        memory_category=args.get("memory_category"),
+        memory_tags=[str(t) for t in tags])
+    return _clean(result)
+
+
+def h_fed_acl_stats(mf, _args: Dict[str, Any]) -> Dict[str, Any]:
+    return _clean(mf.federated_acl.acl_stats())
+
+
+def h_share_conflict_list(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    conflicts = mf.share_conflict.list_conflicts(
+        status=args.get("status"),
+        limit=_safe_int(args.get("limit", 50), 50, 1, 500))
+    return {"count": len(conflicts), "conflicts": _clean(conflicts)}
+
+
+def h_share_conflict_resolve(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    return _clean(mf.share_conflict.resolve(
+        str(args["conflict_id"]), str(args["strategy"]),
+        actor=str(args.get("actor", ""))))
+
+
+def h_share_conflict_dismiss(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    return _clean(mf.share_conflict.dismiss(
+        str(args["conflict_id"]), actor=str(args.get("actor", ""))))
+
+
+def h_share_conflict_stats(mf, _args: Dict[str, Any]) -> Dict[str, Any]:
+    return _clean(mf.share_conflict.stats())
+
+
 # ===== v5.3.9 五大能力 MCP handlers =====
 
 def h_intent_router(mf, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -680,6 +859,16 @@ HANDLERS: Dict[str, Any] = {
     "drama_plot_thread": h_drama_plot_thread,
     "drama_episode_curve": h_drama_episode_curve,
     "drama_screen_time": h_drama_screen_time,
+    # v5.4.2 新增
+    "fed_acl_add": h_fed_acl_add,
+    "fed_acl_remove": h_fed_acl_remove,
+    "fed_acl_list": h_fed_acl_list,
+    "fed_acl_check": h_fed_acl_check,
+    "fed_acl_stats": h_fed_acl_stats,
+    "share_conflict_list": h_share_conflict_list,
+    "share_conflict_resolve": h_share_conflict_resolve,
+    "share_conflict_dismiss": h_share_conflict_dismiss,
+    "share_conflict_stats": h_share_conflict_stats,
     # v5.3.9 新增
     "intent_router": h_intent_router,
     "conflict_scan": h_conflict_scan,
@@ -698,7 +887,7 @@ def _handle_initialize(request: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "protocolVersion": "2024-11-05",
         "capabilities": {"tools": {}, "logging": {}},
-        "serverInfo": {"name": "mindforge", "version": "5.4.1"},
+        "serverInfo": {"name": "mindforge", "version": "5.4.2"},
     }
 
 
