@@ -5432,7 +5432,10 @@ class StorageEngine:
         # v5.4.0 安全加固：所有字段控制字符过滤 + 长度限制，防御审计日志污染
         ACTION_WHITELIST = {"add", "update", "delete", "restore", "purge", "export", "import",
                           "grant", "revoke", "merge", "access", "consolidate",
-                          "forget", "share", "accept", "reject"}
+                          "forget", "share", "accept", "reject",
+                          # v5.4.2 联邦 ACL + 共享冲突审计动作
+                          "acl_deny", "acl_add_rule", "acl_remove_rule",
+                          "conflict_detected", "conflict_resolved", "conflict_dismiss"}
         if action not in ACTION_WHITELIST:
             action = "other"  # 非白名单降级为 other
         memory_id = self._strip_control(str(memory_id))[:64]
