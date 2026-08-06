@@ -158,6 +158,18 @@ def _filter_unicode_ctrl(s: str) -> str:
     )
 
 
+# v5.4.1 修复：内容长度上限提升为模块级常量，统一作用于
+# add_memory / update_memory / batch_add，堵住此前仅 add_memory
+# 校验导致的超长内容绕过（DoS）问题。
+MAX_CONTENT_LEN = 50000
+
+
+def _validate_content_len(content: Optional[str]) -> None:
+    """v5.4.1 安全加固：统一内容长度校验，超限直接拒绝（不做静默截断）"""
+    if content and isinstance(content, str) and len(content) > MAX_CONTENT_LEN:
+        raise ValueError(f"content exceeds {MAX_CONTENT_LEN} chars (got {len(content)})")
+
+
 # v5.3.3 安全加固：LIKE 通配符转义，防止 % 和 _ 被解释为 SQL LIKE 通配符
 def _escape_like(value: str) -> str:
     """转义 LIKE 模式中的通配符 % 和 _，防止通配符注入"""
@@ -584,9 +596,8 @@ class StorageEngine:
                    metadata: Optional[Dict[str, Any]] = None) -> MemoryEntry:
         """添加记忆"""
         # v5.3.9 安全加固：内容长度上限防 DoS（超限直接拒绝，不做静默截断）
-        MAX_CONTENT_LEN = 50000
-        if content and isinstance(content, str) and len(content) > MAX_CONTENT_LEN:
-            raise ValueError(f"content exceeds {MAX_CONTENT_LEN} chars (got {len(content)})")
+        # v5.4.1 重构：统一走 _validate_content_len（模块级常量）
+        _validate_content_len(content)
         if category and isinstance(category, str) and len(category) > 128:
             category = category[:128]
         if source_agent and isinstance(source_agent, str) and len(source_agent) > 128:
@@ -789,6 +800,8 @@ class StorageEngine:
         fts_dirty = False  # 是否需要刷新 FTS
 
         if content is not None:
+            # v5.4.1 修复：update 路径此前绕过内容长度校验，可注入超长内容（DoS）
+            _validate_content_len(content)
             if self.encrypted and self.encryption:
                 blob = self.encryption.encrypt(content)
                 updates.append("ciphertext = ?")
@@ -5292,6 +5305,8 @@ class StorageEngine:
             try:
                 entry_id = str(uuid.uuid4())
                 content = entry_data.get("content", "")
+                # v5.4.1 修复：batch_add 此前绕过内容长度校验，可批量注入超长内容（DoS）
+                _validate_content_len(content)
                 category = entry_data.get("category", "general")
                 tags = entry_data.get("tags", [])
                 privacy_str = entry_data.get("privacy", "internal")
@@ -5335,7 +5350,8 @@ class StorageEngine:
                     """, (entry_id, content, category, json.dumps(tags, ensure_ascii=False)))
 
                 added_count += 1
-            except (sqlite3.OperationalError, sqlite3.IntegrityError):
+            except (sqlite3.OperationalError, sqlite3.IntegrityError, ValueError):
+                # v5.4.1：ValueError（内容超长等校验失败）按单条失败处理，不中断批量
                 pass
 
         conn.commit()
@@ -9287,4 +9303,863 @@ class StorageEngine:
             "key_scenes": key_scenes[:20],
             "relationship_strength": rel_strength,
             "emotion_progression": emotion_progression[:30],
+        }
+
+    # ===== v5.4.1 新增：Agent 记忆三大能力 =====
+
+    def memory_reflection(self,
+                          agent_id: str,
+                          days: int = 30) -> Dict[str, Any]:
+        """记忆反思（v5.4.1 新增）
+
+        对时间窗口内的记忆做元认知反思：聚合主题分布、情感基调、
+        关键经验教训与注意力焦点漂移，生成结构化反思报告与建议。
+        参考 Generative Agents 的 reflection 机制。
+        """
+        conn = self._get_conn()
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+        days = max(1, min(365, int(days)))
+        now = time.time()
+        since = now - days * 86400
+
+        # v5.4.1 安全：参数化 SQL + 行数限制
+        cur = conn.execute(
+            "SELECT id, content, category, tags, importance, access_count, "
+            "starred, created_at "
+            "FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND created_at >= ? "
+            "ORDER BY created_at ASC",
+            (aid, since)
+        )
+        rows = _limited_fetch(cur, limit=10000)
+
+        if not rows:
+            return {
+                "agent_id": aid,
+                "days": days,
+                "total_memories": 0,
+                "top_categories": [],
+                "top_tags": [],
+                "importance_distribution": {},
+                "emotional_tone": {"dominant": "no_data"},
+                "key_lessons": [],
+                "focus_shift": {"changed": False},
+                "recurring_themes": [],
+                "reflection_summary": "窗口内无记忆可供反思。",
+                "suggestions": [],
+            }
+
+        # 分布统计
+        cat_counts: Dict[str, int] = {}
+        tag_counts: Dict[str, int] = {}
+        imp_dist: Dict[str, int] = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
+        first_half_cats: Dict[str, int] = {}
+        second_half_cats: Dict[str, int] = {}
+        midpoint = len(rows) // 2
+
+        positive_words = {
+            "好", "棒", "优秀", "成功", "完成", "解决", "开心", "满意", "喜欢",
+            "good", "great", "excellent", "success", "happy", "love", "perfect",
+            "突破", "提升", "优化", "改进", "有效", "正确", "赞同",
+        }
+        negative_words = {
+            "坏", "差", "失败", "错误", "问题", "bug", "崩溃", "讨厌", "不满",
+            "bad", "fail", "error", "broken", "crash", "hate", "wrong", "issue",
+            "缺失", "丢失", "异常", "警告", "危险", "漏洞", "冲突", "阻塞",
+        }
+        tone_counts = {"positive": 0, "negative": 0, "neutral": 0}
+
+        lessons: List[Dict[str, Any]] = []
+
+        for i, r in enumerate(rows):
+            mid, content, category, tags_raw, importance, access_count, starred, created_at = (
+                r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]
+            )
+            cat = (category or "general").strip() or "general"
+            cat_counts[cat] = cat_counts.get(cat, 0) + 1
+            half = first_half_cats if i < midpoint else second_half_cats
+            half[cat] = half.get(cat, 0) + 1
+
+            try:
+                c_tags = json.loads(tags_raw) if isinstance(tags_raw, str) and tags_raw else []
+            except Exception:
+                c_tags = []
+            for t in c_tags:
+                tk = str(t).strip().lower()
+                if tk:
+                    tag_counts[tk] = tag_counts.get(tk, 0) + 1
+
+            imp = (importance or "MEDIUM").upper()
+            if imp not in imp_dist:
+                imp = "MEDIUM"
+            imp_dist[imp] += 1
+
+            # 情感基调
+            c_lower = (content or "").lower()
+            pos_hits = sum(1 for w in positive_words if w in c_lower)
+            neg_hits = sum(1 for w in negative_words if w in c_lower)
+            if pos_hits > neg_hits:
+                tone_counts["positive"] += 1
+            elif neg_hits > pos_hits:
+                tone_counts["negative"] += 1
+            else:
+                tone_counts["neutral"] += 1
+
+            # 关键经验候选：重要度权重 * 访问活跃度 + 星标加成
+            imp_w = {"LOW": 0.5, "MEDIUM": 1.0, "HIGH": 1.6, "CRITICAL": 2.2}.get(imp, 1.0)
+            ac = access_count if isinstance(access_count, int) and access_count > 0 else 0
+            lesson_score = round(imp_w * 10.0 + min(ac, 10) * 1.5 + (5.0 if starred else 0.0), 2)
+            lessons.append({
+                "memory_id": mid,
+                "score": lesson_score,
+                "importance": imp,
+                "access_count": ac,
+                "content_preview": (content or "")[:100],
+            })
+
+        total = len(rows)
+        top_categories = [
+            {"category": k, "count": v, "share": round(v / total, 4)}
+            for k, v in sorted(cat_counts.items(), key=lambda x: -x[1])[:5]
+        ]
+        top_tags = [
+            {"tag": k, "count": v}
+            for k, v in sorted(tag_counts.items(), key=lambda x: -x[1])[:10]
+        ]
+        recurring_themes = [k for k, v in tag_counts.items() if v >= 3][:10]
+
+        dominant_tone = max(tone_counts, key=tone_counts.get)
+        if tone_counts[dominant_tone] == 0:
+            dominant_tone = "no_data"
+
+        lessons.sort(key=lambda x: -x["score"])
+        key_lessons = lessons[:5]
+
+        # 焦点漂移：前半段 vs 后半段的主导分类
+        def _dominant(d: Dict[str, int]) -> Optional[str]:
+            if not d:
+                return None
+            return max(d.items(), key=lambda x: x[1])[0]
+
+        first_dom = _dominant(first_half_cats)
+        second_dom = _dominant(second_half_cats)
+        focus_changed = bool(first_dom and second_dom and first_dom != second_dom)
+
+        # 反思摘要
+        cat_brief = "、".join([t["category"] for t in top_categories[:3]]) or "无"
+        tag_brief = "、".join(recurring_themes[:3]) or "无明显主题"
+        summary_parts = [
+            f"过去 {days} 天共沉淀 {total} 条记忆，主要集中在：{cat_brief}。",
+            f"反复出现的主题：{tag_brief}。",
+            f"整体情感基调为 {dominant_tone}。",
+        ]
+        if focus_changed:
+            summary_parts.append(f"注意力焦点已从「{first_dom}」转移到「{second_dom}」。")
+        else:
+            summary_parts.append("注意力焦点保持稳定。")
+        reflection_summary = " ".join(summary_parts)
+
+        suggestions: List[str] = []
+        if focus_changed:
+            suggestions.append(f"焦点从「{first_dom}」转向「{second_dom}」，建议回顾旧焦点下是否有未完结事项")
+        if tone_counts["negative"] > total * 0.4:
+            suggestions.append("负面记忆占比偏高，建议对高频负面对主题做一次根因反思")
+        if key_lessons:
+            suggestions.append("建议将 Top 关键经验固化为长期记忆或技能模板，避免随时间衰减")
+        if not suggestions:
+            suggestions.append("记忆结构健康，保持当前节奏即可")
+
+        return {
+            "agent_id": aid,
+            "days": days,
+            "total_memories": total,
+            "top_categories": top_categories,
+            "top_tags": top_tags,
+            "importance_distribution": imp_dist,
+            "emotional_tone": {
+                **tone_counts,
+                "dominant": dominant_tone,
+            },
+            "key_lessons": key_lessons,
+            "focus_shift": {
+                "changed": focus_changed,
+                "from": first_dom,
+                "to": second_dom,
+            },
+            "recurring_themes": recurring_themes,
+            "reflection_summary": reflection_summary,
+            "suggestions": suggestions,
+        }
+
+    def memory_lineage(self, memory_id: str) -> Dict[str, Any]:
+        """记忆血缘/溯源追踪（v5.4.1 新增）
+
+        追踪单条记忆的完整来源脉络：基础快照、版本历史、
+        关联链接（出/入）、审计事件与生命周期时间线。
+        """
+        conn = self._get_conn()
+        mid = _filter_unicode_ctrl(memory_id[:64]) if isinstance(memory_id, str) and memory_id else ""
+        if not mid:
+            return {"error": "记忆 ID 不能为空"}
+
+        row = conn.execute(
+            "SELECT id, content, category, importance, layer, created_at, "
+            "updated_at, last_accessed_at, access_count, starred, pinned, "
+            "source_agent, source_session "
+            "FROM memories WHERE id = ?",
+            (mid,)
+        ).fetchone()
+        if not row:
+            return {"error": "记忆不存在", "memory_id": mid}
+
+        (rid, content, category, importance, layer, created_at,
+         updated_at, last_accessed_at, access_count, starred, pinned,
+         source_agent, source_session) = row
+
+        now = time.time()
+        created = created_at if isinstance(created_at, (int, float)) else now
+        age_days = round(max(0.0, (now - created) / 86400.0), 2)
+
+        # 版本历史
+        vrows = conn.execute(
+            "SELECT version_number, actor, changed_at, content "
+            "FROM memory_versions WHERE memory_id = ? "
+            "ORDER BY version_number ASC",
+            (mid,)
+        )
+        versions = [
+            {
+                "version_number": v[0],
+                "actor": v[1] or "",
+                "changed_at": v[2],
+                "content_preview": (v[3] or "")[:100],
+            }
+            for v in _limited_fetch(vrows, limit=200)
+        ]
+
+        # 关联链接（出/入）
+        orows = conn.execute(
+            "SELECT id, target_id, link_type, note, created_at "
+            "FROM memory_links WHERE source_id = ? ORDER BY created_at ASC",
+            (mid,)
+        )
+        links_out = [
+            {"link_id": o[0], "target_id": o[1], "link_type": o[2] or "related",
+             "note": o[3] or "", "created_at": o[4]}
+            for o in _limited_fetch(orows, limit=200)
+        ]
+        irows = conn.execute(
+            "SELECT id, source_id, link_type, note, created_at "
+            "FROM memory_links WHERE target_id = ? ORDER BY created_at ASC",
+            (mid,)
+        )
+        links_in = [
+            {"link_id": i[0], "source_id": i[1], "link_type": i[2] or "related",
+             "note": i[3] or "", "created_at": i[4]}
+            for i in _limited_fetch(irows, limit=200)
+        ]
+
+        # 审计事件（最近 50 条）
+        arows = conn.execute(
+            "SELECT action, actor, timestamp, details "
+            "FROM audit_log WHERE memory_id = ? "
+            "ORDER BY timestamp DESC LIMIT 50",
+            (mid,)
+        )
+        audit_events = [
+            {"action": a[0] or "", "actor": a[1] or "",
+             "timestamp": a[2], "details": a[3] or "{}"}
+            for a in arows.fetchall()
+        ]
+
+        # 生命周期时间线
+        timeline: List[Dict[str, Any]] = [
+            {"event": "created", "timestamp": created,
+             "description": "记忆创建"}
+        ]
+        for v in versions:
+            timeline.append({
+                "event": "version",
+                "timestamp": v["changed_at"],
+                "description": f"更新到 v{v['version_number']}"
+                               + (f"（by {v['actor']}）" if v["actor"] else ""),
+            })
+        if isinstance(last_accessed_at, (int, float)) and last_accessed_at > created:
+            timeline.append({
+                "event": "last_accessed",
+                "timestamp": last_accessed_at,
+                "description": "最近一次访问",
+            })
+        timeline.sort(key=lambda x: x["timestamp"] if isinstance(x["timestamp"], (int, float)) else 0)
+
+        return {
+            "memory_id": rid,
+            "basic": {
+                "content_preview": (content or "")[:120],
+                "category": category or "general",
+                "importance": importance or "MEDIUM",
+                "layer": layer or "short_term",
+                "source_agent": source_agent or "",
+                "source_session": source_session or "",
+                "starred": bool(starred),
+                "pinned": bool(pinned),
+                "access_count": access_count or 0,
+            },
+            "stats": {
+                "age_days": age_days,
+                "version_count": len(versions),
+                "link_count_out": len(links_out),
+                "link_count_in": len(links_in),
+                "audit_event_count": len(audit_events),
+            },
+            "versions": versions,
+            "links_out": links_out,
+            "links_in": links_in,
+            "audit_events": audit_events,
+            "lifecycle_timeline": timeline,
+        }
+
+    def memory_reinforce(self,
+                         agent_id: str,
+                         days: int = 90,
+                         limit: int = 10) -> Dict[str, Any]:
+        """记忆强化候选（v5.4.1 新增）
+
+        前瞻性识别「高价值但正在衰减」的记忆：综合重要度、星标、
+        访问活跃度、记忆强度与遗忘分数，输出强化候选排序、
+        每条候选的原因与推荐动作（复习/提权/合并观察）。
+        """
+        conn = self._get_conn()
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+        days = max(1, min(365, int(days)))
+        limit = max(1, min(50, int(limit)))
+        now = time.time()
+        since = now - days * 86400
+
+        # v5.4.1 安全：参数化 SQL + 行数限制
+        cur = conn.execute(
+            "SELECT id, content, importance, starred, strength, "
+            "forgetting_score, last_accessed_at, access_count, category "
+            "FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND created_at >= ?",
+            (aid, since)
+        )
+        rows = _limited_fetch(cur, limit=10000)
+
+        if not rows:
+            return {
+                "agent_id": aid,
+                "days": days,
+                "total_scanned": 0,
+                "candidates": [],
+                "summary": "窗口内无记忆，无需强化。",
+            }
+
+        candidates: List[Dict[str, Any]] = []
+        for r in rows:
+            (mid, content, importance, starred, strength,
+             forgetting_score, last_accessed_at, access_count, category) = r
+
+            imp = (importance or "MEDIUM").upper()
+            if imp not in ("LOW", "MEDIUM", "HIGH", "CRITICAL"):
+                imp = "MEDIUM"
+            imp_w = {"LOW": 0.5, "MEDIUM": 1.0, "HIGH": 1.6, "CRITICAL": 2.2}[imp]
+            ac = access_count if isinstance(access_count, int) and access_count > 0 else 0
+            is_starred = bool(starred)
+
+            # 价值分：重要度 + 星标 + 历史活跃度
+            value_score = min(100.0, imp_w * 30.0 + (15.0 if is_starred else 0.0)
+                              + min(ac, 10) * 2.0)
+
+            # 风险分：闲置时长 + 遗忘分数 + 强度衰减
+            last_acc = last_accessed_at if isinstance(last_accessed_at, (int, float)) else now
+            days_idle = max(0.0, (now - last_acc) / 86400.0)
+            fs = forgetting_score if isinstance(forgetting_score, (int, float)) else 0.0
+            fs = max(0.0, min(100.0, float(fs)))
+            st = strength if isinstance(strength, (int, float)) else 1.0
+            weakness = max(0.0, 1.0 - min(1.0, float(st)))
+            risk_score = min(100.0, (days_idle / float(days)) * 50.0
+                             + fs * 0.3 + weakness * 20.0)
+
+            reinforce_score = round(value_score * 0.5 + risk_score * 0.5, 1)
+
+            reasons: List[str] = []
+            if imp in ("HIGH", "CRITICAL"):
+                reasons.append(f"重要度为 {imp}，属于高价值记忆")
+            if is_starred:
+                reasons.append("已被星标标记")
+            if days_idle >= days * 0.5:
+                reasons.append(f"已闲置 {round(days_idle, 1)} 天，超过窗口一半")
+            if fs >= 40.0:
+                reasons.append(f"遗忘分数偏高（{round(fs, 1)}）")
+            if weakness > 0.2:
+                reasons.append(f"记忆强度衰减至 {round(st, 2)}")
+            if ac >= 5:
+                reasons.append(f"历史访问活跃（{ac} 次），遗忘损失大")
+            if not reasons:
+                reasons.append("综合评分进入候选区间")
+
+            # 推荐动作
+            if is_starred or imp == "CRITICAL":
+                action = "priority_review"
+            elif imp in ("LOW", "MEDIUM") and ac >= 5:
+                action = "promote_importance"
+            elif days_idle >= days * 0.6:
+                action = "schedule_review"
+            else:
+                action = "keep_monitoring"
+
+            candidates.append({
+                "memory_id": mid,
+                "content_preview": (content or "")[:80],
+                "category": category or "general",
+                "importance": imp,
+                "starred": is_starred,
+                "days_idle": round(days_idle, 1),
+                "value_score": round(value_score, 1),
+                "risk_score": round(risk_score, 1),
+                "reinforce_score": reinforce_score,
+                "reasons": reasons,
+                "recommended_action": action,
+            })
+
+        candidates.sort(key=lambda x: -x["reinforce_score"])
+        top = candidates[:limit]
+
+        action_counts: Dict[str, int] = {}
+        for t in top:
+            action_counts[t["recommended_action"]] = action_counts.get(t["recommended_action"], 0) + 1
+        summary_parts = [f"扫描 {len(rows)} 条记忆，识别出 {len(top)} 条强化候选。"]
+        if action_counts.get("priority_review"):
+            summary_parts.append(f"{action_counts['priority_review']} 条建议优先复习。")
+        if action_counts.get("schedule_review"):
+            summary_parts.append(f"{action_counts['schedule_review']} 条建议创建复习计划。")
+        if action_counts.get("promote_importance"):
+            summary_parts.append(f"{action_counts['promote_importance']} 条被低估，建议提升重要度。")
+
+        return {
+            "agent_id": aid,
+            "days": days,
+            "total_scanned": len(rows),
+            "candidates": top,
+            "action_distribution": action_counts,
+            "summary": " ".join(summary_parts),
+        }
+
+    # ===== v5.4.1 新增：AI 短剧三大能力 =====
+
+    def drama_plot_thread(self, drama_id: str) -> Dict[str, Any]:
+        """剧情线索/伏笔追踪（v5.4.1 新增）
+
+        从场景与台词中识别「埋设伏笔（setup）」与「揭示回收（payoff）」
+        标记，按时间顺序贪心匹配，输出全部线索、未回收的开放式
+        线索与回收率，辅助编剧检查伏笔闭环。
+        """
+        conn = self._get_conn()
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+
+        drow = conn.execute(
+            "SELECT id, title FROM drama_series WHERE id = ?",
+            (did,)
+        ).fetchone()
+        if not drow:
+            return {"error": "短剧不存在"}
+        title = drow[1] or "未命名"
+
+        srows = conn.execute(
+            "SELECT id, episode, scene_number, title, content, tags "
+            "FROM drama_scenes WHERE drama_id = ? "
+            "ORDER BY episode ASC, scene_number ASC",
+            (did,)
+        )
+        scenes = _limited_fetch(srows, limit=5000)
+
+        if not scenes:
+            return {
+                "drama_id": did,
+                "title": title,
+                "total_scenes": 0,
+                "threads": [],
+                "open_count": 0,
+                "resolved_count": 0,
+                "resolution_rate": 0.0,
+                "suggestions": ["暂无场景数据，无法进行线索追踪。"],
+            }
+
+        setup_words = {
+            "伏笔", "暗示", "预言", "约定", "秘密", "谜", "埋下", "线索",
+            "信物", "悬念", "setup", "foreshadow", "promise", "secret",
+            "clue", "mystery",
+        }
+        payoff_words = {
+            "真相", "揭晓", "实现", "应验", "解开", "发现", "原来", "竟然",
+            "终于", "回收", "payoff", "reveal", "truth", "finally",
+        }
+
+        # 预取每个场景的台词文本（一次查询，按 scene_id 分组）
+        lrows = conn.execute(
+            "SELECT scene_id, line_text, tags FROM drama_lines WHERE drama_id = ?",
+            (did,)
+        )
+        scene_lines: Dict[str, List[str]] = {}
+        for l in _limited_fetch(lrows, limit=10000):
+            sid = l[0] or ""
+            scene_lines.setdefault(sid, []).append(l[1] or "")
+            if l[2]:
+                scene_lines[sid].append(l[2])
+
+        def _match_words(text: str, words) -> List[str]:
+            t = text.lower()
+            return sorted({w for w in words if w in t})
+
+        open_threads: List[Dict[str, Any]] = []
+        threads: List[Dict[str, Any]] = []
+        thread_seq = 0
+
+        for s in scenes:
+            sid, episode, scene_number, s_title, s_content, s_tags = (
+                s[0], s[1] or 0, s[2] or 0, s[3] or "", s[4] or "", s[5] or ""
+            )
+            text_blob = " ".join(
+                [s_title, s_content, s_tags] + scene_lines.get(sid, [])
+            )
+            setup_hits = _match_words(text_blob, setup_words)
+            payoff_hits = _match_words(text_blob, payoff_words)
+
+            # 先回收（payoff 只回收更早埋设的线索）
+            if payoff_hits and open_threads:
+                th = open_threads.pop(0)
+                th["status"] = "resolved"
+                th["payoff_episode"] = episode
+                th["payoff_scene_id"] = sid
+                th["payoff_markers"] = payoff_hits
+
+            # 再埋设
+            if setup_hits:
+                thread_seq += 1
+                thread = {
+                    "thread_id": f"T{thread_seq}",
+                    "name": s_title or setup_hits[0],
+                    "setup_episode": episode,
+                    "setup_scene_id": sid,
+                    "markers": setup_hits,
+                    "status": "open",
+                    "payoff_episode": None,
+                    "payoff_scene_id": None,
+                }
+                threads.append(thread)
+                open_threads.append(thread)
+
+        resolved_count = sum(1 for t in threads if t["status"] == "resolved")
+        open_count = len(threads) - resolved_count
+        resolution_rate = round(resolved_count / len(threads) * 100, 2) if threads else 0.0
+
+        suggestions: List[str] = []
+        if open_count > 0:
+            open_eps = [t["setup_episode"] for t in threads if t["status"] == "open"]
+            suggestions.append(
+                f"有 {open_count} 条伏笔尚未回收（最早埋设于第 {min(open_eps)} 集），建议尽快安排回收"
+            )
+        if threads and resolution_rate < 50.0:
+            suggestions.append("伏笔回收率低于 50%，观众可能产生'挖坑不填'的负面体验")
+        if not threads:
+            suggestions.append("未检测到明显伏笔标记，可增加悬念/伏笔以提升追剧粘性")
+        elif resolution_rate >= 80.0:
+            suggestions.append("伏笔闭环良好，剧情完整度高")
+
+        return {
+            "drama_id": did,
+            "title": title,
+            "total_scenes": len(scenes),
+            "threads": threads[:50],
+            "open_count": open_count,
+            "resolved_count": resolved_count,
+            "resolution_rate": resolution_rate,
+            "suggestions": suggestions,
+        }
+
+    def drama_episode_curve(self, drama_id: str) -> Dict[str, Any]:
+        """分集张力曲线（v5.4.1 新增）
+
+        按集聚合台词量、冲突词与强度词，生成全剧张力曲线，
+        识别高潮集、波动率，并对曲线形态分类（上升/下降/
+        中段高峰/平稳），辅助节奏诊断。
+        """
+        conn = self._get_conn()
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+
+        drow = conn.execute(
+            "SELECT id, title, total_episodes FROM drama_series WHERE id = ?",
+            (did,)
+        ).fetchone()
+        if not drow:
+            return {"error": "短剧不存在"}
+        title = drow[1] or "未命名"
+        declared_eps = drow[2] if isinstance(drow[2], int) and drow[2] > 0 else 0
+
+        conflict_words = {
+            "不", "别", "错", "滚", "闭嘴", "打", "杀", "死",
+            "no", "not", "stop", "hate", "fight", "kill",
+            "冲突", "争吵", "背叛", "欺骗", "威胁", "逼迫",
+        }
+        intensity_words = {
+            "必须", "马上", "立刻", "快", "紧急", "危险",
+            "终于", "竟然", "居然", "到底", "不可能",
+        }
+
+        # 场景按集聚合
+        srows = conn.execute(
+            "SELECT episode, id FROM drama_scenes WHERE drama_id = ?",
+            (did,)
+        )
+        ep_scenes: Dict[int, int] = {}
+        scene_ids: List[str] = []
+        for s in _limited_fetch(srows, limit=5000):
+            ep = s[0] if isinstance(s[0], int) and s[0] > 0 else 0
+            ep_scenes[ep] = ep_scenes.get(ep, 0) + 1
+            scene_ids.append(s[1])
+
+        # 台词按集聚合
+        ep_lines: Dict[int, int] = {}
+        ep_conflict: Dict[int, int] = {}
+        ep_intensity: Dict[int, int] = {}
+        ep_chars: Dict[int, set] = {}
+        lrows = conn.execute(
+            "SELECT episode, line_text, character_id FROM drama_lines WHERE drama_id = ?",
+            (did,)
+        )
+        for l in _limited_fetch(lrows, limit=10000):
+            ep = l[0] if isinstance(l[0], int) and l[0] > 0 else 0
+            text = (l[1] or "").lower()
+            ep_lines[ep] = ep_lines.get(ep, 0) + 1
+            ep_conflict[ep] = ep_conflict.get(ep, 0) + sum(1 for w in conflict_words if w in text)
+            ep_intensity[ep] = ep_intensity.get(ep, 0) + sum(1 for w in intensity_words if w in text)
+            if l[2]:
+                ep_chars.setdefault(ep, set()).add(l[2])
+
+        all_eps = sorted(set(ep_scenes.keys()) | set(ep_lines.keys()))
+        if not all_eps:
+            return {
+                "drama_id": did,
+                "title": title,
+                "total_episodes": declared_eps,
+                "curve": [],
+                "climax_episode": None,
+                "avg_tension": 0.0,
+                "volatility": 0.0,
+                "shape": "no_data",
+                "suggestions": ["暂无场景/台词数据，无法生成张力曲线。"],
+            }
+
+        raw_scores: Dict[int, float] = {}
+        for ep in all_eps:
+            lc = ep_lines.get(ep, 0)
+            cc = len(ep_chars.get(ep, set()))
+            raw = (lc * 2 + ep_conflict.get(ep, 0) * 10
+                   + ep_intensity.get(ep, 0) * 8 + cc * 3)
+            raw_scores[ep] = float(raw)
+
+        max_raw = max(raw_scores.values()) if raw_scores else 0.0
+        curve: List[Dict[str, Any]] = []
+        for ep in all_eps:
+            tension = round(raw_scores[ep] / max_raw * 100.0, 1) if max_raw > 0 else 0.0
+            curve.append({
+                "episode": ep,
+                "tension": tension,
+                "scenes": ep_scenes.get(ep, 0),
+                "lines": ep_lines.get(ep, 0),
+            })
+
+        climax = max(curve, key=lambda x: x["tension"])
+        tensions = [p["tension"] for p in curve]
+        avg_tension = round(sum(tensions) / len(tensions), 1)
+
+        # 波动率：标准差 / 均值
+        if avg_tension > 0:
+            mean = sum(tensions) / len(tensions)
+            var = sum((t - mean) ** 2 for t in tensions) / len(tensions)
+            volatility = round((var ** 0.5) / mean, 3)
+        else:
+            volatility = 0.0
+
+        # 形态分类：按顺序三段比较
+        shape = "steady"
+        if len(tensions) >= 3:
+            third = max(1, len(tensions) // 3)
+            seg = lambda part: sum(part) / len(part) if part else 0.0
+            s1 = seg(tensions[:third])
+            s2 = seg(tensions[third:2 * third])
+            s3 = seg(tensions[2 * third:])
+            if s3 > s1 * 1.2 and s3 >= s2:
+                shape = "rising"
+            elif s1 > s3 * 1.2 and s1 >= s2:
+                shape = "falling"
+            elif s2 > s1 and s2 > s3:
+                shape = "mid_peak"
+            else:
+                shape = "steady"
+
+        suggestions: List[str] = []
+        total_eps = declared_eps if declared_eps else len(all_eps)
+        if climax["episode"] > 0 and total_eps > 0:
+            pos = climax["episode"] / max(1, total_eps)
+            if pos < 0.3:
+                suggestions.append(f"高潮出现在第 {climax['episode']} 集（前段），后段可能缺乏张力，建议增设二次高潮")
+            elif pos > 0.9:
+                suggestions.append(f"高潮贴近结局（第 {climax['episode']} 集），整体铺垫充分")
+        if volatility < 0.15 and len(tensions) >= 3:
+            suggestions.append("各集张力差异较小，节奏偏平，建议制造更明显的起伏")
+        if shape == "falling":
+            suggestions.append("曲线整体走低，建议在中后段加强冲突或悬念")
+        if not suggestions:
+            suggestions.append("张力曲线健康，节奏把控良好")
+
+        return {
+            "drama_id": did,
+            "title": title,
+            "total_episodes": total_eps,
+            "curve": curve,
+            "climax_episode": climax["episode"],
+            "climax_tension": climax["tension"],
+            "avg_tension": avg_tension,
+            "volatility": volatility,
+            "shape": shape,
+            "suggestions": suggestions,
+        }
+
+    def drama_screen_time(self, drama_id: str) -> Dict[str, Any]:
+        """角色戏份平衡分析（v5.4.1 新增）
+
+        统计每个角色的台词量、字数、出场场景与集数占比，
+        计算群像平衡度（Top 占比 + 基尼系数），识别
+        独角戏/双核/群像结构并给出建议。
+        """
+        conn = self._get_conn()
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) and drama_id else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+
+        drow = conn.execute(
+            "SELECT id, title FROM drama_series WHERE id = ?",
+            (did,)
+        ).fetchone()
+        if not drow:
+            return {"error": "短剧不存在"}
+        title = drow[1] or "未命名"
+
+        crows = conn.execute(
+            "SELECT id, name, role FROM drama_characters WHERE drama_id = ?",
+            (did,)
+        )
+        chars = _limited_fetch(crows, limit=1000)
+        if not chars:
+            return {
+                "drama_id": did,
+                "title": title,
+                "total_lines": 0,
+                "characters": [],
+                "balance": {},
+                "suggestions": ["暂无角色数据。"],
+            }
+
+        total_row = conn.execute(
+            "SELECT COUNT(*) FROM drama_lines WHERE drama_id = ?",
+            (did,)
+        ).fetchone()
+        total_lines = total_row[0] if total_row else 0
+
+        char_stats: List[Dict[str, Any]] = []
+        for c in chars:
+            cid, cname, crole = c[0], c[1] or "未命名角色", c[2] or "supporting"
+            lrow = conn.execute(
+                "SELECT COUNT(*), COUNT(DISTINCT scene_id), COUNT(DISTINCT episode) "
+                "FROM drama_lines WHERE drama_id = ? AND character_id = ?",
+                (did, cid)
+            ).fetchone()
+            line_count = lrow[0] or 0
+            scene_count = lrow[1] or 0
+            episode_count = lrow[2] or 0
+
+            wrow = conn.execute(
+                "SELECT COALESCE(SUM(LENGTH(line_text)), 0) "
+                "FROM drama_lines WHERE drama_id = ? AND character_id = ?",
+                (did, cid)
+            ).fetchone()
+            word_count = wrow[0] or 0
+
+            share_pct = round(line_count / total_lines * 100, 2) if total_lines > 0 else 0.0
+            char_stats.append({
+                "char_id": cid,
+                "name": cname,
+                "role": crole,
+                "line_count": line_count,
+                "word_count": word_count,
+                "scene_count": scene_count,
+                "episode_count": episode_count,
+                "share_pct": share_pct,
+            })
+
+        char_stats.sort(key=lambda x: -x["line_count"])
+        for rank, cs in enumerate(char_stats, start=1):
+            cs["rank"] = rank
+
+        # 基尼系数（基于台词量）
+        values = sorted([cs["line_count"] for cs in char_stats])
+        n = len(values)
+        total_val = sum(values)
+        if n > 0 and total_val > 0:
+            cumulative = 0.0
+            weighted_sum = 0.0
+            for i, v in enumerate(values, start=1):
+                weighted_sum += i * v
+            gini = round((2.0 * weighted_sum) / (n * total_val) - (n + 1.0) / n, 3)
+            gini = max(0.0, min(1.0, gini))
+        else:
+            gini = 0.0
+
+        top_share = char_stats[0]["share_pct"] if char_stats else 0.0
+        top2_share = round(sum(cs["share_pct"] for cs in char_stats[:2]), 2) if len(char_stats) >= 2 else top_share
+        if top_share >= 50.0:
+            structure = "one_lead"
+            structure_label = "独角戏结构"
+        elif top2_share >= 70.0:
+            structure = "dual_lead"
+            structure_label = "双核结构"
+        else:
+            structure = "ensemble"
+            structure_label = "群像结构"
+
+        suggestions: List[str] = []
+        zero_chars = [cs["name"] for cs in char_stats if cs["line_count"] == 0]
+        if zero_chars:
+            suggestions.append(f"角色 {('、'.join(zero_chars[:5]))} 没有台词，考虑删减或增加戏份")
+        if structure == "one_lead" and n >= 4:
+            suggestions.append("主角戏份占比过高，配角空间不足，可能影响群像丰满度")
+        if structure == "ensemble" and gini < 0.15 and n >= 4:
+            suggestions.append("群像戏份非常均衡，注意保持主线焦点，避免观众注意力分散")
+        if not suggestions:
+            suggestions.append("角色戏份分布合理")
+
+        return {
+            "drama_id": did,
+            "title": title,
+            "total_lines": total_lines,
+            "characters": char_stats,
+            "balance": {
+                "top_character": char_stats[0]["name"] if char_stats else None,
+                "top_share_pct": top_share,
+                "top2_share_pct": top2_share,
+                "gini_coefficient": gini,
+                "structure": structure,
+                "structure_label": structure_label,
+            },
+            "suggestions": suggestions,
         }

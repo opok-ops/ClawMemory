@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.3.7 CLI - 命令行工具
+MindForge v5.4.1 CLI - 命令行工具
 =================================
 
 Usage:
@@ -43,6 +43,13 @@ Commands:
     drama-genre-trend   短剧类型趋势分析
     drama-binge-score   追剧粘性评分
     char-relationship   角色关系深度分析
+    --- v5.4.1+ ---
+    memory-reflection   记忆反思（元认知报告）
+    memory-lineage      记忆血缘溯源
+    memory-reinforce    记忆强化候选
+    drama-plot-thread   剧情伏笔线索追踪
+    drama-episode-curve 分集张力曲线
+    drama-screen-time   角色戏份平衡
 """
 
 import sys
@@ -72,7 +79,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.3.9"
+    __version__ = "5.4.1"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -3074,6 +3081,29 @@ def main():
     p_char_rel.add_argument("char1", help="角色 1 ID")
     p_char_rel.add_argument("char2", help="角色 2 ID")
 
+    # ===== v5.4.1 新增 Agent 记忆命令 =====
+    p_mem_reflection = sub.add_parser("memory-reflection", help="记忆反思（v5.4.1 新增）")
+    p_mem_reflection.add_argument("agent", help="Agent ID")
+    p_mem_reflection.add_argument("--days", "-d", type=int, default=30, help="回溯窗口天数（1-365）")
+
+    p_mem_lineage = sub.add_parser("memory-lineage", help="记忆血缘溯源（v5.4.1 新增）")
+    p_mem_lineage.add_argument("memory_id", help="记忆 ID")
+
+    p_mem_reinforce = sub.add_parser("memory-reinforce", help="记忆强化候选（v5.4.1 新增）")
+    p_mem_reinforce.add_argument("agent", help="Agent ID")
+    p_mem_reinforce.add_argument("--days", "-d", type=int, default=90, help="回溯窗口天数（1-365）")
+    p_mem_reinforce.add_argument("--limit", "-l", type=int, default=10, help="返回候选上限（1-50）")
+
+    # ===== v5.4.1 新增 AI 短剧命令 =====
+    p_plot_thread = sub.add_parser("drama-plot-thread", help="剧情伏笔线索追踪（v5.4.1 新增）")
+    p_plot_thread.add_argument("drama_id", help="短剧 ID")
+
+    p_episode_curve = sub.add_parser("drama-episode-curve", help="分集张力曲线（v5.4.1 新增）")
+    p_episode_curve.add_argument("drama_id", help="短剧 ID")
+
+    p_screen_time = sub.add_parser("drama-screen-time", help="角色戏份平衡分析（v5.4.1 新增）")
+    p_screen_time.add_argument("drama_id", help="短剧 ID")
+
     # ===== v5.3.9 新增五大能力 CLI =====
     p_intent_router = sub.add_parser("intent-router", help="意图分类路由（v5.3.9 新增）")
     p_intent_router.add_argument("text", help="要分类的文本（用引号包裹）")
@@ -3458,6 +3488,276 @@ def cmd_char_relationship(args):
         for ep in progression:
             bar = "█" * ep.get("alternations", 1)
             print(f"  EP{ep['episode']} S{ep['scene']}  {ep['emotion']:<10} {bar}")
+
+    cm.close()
+    return 0
+
+
+# ===== v5.4.1 新增能力 CLI 命令实现 =====
+
+def cmd_memory_reflection(args):
+    """记忆反思（v5.4.1 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🪞 记忆反思（v5.4.1）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:    {args.agent}")
+    print(f"  回溯天数:    {args.days}")
+
+    try:
+        result = cm.memory_reflection(args.agent, args.days)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    if result["total_memories"] == 0:
+        print(c("\n窗口内暂无记忆可供反思。", "yellow"))
+        cm.close()
+        return 0
+
+    print(f"  记忆总数:    {result['total_memories']}")
+    tone = result.get("emotional_tone", {})
+    print(f"  情感基调:    {tone.get('dominant', 'no_data')}")
+    print(f"\n  反思摘要:\n    {result.get('reflection_summary', '')}")
+
+    top_cats = result.get("top_categories", [])
+    if top_cats:
+        print(c(f"\n📂 Top 分类", "cyan"))
+        for t in top_cats:
+            print(f"  {t['category']:<16} {t['count']:>4} 条 ({t['share']*100:.1f}%)")
+
+    themes = result.get("recurring_themes", [])
+    if themes:
+        print(c(f"\n🔁 反复出现的主题: ", "cyan") + "、".join(themes))
+
+    lessons = result.get("key_lessons", [])
+    if lessons:
+        print(c(f"\n💡 关键经验 Top {len(lessons)}", "cyan"))
+        for l in lessons:
+            print(f"  [{l['importance']}] {l['content_preview']}")
+
+    for s in result.get("suggestions", []):
+        print(c(f"  ✦ {s}", "yellow"))
+
+    cm.close()
+    return 0
+
+
+def cmd_memory_lineage(args):
+    """记忆血缘溯源（v5.4.1 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🧬 记忆血缘溯源（v5.4.1）", "bold"))
+    print("=" * 60)
+    print(f"  记忆 ID:    {args.memory_id}")
+
+    try:
+        result = cm.memory_lineage(args.memory_id)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    basic = result.get("basic", {})
+    stats = result.get("stats", {})
+    print(f"  内容预览:   {basic.get('content_preview', '')}")
+    print(f"  分类:       {basic.get('category')}  |  重要度: {basic.get('importance')}")
+    print(f"  层级:       {basic.get('layer')}  |  来源 Agent: {basic.get('source_agent') or '-'}")
+    print(f"  存在天数:   {stats.get('age_days')} 天")
+    print(f"  版本数:     {stats.get('version_count')}  |  出链: {stats.get('link_count_out')}  |  入链: {stats.get('link_count_in')}")
+    print(f"  审计事件:   {stats.get('audit_event_count')} 条")
+
+    timeline = result.get("lifecycle_timeline", [])
+    if timeline:
+        print(c(f"\n🕓 生命周期时间线", "cyan"))
+        for ev in timeline[:20]:
+            ts = ev.get("timestamp")
+            ts_str = format_time(ts) if isinstance(ts, (int, float)) else str(ts)
+            print(f"  {ts_str}  {ev.get('description', ev.get('event'))}")
+
+    versions = result.get("versions", [])
+    if versions:
+        print(c(f"\n📜 版本历史（{len(versions)}）", "cyan"))
+        for v in versions[:10]:
+            print(f"  v{v['version_number']}  {v['content_preview']}")
+
+    cm.close()
+    return 0
+
+
+def cmd_memory_reinforce(args):
+    """记忆强化候选（v5.4.1 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n💪 记忆强化候选（v5.4.1）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:    {args.agent}")
+    print(f"  回溯天数:    {args.days}  |  候选上限: {args.limit}")
+
+    try:
+        result = cm.memory_reinforce(args.agent, args.days, args.limit)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    if result["total_scanned"] == 0:
+        print(c("\n窗口内暂无记忆。", "yellow"))
+        cm.close()
+        return 0
+
+    print(f"\n  {result.get('summary', '')}")
+
+    candidates = result.get("candidates", [])
+    if candidates:
+        print(c(f"\n🎯 强化候选 Top {len(candidates)}", "cyan"))
+        print(f"{'分数':>6}{'重要度':>10}{'闲置天':>8}  动作")
+        print("-" * 60)
+        for cd in candidates:
+            print(f"{cd['reinforce_score']:>6}{cd['importance']:>10}"
+                  f"{cd['days_idle']:>8}  {cd['recommended_action']}")
+            print(f"      {cd['content_preview']}")
+            if cd.get("reasons"):
+                print(c(f"      ↳ {'; '.join(cd['reasons'])}", "cyan"))
+
+    cm.close()
+    return 0
+
+
+def cmd_drama_plot_thread(args):
+    """剧情伏笔线索追踪（v5.4.1 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🧵 剧情伏笔线索追踪（v5.4.1）", "bold"))
+    print("=" * 60)
+    print(f"  短剧 ID:    {args.drama_id}")
+
+    try:
+        result = cm.drama_plot_thread(args.drama_id)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(f"  剧名:       {result['title']}")
+    print(f"  场景总数:   {result['total_scenes']}")
+    print(f"  线索总数:   {len(result.get('threads', []))}")
+    print(f"  已回收:     {result.get('resolved_count', 0)}  |  未回收: {result.get('open_count', 0)}")
+    print(f"  回收率:     {result.get('resolution_rate', 0)}%")
+
+    threads = result.get("threads", [])
+    if threads:
+        print(c(f"\n🔗 线索明细", "cyan"))
+        for t in threads[:20]:
+            status = "✅已回收" if t["status"] == "resolved" else "⏳未回收"
+            print(f"  {t['thread_id']:<4} EP{t['setup_episode']}  {status}  {t['name']}")
+            if t["status"] == "resolved" and t.get("payoff_episode") is not None:
+                print(c(f"        ↳ 回收于 EP{t['payoff_episode']}", "cyan"))
+
+    for s in result.get("suggestions", []):
+        print(c(f"  ✦ {s}", "yellow"))
+
+    cm.close()
+    return 0
+
+
+def cmd_drama_episode_curve(args):
+    """分集张力曲线（v5.4.1 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n📈 分集张力曲线（v5.4.1）", "bold"))
+    print("=" * 60)
+    print(f"  短剧 ID:    {args.drama_id}")
+
+    try:
+        result = cm.drama_episode_curve(args.drama_id)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(f"  剧名:       {result['title']}")
+    print(f"  总集数:     {result.get('total_episodes', 0)}")
+    print(f"  高潮集:     EP{result.get('climax_episode')} (张力 {result.get('climax_tension', 0)})")
+    print(f"  平均张力:   {result.get('avg_tension', 0)}  |  波动率: {result.get('volatility', 0)}")
+    print(f"  曲线形态:   {result.get('shape', 'steady')}")
+
+    curve = result.get("curve", [])
+    if curve:
+        print(c(f"\n🎢 张力曲线", "cyan"))
+        for p in curve:
+            bar = "█" * max(1, int(p["tension"] / 5))
+            marker = " ← 高潮" if p["episode"] == result.get("climax_episode") else ""
+            print(f"  EP{p['episode']:<3} {p['tension']:>5}  {bar}{marker}")
+
+    for s in result.get("suggestions", []):
+        print(c(f"  ✦ {s}", "yellow"))
+
+    cm.close()
+    return 0
+
+
+def cmd_drama_screen_time(args):
+    """角色戏份平衡分析（v5.4.1 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🎭 角色戏份平衡分析（v5.4.1）", "bold"))
+    print("=" * 60)
+    print(f"  短剧 ID:    {args.drama_id}")
+
+    try:
+        result = cm.drama_screen_time(args.drama_id)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(f"  剧名:       {result['title']}")
+    print(f"  台词总数:   {result.get('total_lines', 0)}")
+
+    balance = result.get("balance", {})
+    if balance:
+        print(f"  结构判定:   {balance.get('structure_label', '-')}")
+        print(f"  Top 角色:   {balance.get('top_character', '-')} ({balance.get('top_share_pct', 0)}%)")
+        print(f"  基尼系数:   {balance.get('gini_coefficient', 0)}")
+
+    chars = result.get("characters", [])
+    if chars:
+        print(c(f"\n👤 角色戏份排行", "cyan"))
+        print(f"{'#':>3}{'角色':<12}{'台词':>8}{'字数':>8}{'场景':>6}{'集数':>6}{'占比':>8}")
+        print("-" * 60)
+        for cs in chars[:20]:
+            print(f"{cs['rank']:>3}{cs['name']:<12}{cs['line_count']:>8}"
+                  f"{cs['word_count']:>8}{cs['scene_count']:>6}"
+                  f"{cs['episode_count']:>6}{cs['share_pct']:>7}%")
+
+    for s in result.get("suggestions", []):
+        print(c(f"  ✦ {s}", "yellow"))
 
     cm.close()
     return 0
@@ -3886,6 +4186,13 @@ def _main_dispatch(args):
         "drama-genre-trend": cmd_drama_genre_trend,
         "drama-binge-score": cmd_drama_binge_score,
         "char-relationship": cmd_char_relationship,
+        # v5.4.1 新增
+        "memory-reflection": cmd_memory_reflection,
+        "memory-lineage": cmd_memory_lineage,
+        "memory-reinforce": cmd_memory_reinforce,
+        "drama-plot-thread": cmd_drama_plot_thread,
+        "drama-episode-curve": cmd_drama_episode_curve,
+        "drama-screen-time": cmd_drama_screen_time,
         # v5.3.9 新增五大能力
         "intent-router": cmd_intent_router,
         "conflict-scan": cmd_conflict_scan,

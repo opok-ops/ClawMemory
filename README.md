@@ -6,7 +6,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.3.9-green.svg)](https://github.com/opok-ops/ClawMemory)
+[![Version](https://img.shields.io/badge/version-5.4.1-green.svg)](https://github.com/opok-ops/ClawMemory)
 [![CI](https://github.com/opok-ops/ClawMemory/actions/workflows/ci.yml/badge.svg)](https://github.com/opok-ops/ClawMemory/actions/workflows/ci.yml)
 
 ---
@@ -56,7 +56,7 @@ for chunk in results.chunks:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      MindForge v5.3.9                          │
+│                      MindForge v5.4.1                          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  ┌─────────────────────────────────────────────────────────┐ │
@@ -241,6 +241,14 @@ MindForge conflict-scan [--category] [--limit] [--apply-decay] [--json]
 MindForge skill-extract [--category] [--limit] [--min-cluster] [--json]
 MindForge rerank-search <query> [--top] [--no-expand] [--no-rerank] [--json]
 MindForge session-focus -m "role:内容" [--window] [--augment] [--json]
+
+# v5.4.1 六大能力
+MindForge memory-reflection <agent> [--days]
+MindForge memory-lineage <memory_id>
+MindForge memory-reinforce <agent> [--days] [--limit]
+MindForge drama-plot-thread <drama_id>
+MindForge drama-episode-curve <drama_id>
+MindForge drama-screen-time <drama_id>
 ```
 
 ---
@@ -275,7 +283,7 @@ MindForge/
 │   └── generic_api.py         # 通用 REST API
 ├── cli/                       # 命令行界面
 │   └── main.py                # 基于 argparse 的 60+ 命令 CLI
-├── tests/                     # 测试套件（25 个用例）
+├── tests/                     # 测试套件（54 个用例）
 ├── website/                   # 官方网站
 └── examples/                  # 用法示例
 ```
@@ -310,6 +318,48 @@ context = adapter.get_context("database optimization")
 ---
 
 ## Changelog（版本记录）
+
+### v5.4.1 (2026-08-06)
+
+**六大能力增强（3 项 Agent 记忆 + 3 项 AI 短剧）**
+
+1. **Memory Reflection（记忆反思）** — 对时间窗口内的 Agent 记忆做元认知反思：主题/分类分布、情感基调、关键经验教训、注意力焦点漂移，生成结构化反思报告与建议（参考 Generative Agents reflection）。
+   - API: `memory_reflection(agent_id, days?)`
+   - CLI: `MindForge memory-reflection <agent> [--days]`
+   - MCP: `memory_reflection`
+
+2. **Memory Lineage（记忆血缘溯源）** — 追踪单条记忆的完整来源脉络：基础快照、版本历史、关联链接（出/入）、审计事件与生命周期时间线。
+   - API: `memory_lineage(memory_id)`
+   - CLI: `MindForge memory-lineage <memory_id>`
+   - MCP: `memory_lineage`
+
+3. **Memory Reinforce（记忆强化候选）** — 前瞻性识别「高价值但正在衰减」的记忆：综合重要度、星标、访问活跃度、记忆强度与遗忘分数，输出强化排序、原因与推荐动作（优先复习/提权/计划复习/观察）。
+   - API: `memory_reinforce(agent_id, days?, limit?)`
+   - CLI: `MindForge memory-reinforce <agent> [--days] [--limit]`
+   - MCP: `memory_reinforce`
+
+4. **Drama Plot Thread（剧情伏笔追踪）** — 从场景与台词识别「埋设伏笔（setup）」与「揭示回收（payoff）」标记，按时间顺序贪心匹配，输出全部线索、未回收线索与回收率，辅助编剧检查伏笔闭环。
+   - API: `drama_plot_thread(drama_id)`
+   - CLI: `MindForge drama-plot-thread <drama_id>`
+   - MCP: `drama_plot_thread`
+
+5. **Drama Episode Curve（分集张力曲线）** — 按集聚合台词量、冲突词与强度词，生成全剧张力曲线、高潮集、波动率与曲线形态分类（上升/下降/中段高峰/平稳）。
+   - API: `drama_episode_curve(drama_id)`
+   - CLI: `MindForge drama-episode-curve <drama_id>`
+   - MCP: `drama_episode_curve`
+
+6. **Drama Screen Time（角色戏份平衡）** — 统计角色台词量/字数/出场场景与集数占比，计算群像平衡度（Top 占比 + 基尼系数），识别独角戏/双核/群像结构并给出建议。
+   - API: `drama_screen_time(drama_id)`
+   - CLI: `MindForge drama-screen-time <drama_id>`
+   - MCP: `drama_screen_time`
+
+**安全修复**
+- **内容长度校验绕过（DoS）** — 此前 50000 字符上限仅在 `add_memory` 生效，`update_memory` 与 `batch_add` 可注入超长内容。v5.4.1 将 `MAX_CONTENT_LEN` 提升为模块级常量并统一作用于三个入口：`update_memory` 超限抛出 `ValueError`，`batch_add` 超限条目按单条失败跳过。
+
+**其他更新**
+- MCP Server 工具数从 15 → 21，新增 6 个 v5.4.1 工具，serverInfo 版本同步至 5.4.1
+- 版本徽章、架构图、CLI 用法、Project Structure 同步更新至 v5.4.1
+- 单元测试从 36 → 54 个用例，全部通过
 
 ### v5.3.9 (2026-08-04)
 

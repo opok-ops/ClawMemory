@@ -1,4 +1,4 @@
-/* ========== MindForge v5.3.6 - Main JavaScript ========== */
+/* ========== MindForge v5.4.1 - Main JavaScript ========== */
 
 // Particle Background Animation
 (function() {

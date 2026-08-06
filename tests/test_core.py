@@ -1,4 +1,4 @@
-"""MindForge v5.3.9 单元测试"""
+"""MindForge v5.4.1 单元测试"""
 import sys
 from pathlib import Path
 
@@ -778,6 +778,325 @@ class TestSessionFocus(unittest.TestCase):
         sf = SessionFocus()
         summary = sf.summarize([])
         self.assertIsNotNone(summary)
+
+
+# ===== v5.4.1 新增能力测试 =====
+
+class TestMemoryReflection(unittest.TestCase):
+    """v5.4.1 记忆反思测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp(prefix="mf_reflect_")
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def _seed(self, storage, agent="agent-r"):
+        from core.types import Importance, MemoryLayer
+        items = [
+            ("完成了数据库优化任务，效果很好", "work", ["优化", "数据库"], Importance.HIGH),
+            ("修复了一个棘手的 bug，成功了", "work", ["bug", "优化"], Importance.MEDIUM),
+            ("学习新的记忆算法，收获很大", "study", ["算法", "学习"], Importance.MEDIUM),
+            ("开会讨论了产品方向，有冲突", "work", ["会议"], Importance.LOW),
+            ("复习了遗忘曲线理论", "study", ["算法", "学习", "复习"], Importance.HIGH),
+        ]
+        for content, cat, tags, imp in items:
+            storage.add_memory(content=content, category=cat, tags=tags,
+                               importance=imp, layer=MemoryLayer.SHORT_TERM,
+                               source_agent=agent)
+
+    def test_reflection_structure(self):
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        self._seed(storage)
+        result = storage.memory_reflection("agent-r", days=30)
+        self.assertNotIn("error", result)
+        self.assertEqual(result["total_memories"], 5)
+        self.assertTrue(result["top_categories"])
+        self.assertIn("dominant", result["emotional_tone"])
+        self.assertTrue(result["reflection_summary"])
+        self.assertIsInstance(result["suggestions"], list)
+
+    def test_reflection_empty(self):
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        result = storage.memory_reflection("no-such-agent", days=30)
+        self.assertEqual(result["total_memories"], 0)
+        self.assertEqual(result["emotional_tone"]["dominant"], "no_data")
+
+    def test_reflection_empty_agent_id(self):
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        result = storage.memory_reflection("", days=30)
+        self.assertIn("error", result)
+
+
+class TestMemoryLineage(unittest.TestCase):
+    """v5.4.1 记忆血缘溯源测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp(prefix="mf_lineage_")
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_lineage_with_versions_and_links(self):
+        from core.storage import StorageEngine
+        from core.types import Importance, MemoryLayer
+        storage = StorageEngine(db_path=self.db_path)
+
+        e1 = storage.add_memory(content="主记忆", category="core",
+                                layer=MemoryLayer.SHORT_TERM)
+        e2 = storage.add_memory(content="关联记忆", category="core",
+                                layer=MemoryLayer.SHORT_TERM)
+        storage.link_memories(e1.id, e2.id, link_type="related", note="测试关联")
+        storage.save_version(e1.id, "主记忆 v1", "core", ["t"], Importance.MEDIUM, actor="tester")
+
+        result = storage.memory_lineage(e1.id)
+        self.assertNotIn("error", result)
+        self.assertEqual(result["memory_id"], e1.id)
+        self.assertEqual(result["stats"]["version_count"], 1)
+        self.assertEqual(result["stats"]["link_count_out"], 1)
+        self.assertEqual(result["stats"]["link_count_in"], 0)
+        self.assertTrue(any(ev["event"] == "created" for ev in result["lifecycle_timeline"]))
+        self.assertTrue(any(ev["event"] == "version" for ev in result["lifecycle_timeline"]))
+
+    def test_lineage_missing_memory(self):
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        result = storage.memory_lineage("nonexistent-id")
+        self.assertIn("error", result)
+
+    def test_lineage_empty_id(self):
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        result = storage.memory_lineage("")
+        self.assertIn("error", result)
+
+
+class TestMemoryReinforce(unittest.TestCase):
+    """v5.4.1 记忆强化候选测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp(prefix="mf_reinforce_")
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_reinforce_ranks_high_value_first(self):
+        from core.storage import StorageEngine
+        from core.types import Importance, MemoryLayer
+        storage = StorageEngine(db_path=self.db_path)
+
+        # 高价值：CRITICAL + 星标
+        storage.add_memory(content="关键的架构决策", category="arch",
+                           importance=Importance.CRITICAL, starred=True,
+                           layer=MemoryLayer.LONG_TERM, source_agent="agent-k")
+        # 低价值
+        storage.add_memory(content="随手记一条", category="misc",
+                           importance=Importance.LOW,
+                           layer=MemoryLayer.SHORT_TERM, source_agent="agent-k")
+
+        result = storage.memory_reinforce("agent-k", days=90, limit=10)
+        self.assertNotIn("error", result)
+        self.assertEqual(result["total_scanned"], 2)
+        self.assertEqual(len(result["candidates"]), 2)
+        top = result["candidates"][0]
+        self.assertEqual(top["importance"], "CRITICAL")
+        self.assertIn(top["recommended_action"],
+                      ("priority_review", "schedule_review", "keep_monitoring", "promote_importance"))
+        self.assertTrue(top["reasons"])
+        # 排序正确性：第一条分数 >= 第二条
+        self.assertGreaterEqual(result["candidates"][0]["reinforce_score"],
+                                result["candidates"][1]["reinforce_score"])
+
+    def test_reinforce_empty(self):
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        result = storage.memory_reinforce("empty-agent")
+        self.assertEqual(result["total_scanned"], 0)
+        self.assertEqual(result["candidates"], [])
+
+
+class TestDramaPlotThread(unittest.TestCase):
+    """v5.4.1 剧情伏笔线索追踪测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp(prefix="mf_thread_")
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def _make_drama(self, storage):
+        from core.types import DramaGenre, DramaStatus
+        d = storage.add_drama(title="测试短剧", genre=DramaGenre.SUSPENSE,
+                              total_episodes=3, status=DramaStatus.WATCHING)
+        # EP1 埋设伏笔
+        s1 = storage.add_scene(d.id, 1, 1, "神秘信物", "主角埋下一个秘密伏笔")
+        # EP2 再埋一个
+        s2 = storage.add_scene(d.id, 2, 1, "未解之谜", "出现新的线索与悬念")
+        # EP3 回收第一个
+        s3 = storage.add_scene(d.id, 3, 1, "真相大白", "终于揭晓真相，秘密被揭开")
+        return d
+
+    def test_plot_thread_detection(self):
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        d = self._make_drama(storage)
+        result = storage.drama_plot_thread(d.id)
+        self.assertNotIn("error", result)
+        self.assertEqual(result["total_scenes"], 3)
+        self.assertGreaterEqual(len(result["threads"]), 1)
+        self.assertGreater(result["resolved_count"], 0)
+        self.assertGreater(result["resolution_rate"], 0)
+
+    def test_plot_thread_missing_drama(self):
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        result = storage.drama_plot_thread("no-such-drama")
+        self.assertIn("error", result)
+
+    def test_plot_thread_no_scenes(self):
+        from core.storage import StorageEngine
+        from core.types import DramaGenre
+        storage = StorageEngine(db_path=self.db_path)
+        d = storage.add_drama(title="空剧", genre=DramaGenre.OTHER)
+        result = storage.drama_plot_thread(d.id)
+        self.assertEqual(result["total_scenes"], 0)
+        self.assertEqual(result["threads"], [])
+
+
+class TestDramaEpisodeCurve(unittest.TestCase):
+    """v5.4.1 分集张力曲线测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp(prefix="mf_curve_")
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_episode_curve_shape(self):
+        from core.storage import StorageEngine
+        from core.types import DramaGenre
+        storage = StorageEngine(db_path=self.db_path)
+        d = storage.add_drama(title="张力剧", genre=DramaGenre.ACTION, total_episodes=3)
+        c1 = storage.add_character(d.id, "主角", role="lead")
+        # EP1 平淡，EP3 高冲突
+        s1 = storage.add_scene(d.id, 1, 1, "开场")
+        s3 = storage.add_scene(d.id, 3, 1, "决战")
+        storage.add_line(d.id, "今天天气不错", scene_id=s1.id, character_id=c1.id, episode=1)
+        for txt in ("你必须马上离开！", "不！我要战斗到底！", "危险！快跑！"):
+            storage.add_line(d.id, txt, scene_id=s3.id, character_id=c1.id, episode=3)
+
+        result = storage.drama_episode_curve(d.id)
+        self.assertNotIn("error", result)
+        self.assertGreaterEqual(len(result["curve"]), 2)
+        # EP3 张力应高于 EP1
+        ep3 = next(p for p in result["curve"] if p["episode"] == 3)
+        ep1 = next(p for p in result["curve"] if p["episode"] == 1)
+        self.assertGreater(ep3["tension"], ep1["tension"])
+        self.assertEqual(result["climax_episode"], 3)
+        self.assertIn(result["shape"], ("rising", "falling", "mid_peak", "steady"))
+
+    def test_episode_curve_no_data(self):
+        from core.storage import StorageEngine
+        from core.types import DramaGenre
+        storage = StorageEngine(db_path=self.db_path)
+        d = storage.add_drama(title="空剧", genre=DramaGenre.OTHER)
+        result = storage.drama_episode_curve(d.id)
+        self.assertEqual(result["shape"], "no_data")
+        self.assertIsNone(result["climax_episode"])
+
+
+class TestDramaScreenTime(unittest.TestCase):
+    """v5.4.1 角色戏份平衡测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp(prefix="mf_screen_")
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_screen_time_balance(self):
+        from core.storage import StorageEngine
+        from core.types import DramaGenre
+        storage = StorageEngine(db_path=self.db_path)
+        d = storage.add_drama(title="群像剧", genre=DramaGenre.DRAMA, total_episodes=1)
+        lead = storage.add_character(d.id, "主角", role="lead")
+        sup = storage.add_character(d.id, "配角", role="supporting")
+        s1 = storage.add_scene(d.id, 1, 1, "对手戏")
+        # 主角 3 句，配角 1 句
+        for txt in ("第一句", "第二句", "第三句"):
+            storage.add_line(d.id, txt, scene_id=s1.id, character_id=lead.id, episode=1)
+        storage.add_line(d.id, "我也说一句", scene_id=s1.id, character_id=sup.id, episode=1)
+
+        result = storage.drama_screen_time(d.id)
+        self.assertNotIn("error", result)
+        self.assertEqual(result["total_lines"], 4)
+        self.assertEqual(len(result["characters"]), 2)
+        top = result["characters"][0]
+        self.assertEqual(top["name"], "主角")
+        self.assertEqual(top["line_count"], 3)
+        self.assertIn(result["balance"]["structure"], ("one_lead", "dual_lead", "ensemble"))
+        self.assertGreaterEqual(result["balance"]["gini_coefficient"], 0.0)
+
+    def test_screen_time_no_characters(self):
+        from core.storage import StorageEngine
+        from core.types import DramaGenre
+        storage = StorageEngine(db_path=self.db_path)
+        d = storage.add_drama(title="无人剧", genre=DramaGenre.OTHER)
+        result = storage.drama_screen_time(d.id)
+        self.assertEqual(result["characters"], [])
+        self.assertEqual(result["total_lines"], 0)
+
+
+class TestContentLengthGuard(unittest.TestCase):
+    """v5.4.1 安全修复：update/batch_add 内容长度校验"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp(prefix="mf_guard_")
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_update_memory_rejects_oversized(self):
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        entry = storage.add_memory(content="正常内容")
+        oversized = "x" * 50001
+        with self.assertRaises(ValueError):
+            storage.update_memory(entry.id, content=oversized)
+
+    def test_batch_add_skips_oversized(self):
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        entries = [
+            {"content": "正常条目"},
+            {"content": "y" * 50001},  # 超长，应被跳过
+        ]
+        added = storage.batch_add(entries)
+        self.assertEqual(added, 1)
+        self.assertEqual(storage.count_memories(), 1)
+
+    def test_add_memory_still_guarded(self):
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        with self.assertRaises(ValueError):
+            storage.add_memory(content="z" * 50001)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 """
-MindForge v5.3.7 主入口类
+MindForge v5.4.1 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,7 +31,7 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.3.9"
+    __version__ = "5.4.1"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -2473,6 +2473,106 @@ class MindForge:
         char2_id = "".join(c for c in char2_id[:64]
                             if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
         return self._storage.char_relationship(drama_id, char1_id, char2_id)
+
+    # ===== v5.4.1 新增能力包装 =====
+
+    def memory_reflection(self,
+                          agent_id: str,
+                          days: int = 30) -> Dict[str, Any]:
+        """记忆反思（v5.4.1 新增）
+
+        对时间窗口内的 Agent 记忆做元认知反思：主题分布、情感基调、
+        关键经验、焦点漂移与结构化反思报告。
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯窗口天数（1-365）
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        days = max(1, min(365, int(days)))
+        return self._storage.memory_reflection(agent_id, days)
+
+    def memory_lineage(self, memory_id: str) -> Dict[str, Any]:
+        """记忆血缘/溯源追踪（v5.4.1 新增）
+
+        追踪单条记忆的完整来源脉络：基础快照、版本历史、关联链接、
+        审计事件与生命周期时间线。
+
+        Args:
+            memory_id: 记忆 ID
+        """
+        if not memory_id or not isinstance(memory_id, str):
+            return {"error": "记忆 ID 不能为空"}
+        return self._storage.memory_lineage(memory_id)
+
+    def memory_reinforce(self,
+                         agent_id: str,
+                         days: int = 90,
+                         limit: int = 10) -> Dict[str, Any]:
+        """记忆强化候选（v5.4.1 新增）
+
+        前瞻性识别「高价值但正在衰减」的记忆，输出强化候选排序、
+        原因与推荐动作。
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯窗口天数（1-365）
+            limit: 返回候选数量上限（1-50）
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        days = max(1, min(365, int(days)))
+        limit = max(1, min(50, int(limit)))
+        return self._storage.memory_reinforce(agent_id, days, limit)
+
+    def drama_plot_thread(self, drama_id: str) -> Dict[str, Any]:
+        """剧情线索/伏笔追踪（v5.4.1 新增）
+
+        识别伏笔埋设（setup）与回收（payoff），输出线索列表、
+        未回收线索与回收率。
+
+        Args:
+            drama_id: 短剧 ID
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        return self._storage.drama_plot_thread(drama_id)
+
+    def drama_episode_curve(self, drama_id: str) -> Dict[str, Any]:
+        """分集张力曲线（v5.4.1 新增）
+
+        按集聚合张力指标，生成全剧张力曲线、高潮集、波动率
+        与曲线形态分类。
+
+        Args:
+            drama_id: 短剧 ID
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        return self._storage.drama_episode_curve(drama_id)
+
+    def drama_screen_time(self, drama_id: str) -> Dict[str, Any]:
+        """角色戏份平衡分析（v5.4.1 新增）
+
+        统计角色台词量/字数/出场占比，计算群像平衡度（Top 占比 +
+        基尼系数），识别独角戏/双核/群像结构。
+
+        Args:
+            drama_id: 短剧 ID
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        return self._storage.drama_screen_time(drama_id)
 
     def analyze_similarity(self,
                            memory_id: str,
