@@ -1,5 +1,5 @@
 """
-MindForge v5.2.9 存储引擎
+MindForge v5.4.3 存储引擎
 支持四层记忆架构：感官记忆 → 短期记忆 → 长期记忆 → 永久记忆
 """
 
@@ -10405,3 +10405,963 @@ class StorageEngine:
             },
             "suggestions": suggestions,
         }
+
+    # ===== v5.4.3 新增：Agent 记忆影响力图谱 + 记忆重叠 + 冲突检测 =====
+
+    def agent_influence_map(self,
+                            agent_id: str,
+                            days: int = 30) -> Dict[str, Any]:
+        """Agent 记忆影响力图谱（v5.4.3 新增）
+
+        分析指定 Agent 的记忆如何被其他 Agent 引用/关联，以及该 Agent
+        引用了哪些其他 Agent 的记忆，构建双向影响力网络。
+
+        影响力来源：
+        - memory_links 表中的跨 Agent 关联
+        - memories.metadata 中记录的 referenced_agents 字段
+        - 共享标签/分类的间接关联
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            影响力图谱：节点列表、边列表、入度/出度排行、核心影响力 Agent
+        """
+        conn = self._get_conn()
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+
+        days = max(1, min(365, int(days)))
+        now = time.time()
+        since = now - days * 86400
+
+        # v5.4.3 安全：参数化 SQL + 行数限制
+        cur = conn.execute(
+            "SELECT ml.source_id, ml.target_id, ml.link_type, "
+            "m_src.source_agent AS src_agent, m_tgt.source_agent AS tgt_agent "
+            "FROM memory_links ml "
+            "JOIN memories m_src ON ml.source_id = m_src.id "
+            "JOIN memories m_tgt ON ml.target_id = m_tgt.id "
+            "WHERE (m_src.source_agent = ? OR m_tgt.source_agent = ?) "
+            "AND m_src.created_at >= ? AND m_tgt.created_at >= ?",
+            (aid, aid, since, since)
+        )
+        link_rows = _limited_fetch(cur, limit=5000)
+
+        cur2 = conn.execute(
+            "SELECT id, source_agent, metadata, category, tags, created_at "
+            "FROM memories "
+            "WHERE category != 'trash' AND created_at >= ? "
+            "AND source_agent != ?",
+            (since, aid)
+        )
+        meta_rows = _limited_fetch(cur2, limit=5000)
+
+        nodes: Dict[str, Dict[str, Any]] = {}
+        edges: List[Dict[str, Any]] = []
+
+        def _ensure_node(nid: str):
+            if nid and nid not in nodes:
+                nodes[nid] = {
+                    "agent_id": nid,
+                    "influence_in": 0,
+                    "influence_out": 0,
+                    "shared_tags": 0,
+                }
+
+        _ensure_node(aid)
+
+        for lr in link_rows:
+            src_agent = lr[3] or ""
+            tgt_agent = lr[4] or ""
+            if not src_agent or not tgt_agent or src_agent == tgt_agent:
+                continue
+            _ensure_node(src_agent)
+            _ensure_node(tgt_agent)
+
+            if src_agent == aid:
+                nodes[aid]["influence_in"] += 1
+                nodes[tgt_agent]["influence_out"] += 1
+                edges.append({
+                    "from": tgt_agent,
+                    "to": aid,
+                    "type": lr[2] or "related",
+                    "direction": "influences",
+                })
+            elif tgt_agent == aid:
+                nodes[aid]["influence_out"] += 1
+                nodes[tgt_agent]["influence_in"] += 1
+                edges.append({
+                    "from": aid,
+                    "to": tgt_agent,
+                    "type": lr[2] or "related",
+                    "direction": "influences",
+                })
+
+        for mr in meta_rows:
+            other_agent = mr[1] or ""
+            if not other_agent:
+                continue
+            try:
+                meta = json.loads(mr[2]) if mr[2] else {}
+            except (json.JSONDecodeError, TypeError):
+                meta = {}
+            ref_agents = meta.get("referenced_agents", [])
+            if not isinstance(ref_agents, list):
+                continue
+            if aid in ref_agents:
+                _ensure_node(other_agent)
+                nodes[aid]["influence_out"] += 1
+                nodes[other_agent]["influence_in"] += 1
+                edges.append({
+                    "from": aid,
+                    "to": other_agent,
+                    "type": "metadata_ref",
+                    "direction": "influences",
+                })
+
+        # 共享标签的间接关联
+        aid_tags_cur = conn.execute(
+            "SELECT tags FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND created_at >= ?",
+            (aid, since)
+        )
+        aid_tag_rows = _limited_fetch(aid_tags_cur, limit=2000)
+        aid_tags: set = set()
+        for tr in aid_tag_rows:
+            try:
+                tags = json.loads(tr[0]) if tr[0] else []
+            except (json.JSONDecodeError, TypeError):
+                tags = []
+            if isinstance(tags, list):
+                aid_tags.update(t[:64] for t in tags if isinstance(t, str) and t)
+
+        if aid_tags:
+            for mr in meta_rows:
+                other_agent = mr[1] or ""
+                if not other_agent or other_agent == aid:
+                    continue
+                try:
+                    tags = json.loads(mr[3]) if mr[3] else []
+                except (json.JSONDecodeError, TypeError):
+                    tags = []
+                if not isinstance(tags, list):
+                    continue
+                other_tags = set(t[:64] for t in tags if isinstance(t, str) and t)
+                shared = aid_tags & other_tags
+                if shared:
+                    _ensure_node(other_agent)
+                    nodes[other_agent]["shared_tags"] = len(shared)
+
+        node_list = sorted(nodes.values(),
+                           key=lambda x: x["influence_in"] + x["influence_out"],
+                           reverse=True)
+        top_influencers = [n for n in node_list if n["agent_id"] != aid][:10]
+
+        total_edges = len(edges)
+        return {
+            "agent_id": aid,
+            "days": days,
+            "total_nodes": len(nodes),
+            "total_edges": total_edges,
+            "nodes": node_list[:50],
+            "edges": edges[:200],
+            "top_influencers": top_influencers,
+            "self_influence_in": nodes[aid]["influence_in"],
+            "self_influence_out": nodes[aid]["influence_out"],
+            "influence_score": round(
+                (nodes[aid]["influence_out"] * 2 + nodes[aid]["influence_in"]) /
+                max(1, total_edges), 4
+            ) if total_edges else 0.0,
+        }
+
+    def memory_overlap(self,
+                       agent_id_a: str,
+                       agent_id_b: str,
+                       days: int = 30) -> Dict[str, Any]:
+        """记忆重叠分析（v5.4.3 新增）
+
+        分析两个 Agent 的记忆在标签、分类、关键词层面的重叠度，
+        识别共同知识领域和各自独有的知识领域。
+
+        Args:
+            agent_id_a: Agent A ID
+            agent_id_b: Agent B ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            重叠分析：标签重叠率、分类重叠率、共享标签、独有标签、
+            共享分类、Jaccard 相似度
+        """
+        conn = self._get_conn()
+        aid_a = _filter_unicode_ctrl(agent_id_a[:128]) if isinstance(agent_id_a, str) else ""
+        aid_b = _filter_unicode_ctrl(agent_id_b[:128]) if isinstance(agent_id_b, str) else ""
+        if not aid_a or not aid_b:
+            return {"error": "两个 Agent ID 都不能为空"}
+        if aid_a == aid_b:
+            return {"error": "两个 Agent ID 不能相同"}
+
+        days = max(1, min(365, int(days)))
+        now = time.time()
+        since = now - days * 86400
+
+        def _get_agent_tags_cats(aid: str) -> Tuple[set, set, List[str]]:
+            cur = conn.execute(
+                "SELECT tags, category, content FROM memories "
+                "WHERE source_agent = ? AND category != 'trash' AND created_at >= ?",
+                (aid, since)
+            )
+            rows = _limited_fetch(cur, limit=5000)
+            tags_set: set = set()
+            cats_set: set = set()
+            contents: List[str] = []
+            for r in rows:
+                try:
+                    tags = json.loads(r[0]) if r[0] else []
+                except (json.JSONDecodeError, TypeError):
+                    tags = []
+                if isinstance(tags, list):
+                    for t in tags:
+                        if isinstance(t, str) and t:
+                            tags_set.add(t[:64])
+                if r[1]:
+                    cats_set.add(r[1][:64])
+                if r[2]:
+                    contents.append(r[2][:200])
+            return tags_set, cats_set, contents
+
+        tags_a, cats_a, contents_a = _get_agent_tags_cats(aid_a)
+        tags_b, cats_b, contents_b = _get_agent_tags_cats(aid_b)
+
+        shared_tags = tags_a & tags_b
+        unique_tags_a = tags_a - tags_b
+        unique_tags_b = tags_b - tags_a
+        tag_union = tags_a | tags_b
+        tag_jaccard = round(len(shared_tags) / len(tag_union), 4) if tag_union else 0.0
+        tag_overlap_pct = round(len(shared_tags) / len(tags_a) * 100, 2) if tags_a else 0.0
+
+        shared_cats = cats_a & cats_b
+        unique_cats_a = cats_a - cats_b
+        unique_cats_b = cats_b - cats_a
+        cat_union = cats_a | cats_b
+        cat_jaccard = round(len(shared_cats) / len(cat_union), 4) if cat_union else 0.0
+
+        stop_words = {
+            "的", "了", "和", "是", "就", "都", "而", "及", "与", "在",
+            "the", "a", "an", "and", "or", "is", "are", "was", "were",
+            "to", "of", "in", "for", "on", "at", "by", "it", "as",
+        }
+
+        def _extract_keywords(texts: List[str], top_n: int = 50) -> set:
+            kw: Dict[str, int] = {}
+            for text in texts:
+                words = text.lower().split()
+                for w in words:
+                    w = w.strip(".,!?;:\"'()[]{}").strip()
+                    if len(w) >= 2 and w not in stop_words:
+                        kw[w] = kw.get(w, 0) + 1
+                clean = "".join(c for c in text if c.isalpha())
+                for i in range(len(clean) - 1):
+                    gram = clean[i:i + 2]
+                    if gram not in stop_words:
+                        kw[gram] = kw.get(gram, 0) + 1
+            return set(sorted(kw, key=kw.get, reverse=True)[:top_n])
+
+        kw_a = _extract_keywords(contents_a)
+        kw_b = _extract_keywords(contents_b)
+        shared_kw = kw_a & kw_b
+        kw_jaccard = round(len(shared_kw) / len(kw_a | kw_b), 4) if (kw_a | kw_b) else 0.0
+
+        overall_sim = round(
+            tag_jaccard * 0.4 + cat_jaccard * 0.3 + kw_jaccard * 0.3, 4
+        )
+
+        return {
+            "agent_a": aid_a,
+            "agent_b": aid_b,
+            "days": days,
+            "tags": {
+                "shared": sorted(shared_tags),
+                "unique_a": sorted(unique_tags_a),
+                "unique_b": sorted(unique_tags_b),
+                "overlap_pct": tag_overlap_pct,
+                "jaccard": tag_jaccard,
+            },
+            "categories": {
+                "shared": sorted(shared_cats),
+                "unique_a": sorted(unique_cats_a),
+                "unique_b": sorted(unique_cats_b),
+                "jaccard": cat_jaccard,
+            },
+            "keywords": {
+                "shared_count": len(shared_kw),
+                "shared": sorted(shared_kw)[:20],
+                "jaccard": kw_jaccard,
+            },
+            "overall_similarity": overall_sim,
+            "similarity_level": (
+                "high" if overall_sim >= 0.5 else
+                "medium" if overall_sim >= 0.2 else
+                "low"
+            ),
+        }
+
+    def conflict_graph(self,
+                       agent_id: str,
+                       days: int = 30) -> Dict[str, Any]:
+        """记忆冲突检测图（v5.4.3 新增）
+
+        检测同一 Agent 记忆中潜在的知识冲突：相同标签/分类下
+        重要性差异显著的记忆对，或内容关键词高度重叠但重要性
+        矛盾的记忆对。
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            冲突图：冲突节点对、冲突类型、严重度分布、冲突密度
+        """
+        conn = self._get_conn()
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+
+        days = max(1, min(365, int(days)))
+        now = time.time()
+        since = now - days * 86400
+
+        cur = conn.execute(
+            "SELECT id, content, category, tags, importance, created_at "
+            "FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND created_at >= ? "
+            "ORDER BY created_at DESC",
+            (aid, since)
+        )
+        rows = _limited_fetch(cur, limit=3000)
+
+        if len(rows) < 2:
+            return {
+                "agent_id": aid,
+                "days": days,
+                "total_memories": len(rows),
+                "conflicts": [],
+                "conflict_count": 0,
+                "severity_distribution": {"high": 0, "medium": 0, "low": 0},
+                "conflict_density": 0.0,
+            }
+
+        memories: List[Dict[str, Any]] = []
+        for r in rows:
+            try:
+                tags = json.loads(r[3]) if r[3] else []
+            except (json.JSONDecodeError, TypeError):
+                tags = []
+            if not isinstance(tags, list):
+                tags = []
+            memories.append({
+                "id": r[0],
+                "content": (r[1] or "")[:200],
+                "category": r[2] or "general",
+                "tags": set(t[:64] for t in tags if isinstance(t, str) and t),
+                "importance": (r[4] or "MEDIUM").upper(),
+                "created_at": r[5] or now,
+            })
+
+        imp_order = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+
+        conflicts: List[Dict[str, Any]] = []
+        severity_dist = {"high": 0, "medium": 0, "low": 0}
+
+        n = len(memories)
+        max_pairs = min(n * (n - 1) // 2, 50000)
+
+        checked = 0
+        for i in range(n):
+            if checked >= max_pairs:
+                break
+            for j in range(i + 1, n):
+                if checked >= max_pairs:
+                    break
+                checked += 1
+
+                mi = memories[i]
+                mj = memories[j]
+
+                same_cat = mi["category"] == mj["category"]
+                tag_overlap = mi["tags"] & mj["tags"]
+                tag_shared = len(tag_overlap) > 0
+
+                if not (same_cat or tag_shared):
+                    continue
+
+                imp_diff = abs(
+                    imp_order.get(mi["importance"], 1) -
+                    imp_order.get(mj["importance"], 1)
+                )
+
+                words_i = set(mi["content"].lower().split())
+                words_j = set(mj["content"].lower().split())
+                content_overlap = words_i & words_j
+                content_overlap_count = len(content_overlap)
+
+                if content_overlap_count < 2 and not tag_shared:
+                    continue
+
+                if imp_diff >= 2 and content_overlap_count >= 3:
+                    severity = "high"
+                elif imp_diff >= 1 and content_overlap_count >= 2:
+                    severity = "medium"
+                else:
+                    severity = "low"
+
+                severity_dist[severity] += 1
+
+                conflicts.append({
+                    "memory_a": {
+                        "id": mi["id"],
+                        "content_preview": mi["content"][:80],
+                        "importance": mi["importance"],
+                        "category": mi["category"],
+                    },
+                    "memory_b": {
+                        "id": mj["id"],
+                        "content_preview": mj["content"][:80],
+                        "importance": mj["importance"],
+                        "category": mj["category"],
+                    },
+                    "shared_tags": sorted(tag_overlap)[:10],
+                    "content_overlap_words": sorted(content_overlap)[:10],
+                    "importance_diff": imp_diff,
+                    "severity": severity,
+                    "conflict_type": (
+                        "importance_contradiction" if imp_diff >= 2 else
+                        "tag_content_overlap" if tag_shared else
+                        "content_similarity"
+                    ),
+                })
+
+        severity_order = {"high": 0, "medium": 1, "low": 2}
+        conflicts.sort(key=lambda x: severity_order.get(x["severity"], 3))
+
+        total_pairs = n * (n - 1) // 2
+        conflict_density = round(len(conflicts) / max(1, total_pairs), 4)
+
+        return {
+            "agent_id": aid,
+            "days": days,
+            "total_memories": n,
+            "conflicts": conflicts[:100],
+            "conflict_count": len(conflicts),
+            "severity_distribution": severity_dist,
+            "conflict_density": conflict_density,
+            "top_conflict_tags": sorted(
+                set(t for c in conflicts[:50] for t in c["shared_tags"])
+            )[:20],
+        }
+
+    # ===== v5.4.3 新增：AI 短剧经典台词地图 + 角色成长 + 场景节奏 =====
+
+    def drama_quote_map(self,
+                        drama_id: str) -> Dict[str, Any]:
+        """经典台词地图（v5.4.3 新增）
+
+        将短剧中的经典台词映射到集/场景/角色维度，分析经典台词的
+        分布密度、角色贡献度和集数集中度。
+
+        Args:
+            drama_id: 短剧 ID
+
+        Returns:
+            台词地图：按集分布、按角色分布、按场景分布、台词时间线、
+            经典密度评级
+        """
+        conn = self._get_conn()
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+
+        drama_row = conn.execute(
+            "SELECT title, total_episodes FROM drama_series WHERE id = ?",
+            (did,)
+        ).fetchone()
+        if not drama_row:
+            return {"error": "短剧不存在"}
+        title = drama_row[0] or "未命名"
+        total_eps = drama_row[1] or 0
+
+        cur = conn.execute(
+            "SELECT id, scene_id, character_id, character_name, line_text, "
+            "episode, is_classic, created_at "
+            "FROM drama_lines WHERE drama_id = ? "
+            "ORDER BY episode ASC, created_at ASC",
+            (did,)
+        )
+        rows = _limited_fetch(cur, limit=10000)
+
+        if not rows:
+            return {
+                "drama_id": did,
+                "title": title,
+                "total_lines": 0,
+                "classic_count": 0,
+                "by_episode": {},
+                "by_character": {},
+                "by_scene": {},
+                "timeline": [],
+                "density_rating": "no_data",
+            }
+
+        total_lines = len(rows)
+        classic_lines = [r for r in rows if r[6]]
+        classic_count = len(classic_lines)
+
+        by_episode: Dict[int, Dict[str, Any]] = {}
+        by_character: Dict[str, Dict[str, Any]] = {}
+        by_scene: Dict[str, Dict[str, Any]] = {}
+        timeline: List[Dict[str, Any]] = []
+
+        for r in rows:
+            ep = r[5] or 0
+            char_id = r[2] or ""
+            char_name = r[3] or "未知角色"
+            scene_id = r[1] or ""
+            is_classic = bool(r[6])
+            line_text = (r[4] or "")[:100]
+
+            if ep not in by_episode:
+                by_episode[ep] = {"total": 0, "classic": 0, "classic_lines": []}
+            by_episode[ep]["total"] += 1
+            if is_classic:
+                by_episode[ep]["classic"] += 1
+                if len(by_episode[ep]["classic_lines"]) < 5:
+                    by_episode[ep]["classic_lines"].append({
+                        "text": line_text,
+                        "character": char_name,
+                    })
+
+            char_key = char_id or char_name
+            if char_key not in by_character:
+                by_character[char_key] = {
+                    "name": char_name,
+                    "total": 0,
+                    "classic": 0,
+                    "classic_lines": [],
+                }
+            by_character[char_key]["total"] += 1
+            if is_classic:
+                by_character[char_key]["classic"] += 1
+                if len(by_character[char_key]["classic_lines"]) < 3:
+                    by_character[char_key]["classic_lines"].append(line_text)
+
+            if scene_id:
+                if scene_id not in by_scene:
+                    by_scene[scene_id] = {"total": 0, "classic": 0}
+                by_scene[scene_id]["total"] += 1
+                if is_classic:
+                    by_scene[scene_id]["classic"] += 1
+
+            if is_classic:
+                timeline.append({
+                    "episode": ep,
+                    "scene_id": scene_id,
+                    "character": char_name,
+                    "text": line_text,
+                })
+
+        classic_ratio = classic_count / total_lines if total_lines else 0
+        if classic_ratio >= 0.15:
+            density_rating = "rich"
+        elif classic_ratio >= 0.08:
+            density_rating = "moderate"
+        elif classic_ratio >= 0.03:
+            density_rating = "sparse"
+        else:
+            density_rating = "minimal"
+
+        char_ranking = sorted(
+            by_character.values(),
+            key=lambda x: x["classic"],
+            reverse=True
+        )[:10]
+
+        ep_classic_counts = [(ep, d["classic"]) for ep, d in by_episode.items()]
+        ep_classic_counts.sort(key=lambda x: x[1], reverse=True)
+        top_episodes = ep_classic_counts[:5]
+
+        return {
+            "drama_id": did,
+            "title": title,
+            "total_episodes": total_eps,
+            "total_lines": total_lines,
+            "classic_count": classic_count,
+            "classic_ratio": round(classic_ratio, 4),
+            "density_rating": density_rating,
+            "by_episode": {str(k): v for k, v in sorted(by_episode.items())},
+            "by_character": char_ranking,
+            "by_scene": {k: v for k, v in sorted(by_scene.items())[:20]},
+            "timeline": timeline[:50],
+            "top_episodes": [{"episode": e, "classic_count": c} for e, c in top_episodes],
+        }
+
+    def character_growth(self,
+                         drama_id: str,
+                         character_id: str) -> Dict[str, Any]:
+        """角色成长深度分析（v5.4.3 新增）
+
+        在 character_arc 基础上深化分析：情感成长轨迹（台词情感变化）、
+        对话复杂度演变（台词长度/词汇丰富度）、角色活跃度阶段划分。
+
+        Args:
+            drama_id: 短剧 ID
+            character_id: 角色 ID
+
+        Returns:
+            成长分析：情感弧线、复杂度曲线、活跃度阶段、成长评分、
+            成长总结
+        """
+        conn = self._get_conn()
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) else ""
+        cid = character_id[:64] if isinstance(character_id, str) else ""
+        if not did or not cid:
+            return {"error": "短剧 ID 和角色 ID 不能为空"}
+
+        char_row = conn.execute(
+            "SELECT name, role, description FROM drama_characters WHERE id = ? AND drama_id = ?",
+            (cid, did)
+        ).fetchone()
+        if not char_row:
+            return {"error": "角色不存在"}
+        char_name = char_row[0] or "未知"
+        char_role = char_row[1] or "supporting"
+
+        cur = conn.execute(
+            "SELECT id, line_text, episode, scene_id, created_at "
+            "FROM drama_lines WHERE drama_id = ? AND character_id = ? "
+            "ORDER BY episode ASC, created_at ASC",
+            (did, cid)
+        )
+        rows = _limited_fetch(cur, limit=5000)
+
+        if not rows:
+            return {
+                "drama_id": did,
+                "character_id": cid,
+                "character_name": char_name,
+                "total_lines": 0,
+                "emotion_arc": [],
+                "complexity_curve": [],
+                "activity_stages": [],
+                "growth_score": 0,
+                "growth_summary": "无台词数据",
+            }
+
+        positive_words = {"好", "爱", "开心", "高兴", "希望", "幸福", "感谢",
+                          "美", "喜欢", "成功", "赢", "胜利", "笑", "温暖",
+                          "good", "love", "happy", "hope", "great", "win"}
+        negative_words = {"坏", "恨", "伤心", "难过", "绝望", "愤怒", "怕",
+                          "失败", "输", "哭", "痛", "苦", "死", "离开",
+                          "bad", "hate", "sad", "angry", "fear", "lose", "fail"}
+
+        total_lines = len(rows)
+
+        ep_data: Dict[int, List[Dict[str, Any]]] = {}
+        for r in rows:
+            ep = r[2] or 0
+            if ep not in ep_data:
+                ep_data[ep] = []
+            ep_data[ep].append({
+                "id": r[0],
+                "text": r[1] or "",
+                "scene_id": r[3] or "",
+            })
+
+        emotion_arc: List[Dict[str, Any]] = []
+        complexity_curve: List[Dict[str, Any]] = []
+
+        for ep in sorted(ep_data.keys()):
+            lines = ep_data[ep]
+            texts = [l["text"] for l in lines]
+
+            all_text = " ".join(texts).lower()
+            pos_hits = sum(1 for w in positive_words if w in all_text)
+            neg_hits = sum(1 for w in negative_words if w in all_text)
+            if pos_hits > neg_hits:
+                emotion = "positive"
+            elif neg_hits > pos_hits:
+                emotion = "negative"
+            else:
+                emotion = "neutral"
+            emotion_score = round((pos_hits - neg_hits) / max(1, len(lines)), 4)
+
+            emotion_arc.append({
+                "episode": ep,
+                "line_count": len(lines),
+                "emotion": emotion,
+                "emotion_score": emotion_score,
+            })
+
+            avg_len = round(sum(len(t) for t in texts) / len(texts), 1) if texts else 0
+            words = set()
+            for t in texts:
+                words.update(t.lower().split())
+                words.update(c for c in t if c.isalpha())
+            vocab_size = len(words)
+            complexity = round(vocab_size / max(1, len(texts)), 2)
+
+            complexity_curve.append({
+                "episode": ep,
+                "avg_line_length": avg_len,
+                "vocabulary_size": vocab_size,
+                "complexity_score": complexity,
+            })
+
+        episodes = sorted(ep_data.keys())
+        total_eps_count = len(episodes)
+        if total_eps_count >= 3:
+            third = max(1, total_eps_count // 3)
+            early_eps = episodes[:third]
+            mid_eps = episodes[third:third * 2]
+            late_eps = episodes[third * 2:]
+
+            early_lines = sum(len(ep_data[e]) for e in early_eps)
+            mid_lines = sum(len(ep_data[e]) for e in mid_eps)
+            late_lines = sum(len(ep_data[e]) for e in late_eps)
+
+            activity_stages = [
+                {"stage": "early", "episodes": early_eps, "line_count": early_lines},
+                {"stage": "middle", "episodes": mid_eps, "line_count": mid_lines},
+                {"stage": "late", "episodes": late_eps, "line_count": late_lines},
+            ]
+
+            if late_lines > early_lines * 1.3:
+                activity_trend = "rising"
+            elif early_lines > late_lines * 1.3:
+                activity_trend = "declining"
+            elif mid_lines > early_lines * 1.2 and mid_lines > late_lines * 1.2:
+                activity_trend = "peak_middle"
+            else:
+                activity_trend = "stable"
+        else:
+            activity_stages = [{"stage": "all", "episodes": episodes,
+                                "line_count": total_lines}]
+            activity_trend = "insufficient_data"
+
+        if len(emotion_arc) >= 2:
+            first_emotion = emotion_arc[0]["emotion_score"]
+            last_emotion = emotion_arc[-1]["emotion_score"]
+            emotion_delta = last_emotion - first_emotion
+
+            first_complexity = complexity_curve[0]["complexity_score"]
+            last_complexity = complexity_curve[-1]["complexity_score"]
+            complexity_delta = last_complexity - first_complexity
+
+            growth_score = min(100, max(0, round(
+                (emotion_delta * 30 + complexity_delta * 20 +
+                 (1 if activity_trend == "rising" else 0) * 25 +
+                 min(100, total_lines * 2) / 100 * 25)
+            )))
+        else:
+            emotion_delta = 0
+            complexity_delta = 0
+            growth_score = min(100, round(total_lines * 2))
+
+        if growth_score >= 70:
+            growth_summary = f"角色「{char_name}」展现出显著的成长轨迹，" \
+                             f"情感{'正向转变' if emotion_delta > 0 else '深度增加'}，" \
+                             f"对话复杂度提升，活跃度{activity_trend}"
+        elif growth_score >= 40:
+            growth_summary = f"角色「{char_name}」有一定成长，" \
+                             f"活跃度{activity_trend}，" \
+                             f"情感和复杂度有所变化"
+        else:
+            growth_summary = f"角色「{char_name}」成长幅度有限，" \
+                             f"活跃度{activity_trend}，" \
+                             f"建议增加戏份或情感冲突"
+
+        return {
+            "drama_id": did,
+            "character_id": cid,
+            "character_name": char_name,
+            "character_role": char_role,
+            "total_lines": total_lines,
+            "total_episodes_active": total_eps_count,
+            "emotion_arc": emotion_arc,
+            "complexity_curve": complexity_curve,
+            "activity_stages": activity_stages,
+            "activity_trend": activity_trend,
+            "emotion_delta": round(emotion_delta, 4),
+            "complexity_delta": round(complexity_delta, 4),
+            "growth_score": growth_score,
+            "growth_summary": growth_summary,
+        }
+
+    def scene_rhythm(self,
+                     drama_id: str) -> Dict[str, Any]:
+        """场景节奏分析（v5.4.3 新增）
+
+        分析短剧各场景的台词密度、对话节奏和场景长度分布，
+        识别快节奏/慢节奏场景，评估整体节奏健康度。
+
+        Args:
+            drama_id: 短剧 ID
+
+        Returns:
+            节奏分析：各场景节奏数据、节奏曲线、节奏分类、
+            整体节奏评估、节奏建议
+        """
+        conn = self._get_conn()
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+
+        drama_row = conn.execute(
+            "SELECT title FROM drama_series WHERE id = ?",
+            (did,)
+        ).fetchone()
+        if not drama_row:
+            return {"error": "短剧不存在"}
+        title = drama_row[0] or "未命名"
+
+        cur_scenes = conn.execute(
+            "SELECT id, episode, scene_number, title, content "
+            "FROM drama_scenes WHERE drama_id = ? "
+            "ORDER BY episode ASC, scene_number ASC",
+            (did,)
+        )
+        scene_rows = _limited_fetch(cur_scenes, limit=2000)
+
+        if not scene_rows:
+            return {
+                "drama_id": did,
+                "title": title,
+                "total_scenes": 0,
+                "scene_rhythms": [],
+                "rhythm_curve": [],
+                "overall_pace": "no_data",
+                "suggestions": [],
+            }
+
+        scene_data: Dict[str, Dict[str, Any]] = {}
+        for sr in scene_rows:
+            scene_data[sr[0]] = {
+                "scene_id": sr[0],
+                "episode": sr[1] or 0,
+                "scene_number": sr[2] or 0,
+                "title": sr[3] or "",
+                "content_length": len(sr[4] or ""),
+                "line_count": 0,
+                "total_chars": 0,
+                "speaker_count": 0,
+                "speakers": set(),
+            }
+
+        cur_lines = conn.execute(
+            "SELECT scene_id, character_id, line_text "
+            "FROM drama_lines WHERE drama_id = ? AND scene_id != ''",
+            (did,)
+        )
+        line_rows = _limited_fetch(cur_lines, limit=10000)
+
+        for lr in line_rows:
+            sid = lr[0] or ""
+            if sid not in scene_data:
+                continue
+            scene_data[sid]["line_count"] += 1
+            scene_data[sid]["total_chars"] += len(lr[2] or "")
+            if lr[1]:
+                scene_data[sid]["speakers"].add(lr[1])
+
+        scene_rhythms: List[Dict[str, Any]] = []
+        for sd in scene_data.values():
+            sd["speaker_count"] = len(sd["speakers"])
+            del sd["speakers"]
+
+            line_count = sd["line_count"]
+            total_chars = sd["total_chars"]
+            avg_line_len = round(total_chars / line_count, 1) if line_count else 0
+
+            content_len = max(1, sd["content_length"])
+            density = round(line_count / content_len * 100, 2)
+
+            if line_count == 0:
+                pace = "silent"
+            elif density >= 5.0 or line_count >= 20:
+                pace = "fast"
+            elif density >= 2.0 or line_count >= 8:
+                pace = "moderate"
+            else:
+                pace = "slow"
+
+            sd["avg_line_length"] = avg_line_len
+            sd["density"] = density
+            sd["pace"] = pace
+            scene_rhythms.append(sd)
+
+        scene_rhythms.sort(key=lambda x: (x["episode"], x["scene_number"]))
+
+        rhythm_curve = [
+            {
+                "scene_id": sr["scene_id"],
+                "episode": sr["episode"],
+                "pace": sr["pace"],
+                "line_count": sr["line_count"],
+                "density": sr["density"],
+            }
+            for sr in scene_rhythms
+        ]
+
+        total_scenes = len(scene_rhythms)
+        pace_counts = {"fast": 0, "moderate": 0, "slow": 0, "silent": 0}
+        for sr in scene_rhythms:
+            pace_counts[sr["pace"]] += 1
+
+        active_scenes = total_scenes - pace_counts["silent"]
+        if active_scenes == 0:
+            overall_pace = "no_data"
+        elif pace_counts["fast"] >= active_scenes * 0.5:
+            overall_pace = "fast_paced"
+        elif pace_counts["slow"] >= active_scenes * 0.5:
+            overall_pace = "slow_paced"
+        else:
+            overall_pace = "balanced"
+
+        pace_transitions = 0
+        prev_pace = None
+        for rc in rhythm_curve:
+            if rc["pace"] in ("silent",):
+                continue
+            if prev_pace and prev_pace != rc["pace"]:
+                pace_transitions += 1
+            prev_pace = rc["pace"]
+
+        rhythm_variability = round(
+            pace_transitions / max(1, active_scenes), 4
+        ) if active_scenes else 0
+
+        suggestions: List[str] = []
+        if pace_counts["silent"] > total_scenes * 0.3:
+            suggestions.append(f"{pace_counts['silent']} 个场景无台词，考虑增加对话或删减空场景")
+        if overall_pace == "fast_paced":
+            suggestions.append("整体节奏偏快，建议穿插慢节奏场景以提供情感沉淀空间")
+        if overall_pace == "slow_paced":
+            suggestions.append("整体节奏偏慢，建议增加快节奏场景以提升观众注意力")
+        if rhythm_variability < 0.1 and active_scenes >= 5:
+            suggestions.append("节奏变化度低，建议增加快慢交替以增强观感层次")
+        if not suggestions:
+            suggestions.append("场景节奏分布合理，快慢搭配得当")
+
+        return {
+            "drama_id": did,
+            "title": title,
+            "total_scenes": total_scenes,
+            "scene_rhythms": scene_rhythms[:100],
+            "rhythm_curve": rhythm_curve[:200],
+            "pace_distribution": pace_counts,
+            "overall_pace": overall_pace,
+            "rhythm_variability": rhythm_variability,
+            "suggestions": suggestions,
+        }
+

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.4.2 CLI - 命令行工具
+MindForge v5.4.3 CLI - 命令行工具
 =================================
 
 Usage:
@@ -89,7 +89,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.4.2"
+    __version__ = "5.4.3"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -3166,6 +3166,31 @@ def main():
 
     p_cfl_stats = sub.add_parser("share-conflict-stats", help="共享冲突：统计（v5.4.2 新增）")
 
+    # ===== v5.4.3 新增 Agent 记忆命令 =====
+    p_influence_map = sub.add_parser("agent-influence", help="Agent 记忆影响力图谱（v5.4.3 新增）")
+    p_influence_map.add_argument("agent", help="Agent ID")
+    p_influence_map.add_argument("--days", "-d", type=int, default=30, help="回溯天数（1-365）")
+
+    p_memory_overlap = sub.add_parser("memory-overlap", help="记忆重叠分析（v5.4.3 新增）")
+    p_memory_overlap.add_argument("agent_a", help="Agent A ID")
+    p_memory_overlap.add_argument("agent_b", help="Agent B ID")
+    p_memory_overlap.add_argument("--days", "-d", type=int, default=30, help="回溯天数（1-365）")
+
+    p_conflict_graph = sub.add_parser("conflict-graph", help="记忆冲突检测图（v5.4.3 新增）")
+    p_conflict_graph.add_argument("agent", help="Agent ID")
+    p_conflict_graph.add_argument("--days", "-d", type=int, default=30, help="回溯天数（1-365）")
+
+    # ===== v5.4.3 新增 AI 短剧命令 =====
+    p_quote_map = sub.add_parser("drama-quote-map", help="经典台词地图（v5.4.3 新增）")
+    p_quote_map.add_argument("drama_id", help="短剧 ID")
+
+    p_char_growth = sub.add_parser("char-growth", help="角色成长深度分析（v5.4.3 新增）")
+    p_char_growth.add_argument("drama_id", help="短剧 ID")
+    p_char_growth.add_argument("character_id", help="角色 ID")
+
+    p_scene_rhythm = sub.add_parser("scene-rhythm", help="场景节奏分析（v5.4.3 新增）")
+    p_scene_rhythm.add_argument("drama_id", help="短剧 ID")
+
     # ===== v5.3.9 新增五大能力 CLI =====
     p_intent_router = sub.add_parser("intent-router", help="意图分类路由（v5.3.9 新增）")
     p_intent_router.add_argument("text", help="要分类的文本（用引号包裹）")
@@ -4441,6 +4466,13 @@ def _main_dispatch(args):
         "share-conflict-resolve": cmd_share_conflict_resolve,
         "share-conflict-dismiss": cmd_share_conflict_dismiss,
         "share-conflict-stats": cmd_share_conflict_stats,
+        # v5.4.3 新增
+        "agent-influence": cmd_agent_influence,
+        "memory-overlap": cmd_memory_overlap,
+        "conflict-graph": cmd_conflict_graph,
+        "drama-quote-map": cmd_drama_quote_map,
+        "char-growth": cmd_char_growth,
+        "scene-rhythm": cmd_scene_rhythm,
         # v5.3.9 新增五大能力
         "intent-router": cmd_intent_router,
         "conflict-scan": cmd_conflict_scan,
@@ -8722,3 +8754,300 @@ def cmd_schedule(args):
 
 if __name__ == "__main__":
     main()
+
+def cmd_agent_influence(args):
+    """Agent 记忆影响力图谱（v5.4.3 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🕸️  Agent 记忆影响力图谱（v5.4.3）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:    {args.agent}")
+    print(f"  回溯天数:    {args.days}")
+
+    try:
+        result = cm.agent_influence_map(args.agent, args.days)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(f"  总节点数:    {result['total_nodes']}")
+    print(f"  总边数:      {result['total_edges']}")
+    print(f"  自身入度:    {result['self_influence_in']}")
+    print(f"  自身出度:    {result['self_influence_out']}")
+    print(f"  影响力评分:  {result['influence_score']}")
+
+    top = result.get("top_influencers", [])
+    if top:
+        print(c(f"\n🏆 核心影响力 Agent Top {len(top)}", "cyan"))
+        print(f"{'Agent ID':<30}{'入度':>6}{'出度':>6}{'共享标签':>8}")
+        print("-" * 60)
+        for n in top:
+            print(f"{n['agent_id'][:28]:<30}{n['influence_in']:>6}"
+                  f"{n['influence_out']:>6}{n['shared_tags']:>8}")
+
+    edges = result.get("edges", [])
+    if edges:
+        print(c(f"\n🔗 影响力边（前 20 条）", "cyan"))
+        for e in edges[:20]:
+            print(f"  {e['from'][:20]} → {e['to'][:20]}  [{e['type']}]")
+
+    cm.close()
+    return 0
+
+
+def cmd_memory_overlap(args):
+    """记忆重叠分析（v5.4.3 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n📊 记忆重叠分析（v5.4.3）", "bold"))
+    print("=" * 60)
+    print(f"  Agent A:     {args.agent_a}")
+    print(f"  Agent B:     {args.agent_b}")
+    print(f"  回溯天数:    {args.days}")
+
+    try:
+        result = cm.memory_overlap(args.agent_a, args.agent_b, args.days)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(f"\n  综合相似度:  {result['overall_similarity']}  ({result['similarity_level']})")
+
+    tags = result.get("tags", {})
+    print(c(f"\n🏷️  标签重叠", "cyan"))
+    print(f"  Jaccard:     {tags.get('jaccard', 0)}")
+    print(f"  重叠率:      {tags.get('overlap_pct', 0)}%")
+    print(f"  共享标签:    {', '.join(tags.get('shared', [])[:10]) or '无'}")
+    print(f"  A 独有:      {', '.join(tags.get('unique_a', [])[:10]) or '无'}")
+    print(f"  B 独有:      {', '.join(tags.get('unique_b', [])[:10]) or '无'}")
+
+    cats = result.get("categories", {})
+    print(c(f"\n📂 分类重叠", "cyan"))
+    print(f"  Jaccard:     {cats.get('jaccard', 0)}")
+    print(f"  共享分类:    {', '.join(cats.get('shared', [])) or '无'}")
+
+    kw = result.get("keywords", {})
+    print(c(f"\n🔑 关键词重叠", "cyan"))
+    print(f"  Jaccard:     {kw.get('jaccard', 0)}")
+    print(f"  共享词数:    {kw.get('shared_count', 0)}")
+    print(f"  共享词:      {', '.join(kw.get('shared', [])[:10]) or '无'}")
+
+    cm.close()
+    return 0
+
+
+def cmd_conflict_graph(args):
+    """记忆冲突检测图（v5.4.3 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n⚔️  记忆冲突检测图（v5.4.3）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:    {args.agent}")
+    print(f"  回溯天数:    {args.days}")
+
+    try:
+        result = cm.conflict_graph(args.agent, args.days)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(f"  总记忆数:    {result['total_memories']}")
+    print(f"  冲突数:      {result['conflict_count']}")
+    print(f"  冲突密度:    {result['conflict_density']}")
+
+    sev = result.get("severity_distribution", {})
+    print(c(f"\n📋 严重度分布", "cyan"))
+    print(f"  高:    {sev.get('high', 0)}")
+    print(f"  中:    {sev.get('medium', 0)}")
+    print(f"  低:    {sev.get('low', 0)}")
+
+    conflicts = result.get("conflicts", [])
+    if conflicts:
+        print(c(f"\n⚠️  冲突详情（前 20 条）", "cyan"))
+        for cf in conflicts[:20]:
+            sev_label = {"high": "🔴高", "medium": "🟡中", "low": "🟢低"}.get(cf["severity"], "?")
+            print(f"\n  {sev_label} [{cf['conflict_type']}] 重要度差: {cf['importance_diff']}")
+            print(f"    A: [{cf['memory_a']['importance']}] {cf['memory_a']['content_preview']}")
+            print(f"    B: [{cf['memory_b']['importance']}] {cf['memory_b']['content_preview']}")
+            if cf.get("shared_tags"):
+                print(c(f"    ↳ 共享标签: {', '.join(cf['shared_tags'])}", "cyan"))
+
+    top_tags = result.get("top_conflict_tags", [])
+    if top_tags:
+        print(c(f"\n🏷️  冲突热点标签", "cyan"))
+        print(f"  {', '.join(top_tags)}")
+
+    cm.close()
+    return 0
+
+
+def cmd_drama_quote_map(args):
+    """经典台词地图（v5.4.3 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🗺️  经典台词地图（v5.4.3）", "bold"))
+    print("=" * 60)
+    print(f"  短剧 ID:    {args.drama_id}")
+
+    try:
+        result = cm.drama_quote_map(args.drama_id)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(f"  剧名:       {result['title']}")
+    print(f"  总台词:     {result['total_lines']}")
+    print(f"  经典台词:   {result['classic_count']}")
+    print(f"  经典率:     {result['classic_ratio']}")
+    print(f"  密度评级:   {result['density_rating']}")
+
+    by_char = result.get("by_character", [])
+    if by_char:
+        print(c(f"\n🎭 角色经典台词贡献排行", "cyan"))
+        print(f"{'角色':<16}{'总台词':>6}{'经典':>6}{'经典率':>8}")
+        print("-" * 40)
+        for ch in by_char:
+            ratio = round(ch['classic'] / max(1, ch['total']) * 100, 1)
+            print(f"{ch['name'][:14]:<16}{ch['total']:>6}{ch['classic']:>6}{ratio:>7}%")
+            for cl in ch.get("classic_lines", [])[:2]:
+                print(c(f"  \"{cl[:50]}\"", "cyan"))
+
+    top_eps = result.get("top_episodes", [])
+    if top_eps:
+        print(c(f"\n📺 经典台词最多的集", "cyan"))
+        for ep in top_eps:
+            print(f"  EP{ep['episode']}:  {ep['classic_count']} 条经典台词")
+
+    timeline = result.get("timeline", [])
+    if timeline:
+        print(c(f"\n📜 经典台词时间线（前 15 条）", "cyan"))
+        for t in timeline[:15]:
+            print(f"  EP{t['episode']}  [{t['character'][:10]}]  \"{t['text'][:40]}\"")
+
+    cm.close()
+    return 0
+
+
+def cmd_char_growth(args):
+    """角色成长深度分析（v5.4.3 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🌱 角色成长深度分析（v5.4.3）", "bold"))
+    print("=" * 60)
+    print(f"  短剧 ID:    {args.drama_id}")
+    print(f"  角色 ID:    {args.character_id}")
+
+    try:
+        result = cm.character_growth(args.drama_id, args.character_id)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(f"  角色名:     {result['character_name']}")
+    print(f"  角色定位:   {result['character_role']}")
+    print(f"  总台词:     {result['total_lines']}")
+    print(f"  活跃集数:   {result['total_episodes_active']}")
+    print(f"  活跃趋势:   {result['activity_trend']}")
+    print(f"  成长评分:   {result['growth_score']}/100")
+
+    emotion_arc = result.get("emotion_arc", [])
+    if emotion_arc:
+        print(c(f"\n💖 情感弧线", "cyan"))
+        print(f"{'集':>4}{'台词数':>6}{'情感':>10}{'评分':>8}")
+        print("-" * 32)
+        for e in emotion_arc:
+            print(f"{e['episode']:>4}{e['line_count']:>6}{e['emotion']:>10}{e['emotion_score']:>8}")
+
+    complexity = result.get("complexity_curve", [])
+    if complexity:
+        print(c(f"\n🧠 对话复杂度曲线", "cyan"))
+        print(f"{'集':>4}{'平均长度':>8}{'词汇量':>8}{'复杂度':>8}")
+        print("-" * 32)
+        for c_item in complexity:
+            print(f"{c_item['episode']:>4}{c_item['avg_line_length']:>8}"
+                  f"{c_item['vocabulary_size']:>8}{c_item['complexity_score']:>8}")
+
+    stages = result.get("activity_stages", [])
+    if stages:
+        print(c(f"\n📊 活跃度阶段", "cyan"))
+        for s in stages:
+            print(f"  {s['stage']:<10} 台词数: {s['line_count']}")
+
+    print(c(f"\n📝 {result.get('growth_summary', '')}", "yellow"))
+
+    cm.close()
+    return 0
+
+
+def cmd_scene_rhythm(args):
+    """场景节奏分析（v5.4.3 新增）"""
+    cm = _get_memory(args)
+    print(c(f"\n🎵 场景节奏分析（v5.4.3）", "bold"))
+    print("=" * 60)
+    print(f"  短剧 ID:    {args.drama_id}")
+
+    try:
+        result = cm.scene_rhythm(args.drama_id)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    print(f"  剧名:       {result['title']}")
+    print(f"  总场景数:   {result['total_scenes']}")
+    print(f"  整体节奏:   {result['overall_pace']}")
+    print(f"  节奏变化度: {result['rhythm_variability']}")
+
+    pace = result.get("pace_distribution", {})
+    print(c(f"\n📋 节奏分布", "cyan"))
+    print(f"  快节奏:     {pace.get('fast', 0)}")
+    print(f"  中节奏:     {pace.get('moderate', 0)}")
+    print(f"  慢节奏:     {pace.get('slow', 0)}")
+    print(f"  无台词:     {pace.get('silent', 0)}")
+
+    rhythms = result.get("scene_rhythms", [])
+    if rhythms:
+        print(c(f"\n🎬 各场景节奏（前 20 个）", "cyan"))
+        print(f"{'集':>4}{'场景':>6}{'台词':>6}{'密度':>8}{'节奏':>10}  标题")
+        print("-" * 60)
+        for sr in rhythms[:20]:
+            pace_label = {"fast": "⚡快", "moderate": "🎵中",
+                          "slow": "🐢慢", "silent": "🔇无"}.get(sr["pace"], "?")
+            print(f"{sr['episode']:>4}{sr['scene_number']:>6}{sr['line_count']:>6}"
+                  f"{sr['density']:>8}{pace_label:>10}  {sr['title'][:20]}")
+
+    for s in result.get("suggestions", []):
+        print(c(f"\n  ✦ {s}", "yellow"))
+
+    cm.close()
+    return 0

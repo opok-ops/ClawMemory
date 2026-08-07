@@ -1,4 +1,4 @@
-"""MindForge v5.4.2 单元测试"""
+﻿"""MindForge v5.4.3 单元测试"""
 import sys
 from pathlib import Path
 
@@ -1404,5 +1404,291 @@ class TestShareConflict(unittest.TestCase):
         self.assertFalse(resolver.dismiss("cfl_none")["success"])
 
 
+
+
+# ===== v5.4.3 新增功能测试 =====
+
+class TestAgentInfluenceMap(unittest.TestCase):
+    """v5.4.3: Agent 记忆影响力图谱测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_influence_map_empty_agent(self):
+        """空 Agent 应返回空图谱"""
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        result = storage.agent_influence_map("nonexistent_agent", days=30)
+        self.assertEqual(result["total_nodes"], 1)
+        self.assertEqual(result["total_edges"], 0)
+        storage.close()
+
+    def test_influence_map_invalid_input(self):
+        """无效输入应返回错误"""
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        result = storage.agent_influence_map("", days=30)
+        self.assertIn("error", result)
+        storage.close()
+
+    def test_influence_map_with_data(self):
+        """有数据的 Agent 应返回影响力图谱"""
+        from core.storage import StorageEngine
+        from core.types import MemoryLayer
+        storage = StorageEngine(db_path=self.db_path)
+
+        storage.add_memory(content="Agent A 的记忆", category="tech",
+                           tags=["python", "ai"], layer=MemoryLayer.SHORT_TERM,
+                           source_agent="agent_a")
+        storage.add_memory(content="Agent B 的记忆", category="tech",
+                           tags=["python", "web"], layer=MemoryLayer.SHORT_TERM,
+                           source_agent="agent_b")
+
+        result = storage.agent_influence_map("agent_a", days=365)
+        self.assertNotIn("error", result)
+        self.assertIn("total_nodes", result)
+        self.assertIn("influence_score", result)
+        storage.close()
+
+
+class TestMemoryOverlap(unittest.TestCase):
+    """v5.4.3: 记忆重叠分析测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_overlap_identical_agents_error(self):
+        """相同 Agent ID 应返回错误"""
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        result = storage.memory_overlap("agent_a", "agent_a", days=30)
+        self.assertIn("error", result)
+        storage.close()
+
+    def test_overlap_with_shared_tags(self):
+        """有共享标签的 Agent 应返回重叠结果"""
+        from core.storage import StorageEngine
+        from core.types import MemoryLayer
+        storage = StorageEngine(db_path=self.db_path)
+
+        storage.add_memory(content="Python 编程技巧", category="tech",
+                           tags=["python", "ai"], layer=MemoryLayer.SHORT_TERM,
+                           source_agent="agent_a")
+        storage.add_memory(content="Python Web 开发", category="tech",
+                           tags=["python", "web"], layer=MemoryLayer.SHORT_TERM,
+                           source_agent="agent_b")
+
+        result = storage.memory_overlap("agent_a", "agent_b", days=365)
+        self.assertNotIn("error", result)
+        self.assertIn("tags", result)
+        self.assertIn("python", result["tags"]["shared"])
+        self.assertIn("overall_similarity", result)
+        storage.close()
+
+    def test_overlap_no_shared_data(self):
+        """无共享数据的 Agent 应返回低相似度"""
+        from core.storage import StorageEngine
+        from core.types import MemoryLayer
+        storage = StorageEngine(db_path=self.db_path)
+
+        storage.add_memory(content="量子物理研究", category="physics",
+                           tags=["quantum", "physics"], layer=MemoryLayer.SHORT_TERM,
+                           source_agent="agent_a")
+        storage.add_memory(content="美食烹饪指南", category="cooking",
+                           tags=["recipe", "food"], layer=MemoryLayer.SHORT_TERM,
+                           source_agent="agent_b")
+
+        result = storage.memory_overlap("agent_a", "agent_b", days=365)
+        self.assertNotIn("error", result)
+        self.assertEqual(result["similarity_level"], "low")
+        storage.close()
+
+
+class TestConflictGraph(unittest.TestCase):
+    """v5.4.3: 记忆冲突检测图测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_conflict_graph_empty(self):
+        """空 Agent 应返回零冲突"""
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        result = storage.conflict_graph("nonexistent_agent", days=30)
+        self.assertEqual(result["conflict_count"], 0)
+        self.assertEqual(result["conflict_density"], 0.0)
+        storage.close()
+
+    def test_conflict_graph_with_conflicts(self):
+        """有冲突标签的记忆应检测到冲突"""
+        from core.storage import StorageEngine
+        from core.types import MemoryLayer, Importance
+        storage = StorageEngine(db_path=self.db_path)
+
+        storage.add_memory(content="Python is great for data science",
+                           category="tech", tags=["python", "programming"],
+                           importance=Importance.CRITICAL,
+                           layer=MemoryLayer.SHORT_TERM, source_agent="agent_a")
+        storage.add_memory(content="Python is bad for data science performance",
+                           category="tech", tags=["python", "programming"],
+                           importance=Importance.LOW,
+                           layer=MemoryLayer.SHORT_TERM, source_agent="agent_a")
+
+        result = storage.conflict_graph("agent_a", days=365)
+        self.assertNotIn("error", result)
+        self.assertGreater(result["total_memories"], 0)
+        self.assertIn("severity_distribution", result)
+        storage.close()
+
+
+class TestDramaQuoteMap(unittest.TestCase):
+    """v5.4.3: 经典台词地图测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_quote_map_nonexistent_drama(self):
+        """不存在的短剧应返回错误"""
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        result = storage.drama_quote_map("nonexistent")
+        self.assertIn("error", result)
+        storage.close()
+
+    def test_quote_map_with_data(self):
+        """有台词数据的短剧应返回台词地图"""
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+
+        drama = storage.add_drama(title="测试短剧", total_episodes=5)
+        did = drama.id
+        char = storage.add_character(drama_id=did, name="主角", role="protagonist")
+        cid = char.id
+        storage.add_line(drama_id=did, scene_id="scene_1",
+                         character_id=cid, character_name="主角",
+                         line_text="这是经典台词", episode=1, is_classic=True)
+        storage.add_line(drama_id=did, scene_id="scene_1",
+                         character_id=cid, character_name="主角",
+                         line_text="这是普通台词", episode=1, is_classic=False)
+
+        result = storage.drama_quote_map(did)
+        self.assertNotIn("error", result)
+        self.assertEqual(result["total_lines"], 2)
+        self.assertEqual(result["classic_count"], 1)
+        self.assertIn("density_rating", result)
+        storage.close()
+
+
+class TestCharacterGrowth(unittest.TestCase):
+    """v5.4.3: 角色成长深度分析测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_growth_nonexistent_character(self):
+        """不存在的角色应返回错误"""
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        result = storage.character_growth("nonexistent", "nonexistent")
+        self.assertIn("error", result)
+        storage.close()
+
+    def test_growth_with_data(self):
+        """有台词数据的角色应返回成长分析"""
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+
+        drama = storage.add_drama(title="成长短剧", total_episodes=6)
+        did = drama.id
+        char = storage.add_character(drama_id=did, name="主角", role="protagonist")
+        cid = char.id
+
+        for ep in range(1, 4):
+            storage.add_line(drama_id=did, scene_id=f"scene_{ep}",
+                             character_id=cid, character_name="主角",
+                             line_text=f"第{ep}集的台词 content word test",
+                             episode=ep)
+
+        result = storage.character_growth(did, cid)
+        self.assertNotIn("error", result)
+        self.assertEqual(result["character_name"], "主角")
+        self.assertGreater(result["total_lines"], 0)
+        self.assertIn("growth_score", result)
+        self.assertIn("growth_summary", result)
+        storage.close()
+
+
+class TestSceneRhythm(unittest.TestCase):
+    """v5.4.3: 场景节奏分析测试"""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmp_dir, "test.db")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_rhythm_nonexistent_drama(self):
+        """不存在的短剧应返回错误"""
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+        result = storage.scene_rhythm("nonexistent")
+        self.assertIn("error", result)
+        storage.close()
+
+    def test_rhythm_with_data(self):
+        """有场景数据的短剧应返回节奏分析"""
+        from core.storage import StorageEngine
+        storage = StorageEngine(db_path=self.db_path)
+
+        drama = storage.add_drama(title="节奏短剧", total_episodes=3)
+        did = drama.id
+        scene1 = storage.add_scene(drama_id=did, episode=1, scene_number=1,
+                                    title="开场", content="场景描述" * 10)
+        scene2 = storage.add_scene(drama_id=did, episode=1, scene_number=2,
+                                    title="高潮", content="高潮场景" * 5)
+
+        for i in range(15):
+            storage.add_line(drama_id=did, scene_id=scene1.id,
+                             character_id="char_x", character_name="主角",
+                             line_text=f"台词{i}", episode=1)
+        for i in range(3):
+            storage.add_line(drama_id=did, scene_id=scene2.id,
+                             character_id="char_x", character_name="主角",
+                             line_text=f"台词{i}", episode=1)
+
+        result = storage.scene_rhythm(did)
+        self.assertNotIn("error", result)
+        self.assertEqual(result["total_scenes"], 2)
+        self.assertIn("overall_pace", result)
+        self.assertIn("pace_distribution", result)
+        self.assertIn("suggestions", result)
+        storage.close()
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -1,4 +1,4 @@
-# MindForge
+﻿# MindForge
 
 **生产级 AI Agent 终身记忆系统**
 
@@ -6,7 +6,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.4.2-green.svg)](https://github.com/opok-ops/ClawMemory)
+[![Version](https://img.shields.io/badge/version-5.4.3-green.svg)](https://github.com/opok-ops/ClawMemory)
 [![CI](https://github.com/opok-ops/ClawMemory/actions/workflows/ci.yml/badge.svg)](https://github.com/opok-ops/ClawMemory/actions/workflows/ci.yml)
 
 ---
@@ -56,7 +56,7 @@ for chunk in results.chunks:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      MindForge v5.4.2                          │
+│                      MindForge v5.4.3                          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  ┌─────────────────────────────────────────────────────────┐ │
@@ -250,7 +250,7 @@ MindForge drama-plot-thread <drama_id>
 MindForge drama-episode-curve <drama_id>
 MindForge drama-screen-time <drama_id>
 
-# v5.4.2 联邦 ACL + 共享冲突
+# v5.4.3 联邦 ACL + 共享冲突
 MindForge fed-acl-add --principal <peer|*> --resource <all|memory:<id>|category:<名>|tag:<名>> [--operations] [--effect] [--priority] [--trust-min] [--expires-hours]
 MindForge fed-acl-remove <rule_id>
 MindForge fed-acl-list [--principal] [--effect] [--limit]
@@ -288,8 +288,8 @@ MindForge/
 │   ├── skill_extractor.py     # 记忆→技能模板（v5.3.9 新增）
 │   ├── hybrid_search.py       # 查询扩展 + Cross-Encoder 重排（v5.3.9 新增）
 │   ├── session_focus.py       # 会话焦点聚类 + 漂移检测（v5.3.9 新增）
-│   ├── federated_acl.py       # 联邦记忆细粒度 ACL（v5.4.2 新增）
-│   └── share_conflict.py      # 共享记忆冲突检测与解决（v5.4.2 新增）
+│   ├── federated_acl.py       # 联邦记忆细粒度 ACL（v5.4.3 新增）
+│   └── share_conflict.py      # 共享记忆冲突检测与解决（v5.4.3 新增）
 ├── adapters/                  # 适配层 Adapter Layer
 │   ├── openclaw_adapter.py    # OpenClaw 集成
 │   ├── claude_adapter.py      # Claude Code 集成
@@ -332,7 +332,7 @@ context = adapter.get_context("database optimization")
 
 ## Changelog（版本记录）
 
-### v5.4.2 (2026-08-06)
+### v5.4.3 (2026-08-06)
 
 **两大能力增强（联邦记忆细粒度 ACL + 共享记忆冲突解决）**
 
@@ -352,9 +352,9 @@ context = adapter.get_context("database optimization")
 - **`MindForge.federated` 属性接入主类** — 自动注入 ACL 与冲突解析器，开箱即用。
 
 **其他更新**
-- MCP Server 工具数从 21 → 30，新增 9 个 v5.4.2 工具，serverInfo 版本同步至 5.4.2
+- MCP Server 工具数从 21 → 30，新增 9 个 v5.4.3 工具，serverInfo 版本同步至 5.4.3
 - `modules/__init__.py` 注册 `FederatedACLManager` / `SharedConflictResolver`
-- 版本徽章、架构图、CLI 用法、Project Structure 同步更新至 v5.4.2
+- 版本徽章、架构图、CLI 用法、Project Structure 同步更新至 v5.4.3
 - 单元测试从 54 → 74 个用例，全部通过（新增 ACL 与冲突解决共 20 项）
 
 ### v5.4.1 (2026-08-06)

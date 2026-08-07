@@ -1,5 +1,5 @@
 """
-MindForge v5.4.2 主入口类
+MindForge v5.4.3 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,7 +31,7 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.4.2"
+    __version__ = "5.4.3"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -3123,3 +3123,146 @@ class MindForge:
         if augment_query:
             out["enhanced_query"] = summary.enhance_query(str(augment_query))
         return out
+
+    # ===== v5.4.3 新增 API 包装 =====
+
+    def agent_influence_map(self,
+                            agent_id: str,
+                            days: int = 30) -> Dict[str, Any]:
+        """Agent 记忆影响力图谱（v5.4.3 新增）
+
+        分析指定 Agent 的记忆如何被其他 Agent 引用/关联，以及该 Agent
+        引用了哪些其他 Agent 的记忆，构建双向影响力网络。
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            影响力图谱：节点列表、边列表、入度/出度排行、核心影响力 Agent
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        days = max(1, min(365, int(days)))
+        return self._storage.agent_influence_map(agent_id, days)
+
+    def memory_overlap(self,
+                       agent_id_a: str,
+                       agent_id_b: str,
+                       days: int = 30) -> Dict[str, Any]:
+        """记忆重叠分析（v5.4.3 新增）
+
+        分析两个 Agent 的记忆在标签、分类、关键词层面的重叠度，
+        识别共同知识领域和各自独有的知识领域。
+
+        Args:
+            agent_id_a: Agent A ID
+            agent_id_b: Agent B ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            重叠分析：标签重叠率、分类重叠率、Jaccard 相似度
+        """
+        if not agent_id_a or not isinstance(agent_id_a, str):
+            return {"error": "Agent A ID 不能为空"}
+        if not agent_id_b or not isinstance(agent_id_b, str):
+            return {"error": "Agent B ID 不能为空"}
+        import unicodedata
+        agent_id_a = "".join(c for c in agent_id_a[:128]
+                             if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        agent_id_b = "".join(c for c in agent_id_b[:128]
+                             if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        days = max(1, min(365, int(days)))
+        return self._storage.memory_overlap(agent_id_a, agent_id_b, days)
+
+    def conflict_graph(self,
+                       agent_id: str,
+                       days: int = 30) -> Dict[str, Any]:
+        """记忆冲突检测图（v5.4.3 新增）
+
+        检测同一 Agent 记忆中潜在的知识冲突：相同标签/分类下
+        重要性差异显著的记忆对，或内容关键词高度重叠但重要性
+        矛盾的记忆对。
+
+        Args:
+            agent_id: Agent ID
+            days: 回溯天数（1-365）
+
+        Returns:
+            冲突图：冲突节点对、冲突类型、严重度分布、冲突密度
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        days = max(1, min(365, int(days)))
+        return self._storage.conflict_graph(agent_id, days)
+
+    def drama_quote_map(self, drama_id: str) -> Dict[str, Any]:
+        """经典台词地图（v5.4.3 新增）
+
+        将短剧中的经典台词映射到集/场景/角色维度，分析经典台词的
+        分布密度、角色贡献度和集数集中度。
+
+        Args:
+            drama_id: 短剧 ID
+
+        Returns:
+            台词地图：按集分布、按角色分布、按场景分布、台词时间线
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        return self._storage.drama_quote_map(drama_id)
+
+    def character_growth(self,
+                         drama_id: str,
+                         character_id: str) -> Dict[str, Any]:
+        """角色成长深度分析（v5.4.3 新增）
+
+        在 character_arc 基础上深化分析：情感成长轨迹、对话复杂度演变、
+        角色活跃度阶段划分。
+
+        Args:
+            drama_id: 短剧 ID
+            character_id: 角色 ID
+
+        Returns:
+            成长分析：情感弧线、复杂度曲线、活跃度阶段、成长评分
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        if not character_id or not isinstance(character_id, str):
+            return {"error": "角色 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        character_id = "".join(c for c in character_id[:64]
+                               if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        return self._storage.character_growth(drama_id, character_id)
+
+    def scene_rhythm(self, drama_id: str) -> Dict[str, Any]:
+        """场景节奏分析（v5.4.3 新增）
+
+        分析短剧各场景的台词密度、对话节奏和场景长度分布，
+        识别快节奏/慢节奏场景，评估整体节奏健康度。
+
+        Args:
+            drama_id: 短剧 ID
+
+        Returns:
+            节奏分析：各场景节奏数据、节奏曲线、节奏分类、整体评估
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        return self._storage.scene_rhythm(drama_id)
+
