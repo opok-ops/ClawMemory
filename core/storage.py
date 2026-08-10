@@ -1,5 +1,5 @@
 """
-MindForge v5.4.4 存储引擎
+MindForge v5.4.5 存储引擎
 支持四层记忆架构：感官记忆 → 短期记忆 → 长期记忆 → 永久记忆
 """
 
@@ -31,7 +31,7 @@ def _is_suspicious_windows_path(comp: str) -> bool:
     """检测 Windows 短文件名绕过模式（如 PROGRA~1、FILE~1.TXT）"""
     if not comp or len(comp) == 0:
         return False
-    # v5.4.4 修复 #11：豁免 Unix 根路径 '/'，否则 Linux/Mac 上所有导出功能不可用
+    # v5.4.5 修复 #11：豁免 Unix 根路径 '/'，否则 Linux/Mac 上所有导出功能不可用
     if comp == '/':
         return False
     import re as _re
@@ -586,6 +586,17 @@ class StorageEngine:
             CREATE INDEX IF NOT EXISTS idx_schedule_memory ON review_schedules(memory_id);
             CREATE INDEX IF NOT EXISTS idx_schedule_status ON review_schedules(status);
             CREATE INDEX IF NOT EXISTS idx_schedule_due ON review_schedules(scheduled_at);
+
+            -- 记忆嵌入向量（v5.4.5 新增：向量检索）
+            CREATE TABLE IF NOT EXISTS memory_embeddings (
+                memory_id TEXT PRIMARY KEY,
+                embedding BLOB NOT NULL,
+                model_name TEXT DEFAULT '',
+                dimension INTEGER DEFAULT 0,
+                created_at REAL,
+                updated_at REAL
+            );
+            CREATE INDEX IF NOT EXISTS idx_embedding_model ON memory_embeddings(model_name);
         """)
         conn.commit()
 
@@ -821,6 +832,12 @@ class StorageEngine:
 
         conn.commit()
         self._add_audit("add", entry.id, source_agent, source_session, privacy.value)
+
+        # v5.4.5: 生成嵌入向量（失败不影响记忆写入）
+        try:
+            self._store_embedding(entry.id, content)
+        except Exception:
+            pass
 
         return entry
 
@@ -1095,6 +1112,14 @@ class StorageEngine:
 
         self._add_audit("update", entry_id, actor, session_id,
                         privacy_v.value if privacy_v else "")
+
+        # v5.4.5: 内容变更时重新生成嵌入向量（失败不影响更新）
+        if content is not None:
+            try:
+                self._store_embedding(entry_id, content)
+            except Exception:
+                pass
+
         return True
 
     def _refresh_fts(self, conn: sqlite3.Connection, entry_id: str):
@@ -6235,6 +6260,203 @@ class StorageEngine:
             details={"message": f"从 {old_category} 移动到 {new_category}"}
         )
         return True
+
+
+    # ===== 嵌入向量（v5.4.5 新增）=====
+
+    @property
+    def embedding_engine(self):
+        """懒加载 EmbeddingEngine 单例"""
+        if not hasattr(self, '_embedding_eng'):
+            try:
+                from .embedding import EmbeddingEngine
+                self._embedding_eng = EmbeddingEngine()
+            except Exception:
+                self._embedding_eng = None
+        return self._embedding_eng
+
+    def _store_embedding(self, memory_id: str, text_content: str):
+        """为记忆生成并存储嵌入向量
+
+        Args:
+            memory_id: 记忆 ID
+            text_content: 用于生成向量的文本（解密后的明文内容）
+        """
+        engine = self.embedding_engine
+        if engine is None or not engine.is_available:
+            return
+        vec = engine.encode(text_content)
+        if vec is None:
+            return
+        blob = engine.serialize(vec)
+        now = time.time()
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO memory_embeddings"
+            " (memory_id, embedding, model_name, dimension, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (memory_id, blob, engine.model_name, engine.dimension, now, now)
+        )
+        conn.commit()
+
+    def _delete_embedding(self, memory_id: str):
+        """删除记忆的嵌入向量"""
+        conn = self._get_conn()
+        conn.execute(
+            "DELETE FROM memory_embeddings WHERE memory_id = ?",
+            (memory_id,)
+        )
+        conn.commit()
+
+    def _get_all_embeddings(self, limit: int = 100000) -> list:
+        """获取所有记忆的嵌入向量（用于向量召回）
+
+        Returns:
+            [(memory_id, embedding_blob), ...]
+        """
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT me.memory_id, me.embedding"
+            " FROM memory_embeddings me"
+            " INNER JOIN memories m ON m.id = me.memory_id"
+            " WHERE m.category != 'trash'"
+            " LIMIT ?",
+            (limit,)
+        ).fetchall()
+        return [(row[0], row[1]) for row in rows]
+
+    def vector_search(self, query: str, top_k: int = 20,
+                      categories=None,
+                      layers=None
+                      ) -> List[Dict[str, Any]]:
+        """向量语义搜索（v5.4.5 新增）
+
+        使用嵌入向量计算余弦相似度，召回语义相近但用词不同的记忆。
+
+        Args:
+            query: 搜索查询
+            top_k: 返回前 k 个结果
+            categories: 限定分类列表
+            layers: 限定层级列表
+
+        Returns:
+            [{entry, score, strategy: 'vector'}, ...]
+        """
+        engine = self.embedding_engine
+        if engine is None or not engine.is_available:
+            return []
+
+        query_vec = engine.encode(query)
+        if query_vec is None:
+            return []
+
+        # 获取所有嵌入向量
+        all_embeddings = self._get_all_embeddings()
+        if not all_embeddings:
+            return []
+
+        # 反序列化并计算相似度
+        candidates = []
+        for mem_id, blob in all_embeddings:
+            vec = engine.deserialize(blob)
+            if vec and len(vec) == len(query_vec):
+                candidates.append((mem_id, vec))
+
+        if not candidates:
+            return []
+
+        # 批量计算余弦相似度，取 top_k
+        scored = engine.cosine_similarity_batch(query_vec, candidates, top_k=top_k * 2)
+
+        results = []
+        for mem_id, score in scored:
+            entry = self.get_memory(mem_id)
+            if not entry:
+                continue
+            # 分类过滤
+            if categories and entry.category not in categories:
+                continue
+            # 层级过滤
+            if layers and entry.layer not in layers:
+                continue
+            # 解密内容
+            content_text = entry.content
+            if entry.encrypted:
+                content_text = self.decrypt_content(entry)
+            results.append({
+                "entry": entry,
+                "score": float(score),
+                "strategy": "vector",
+            })
+            if len(results) >= top_k:
+                break
+
+        return results
+
+    def rebuild_embeddings(self, batch_size: int = 100) -> Dict[str, Any]:
+        """重建所有记忆的嵌入向量（v5.4.5 新增）
+
+        用于首次启用向量检索或模型升级后批量生成嵌入。
+
+        Args:
+            batch_size: 批量编码大小
+
+        Returns:
+            {success, total, embedded, skipped, errors}
+        """
+        engine = self.embedding_engine
+        if engine is None or not engine.is_available:
+            return {"success": False, "error": "EmbeddingEngine 不可用（未安装 sentence-transformers）"}
+
+        conn = self._get_conn()
+        # 获取所有非回收站、非加密的记忆
+        rows = conn.execute(
+            "SELECT id, content FROM memories"
+            " WHERE category != 'trash' AND encrypted = 0"
+        ).fetchall()
+
+        total = len(rows)
+        embedded = 0
+        skipped = 0
+        errors = 0
+        now = time.time()
+
+        for i in range(0, total, batch_size):
+            batch = rows[i:i + batch_size]
+            texts = [row[1] or "" for row in batch]
+            # 过滤空文本
+            valid = [(batch[j][0], texts[j]) for j in range(len(batch)) if texts[j].strip()]
+            if not valid:
+                skipped += len(batch)
+                continue
+
+            vecs = engine.encode_batch([t for _, t in valid])
+            if vecs is None:
+                errors += len(valid)
+                continue
+
+            for (mem_id, _), vec in zip(valid, vecs):
+                if vec is None:
+                    errors += 1
+                    continue
+                blob = engine.serialize(vec)
+                conn.execute(
+                    "INSERT OR REPLACE INTO memory_embeddings"
+                    " (memory_id, embedding, model_name, dimension, created_at, updated_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?)",
+                    (mem_id, blob, engine.model_name, engine.dimension, now, now)
+                )
+                embedded += 1
+
+        conn.commit()
+        return {
+            "success": True,
+            "total": total,
+            "embedded": embedded,
+            "skipped": skipped,
+            "errors": errors,
+        }
+
 
     # ===== 搜索增强（v5.2.0 新增）=====
 

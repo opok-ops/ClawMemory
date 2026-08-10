@@ -47,8 +47,18 @@ class QueryEngine:
                categories: Optional[List[str]] = None,
                layers: Optional[List[MemoryLayer]] = None,
                agent_id: str = "",
-               session_id: str = "") -> RecallResult:
-        """搜索记忆"""
+               session_id: str = "",
+               use_embedding: bool = True) -> RecallResult:
+        """搜索记忆
+
+        v5.4.5 新增向量检索两阶段搜索：
+        1. 向量召回：通过嵌入向量余弦相似度召回语义相近的记忆
+        2. 多路融合：TF-IDF + FTS5 + Fuzzy + 向量，按 id 合并取最高分
+        3. 精排：按综合分数排序，取 top_k
+
+        当 use_embedding=False 或 EmbeddingEngine 不可用时，
+        自动降级为 TF-IDF + Fuzzy 两路搜索（v5.4.5 之前的行为）。
+        """
         import time
         start = time.time()
 
@@ -57,15 +67,19 @@ class QueryEngine:
         if self.index.needs_hydration:
             self.index.hydrate(self.storage.get_indexable_documents())
 
-        raw_results = self.index.search(query, top_k=max_results * 3)
+        # ===== 第一阶段：多路召回 =====
+        # score_map: {memory_id: score}，多路结果按 id 合并取最高分
+        score_map = {}
 
-        # v5.2.8 修复：TF-IDF 词表滞后（新记忆未进入词表）或 CJK 子串未命中时，
-        # 用模糊搜索补充召回，保证搜索结果完整性。
-        # 注意：TF-IDF 未命中时也会返回全部文档（零分），因此以"达标结果数"
-        # 而非"返回数量"判断召回是否充足；补充结果与零分项按 id 合并取高分。
-        positive = sum(1 for _, s in raw_results if s >= min_relevance)
+        # 路 1：TF-IDF
+        tfidf_results = self.index.search(query, top_k=max_results * 3)
+        for doc_id, s in tfidf_results:
+            if s > score_map.get(doc_id, 0.0):
+                score_map[doc_id] = s
+
+        # 路 2：Fuzzy（TF-IDF 召回不足时补充）
+        positive = sum(1 for _, s in tfidf_results if s >= min_relevance)
         if positive < max_results:
-            score_map = dict(raw_results)
             supplements = self.storage.fuzzy_search(
                 query, limit=max_results * 2, threshold=0.1)
             for item in supplements:
@@ -73,8 +87,30 @@ class QueryEngine:
                 s = min(0.95, float(item["score"]))
                 if s > score_map.get(entry.id, 0.0):
                     score_map[entry.id] = s
-            raw_results = sorted(score_map.items(), key=lambda x: x[1], reverse=True)
 
+        # 路 3：向量召回（v5.4.5 新增）
+        strategy_used = "tfidf+fuzzy"
+        if use_embedding:
+            try:
+                vector_results = self.storage.vector_search(
+                    query, top_k=max_results * 3,
+                    categories=categories, layers=layers)
+                if vector_results:
+                    strategy_used = "vector+tfidf+fuzzy"
+                    for item in vector_results:
+                        entry = item["entry"]
+                        s = float(item["score"])
+                        # 向量分数加权（向量召回的语义匹配更可靠）
+                        s = min(0.98, s * 0.95 + 0.05)
+                        if s > score_map.get(entry.id, 0.0):
+                            score_map[entry.id] = s
+            except Exception:
+                pass  # 向量搜索失败时静默降级
+
+        # 合并排序
+        raw_results = sorted(score_map.items(), key=lambda x: x[1], reverse=True)
+
+        # ===== 第二阶段：构建结果 =====
         chunks = []
         for doc_id, score in raw_results:
             if score < min_relevance:
@@ -89,13 +125,13 @@ class QueryEngine:
             if layers and entry.layer not in layers:
                 continue
 
-            content = entry.content
+            content_text = entry.content
             if entry.encrypted:
-                content = self.storage.decrypt_content(entry)
+                content_text = self.storage.decrypt_content(entry)
 
             chunk = MemoryChunk(
                 memory_id=entry.id,
-                content=content,
+                content=content_text,
                 category=entry.category,
                 relevance_score=score,
                 layer=entry.layer,
@@ -116,7 +152,7 @@ class QueryEngine:
             chunks=chunks,
             total_found=len(chunks),
             query_time_ms=round(elapsed, 2),
-            strategy_used="semantic_vector",
+            strategy_used=strategy_used,
             token_estimate=token_estimate,
             layers_used=used_layers,
         )

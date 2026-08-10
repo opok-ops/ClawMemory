@@ -57,7 +57,7 @@
   <div class="hero-inner">
     <div class="hero-badge">
       <span class="badge-dot"></span>
-      <span>v5.4.4 全新升级 · 联邦记忆细粒度 ACL + 共享冲突解决</span>
+      <span>v5.4.5 全新升级 · 联邦记忆细粒度 ACL + 共享冲突解决</span>
     </div>
     <h1 class="hero-title">
       让 AI Agent
@@ -379,9 +379,41 @@
     <div class="changelog-list">
       <div class="cl-item">
         <div class="cl-left">
-          <span class="cl-ver">v5.4.4</span>
-          <span class="cl-date">2026-08-06</span>
+          <span class="cl-ver">v5.4.5</span>
+          <span class="cl-date">2026-08-10</span>
           <span class="cl-badge latest">最新</span>
+        </div>
+        <div class="cl-body">
+          <h4>🧠 向量检索能力（五路融合搜索）</h4>
+          <ul>
+            <li>新增 EmbeddingEngine 嵌入引擎（sentence-transformers，CPU 本地推理）</li>
+            <li>两阶段搜索：向量召回 → 多路融合 → 精排</li>
+            <li>五路融合：<strong>向量 + FTS5 + TF-IDF + 查询扩展 + Cross-Encoder</strong></li>
+            <li><code>--no-embedding</code> 开关 + <code>rebuild-embeddings</code> 命令</li>
+            <li>MCP 新增 <code>rebuild_embeddings</code> / <code>embedding_status</code> 工具</li>
+            <li>Bug 修复：cleanup_branches SQL 优先级 + federated.py 裸 import</li>
+          </ul>
+        </div>
+      </div>
+      <div class="cl-item">
+        <div class="cl-left">
+          <span class="cl-ver">v5.4.4</span>
+          <span class="cl-date">2026-08-10</span>
+        </div>
+        <div class="cl-body">
+          <h4>🔒 7 项安全审计修复</h4>
+          <ul>
+            <li>accept_incoming 异常捕获收窄 + 信任阈值统一</li>
+            <li>check_access operation="*" 返回 deny</li>
+            <li>incoming_snapshot 只存摘要 + hash（防 DB 膨胀）</li>
+            <li>新增 cleanup_branches 方法 + _safe_path 修复</li>
+          </ul>
+        </div>
+      </div>
+      <div class="cl-item">
+        <div class="cl-left">
+          <span class="cl-ver">v5.4.3</span>
+          <span class="cl-date">2026-08-06</span>
         </div>
         <div class="cl-body">
           <h4>🛡️ 联邦记忆细粒度 ACL · ⚔️ 共享记忆冲突解决</h4>

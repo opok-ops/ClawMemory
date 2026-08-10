@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.4.4 CLI - 命令行工具
+MindForge v5.4.5 CLI - 命令行工具
 =================================
 
 Usage:
@@ -45,6 +45,8 @@ Commands:
     char-relationship   角色关系深度分析
     --- v5.4.1+ ---
     memory-reflection   记忆反思（元认知报告）
+    rebuild-embeddings  重建所有记忆的嵌入向量
+    embedding-status    查看嵌入向量状态
     memory-lineage      记忆血缘溯源
     memory-reinforce    记忆强化候选
     drama-plot-thread   剧情伏笔线索追踪
@@ -89,7 +91,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.4.4"
+    __version__ = "5.4.5"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -416,6 +418,7 @@ def cmd_search(args):
     """搜索记忆"""
     cm = _get_memory(args)
 
+    use_embedding = not getattr(args, "no_embedding", False)
     result = cm.search(
         query=args.query,
         max_results=args.limit,
@@ -423,6 +426,7 @@ def cmd_search(args):
         categories=[args.category] if args.category else None,
         agent_id=args.agent,
         session_id=args.session,
+        use_embedding=use_embedding,
     )
 
     print(f"\n找到 {c(result.total_found, 'cyan')} 条相关记忆"
@@ -2131,6 +2135,8 @@ def main():
     p_search.add_argument("--category", "-c", help="分类筛选")
     p_search.add_argument("--agent", default="", help="Agent ID")
     p_search.add_argument("--session", default="", help="会话 ID")
+    p_search.add_argument("--no-embedding", action="store_true",
+                           help="禁用向量检索，降级为 TF-IDF + Fuzzy 搜索（v5.4.5）")
 
     p_list = sub.add_parser("list", help="列出记忆")
     p_list.add_argument("--category", "-c", help="分类筛选")
@@ -3223,6 +3229,15 @@ def main():
     p_session_focus.add_argument("--window", type=int, default=40, help="滑动窗口大小（默认 40）")
     p_session_focus.add_argument("--augment", help="若指定，输出针对该 query 的增强查询")
     p_session_focus.add_argument("--json", action="store_true", help="以 JSON 格式输出完整结果")
+
+    # ===== v5.4.5 新增向量检索命令 =====
+    p_rebuild_emb = sub.add_parser("rebuild-embeddings",
+                                   help="重建所有记忆的嵌入向量（v5.4.5 新增）")
+    p_rebuild_emb.add_argument("--batch-size", "-b", type=int, default=100,
+                               help="批量编码大小（默认 100）")
+
+    p_emb_status = sub.add_parser("embedding-status",
+                                  help="查看嵌入向量状态（v5.4.5 新增）")
 
     args = parser.parse_args()
 
@@ -4479,6 +4494,9 @@ def _main_dispatch(args):
         "skill-extract": cmd_skill_extract,
         "rerank-search": cmd_rerank_search,
         "session-focus": cmd_session_focus,
+        # v5.4.5 新增向量检索
+        "rebuild-embeddings": cmd_rebuild_embeddings,
+        "embedding-status": cmd_embedding_status,
     }
 
     cmd = commands.get(args.command)
@@ -4487,6 +4505,66 @@ def _main_dispatch(args):
     else:
         parser.print_help()
         sys.exit(1)
+
+
+def cmd_rebuild_embeddings(args):
+    """重建所有记忆的嵌入向量（v5.4.5 新增）"""
+    cm = _get_memory(args)
+
+    print(c("\n🔧 重建嵌入向量（v5.4.5）", "bold"))
+    print("=" * 60)
+
+    try:
+        result = cm.rebuild_embeddings(batch_size=args.batch_size)
+    except Exception as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if not result.get("success"):
+        print(c(f"\n❌ {result.get('error', '未知错误')}", "red"))
+        print(c("   安装 sentence-transformers: pip install sentence-transformers", "yellow"))
+        cm.close()
+        return 1
+
+    print(c(f"\n✅ 重建完成", "green"))
+    print(f"   总记忆数:   {result['total']}")
+    print(f"   已生成向量: {result['embedded']}")
+    print(f"   跳过（空）: {result['skipped']}")
+    if result['errors']:
+        print(c(f"   错误:       {result['errors']}", "yellow"))
+
+    cm.close()
+    return 0
+
+
+def cmd_embedding_status(args):
+    """查看嵌入向量状态（v5.4.5 新增）"""
+    cm = _get_memory(args)
+
+    print(c("\n📊 嵌入向量状态（v5.4.5）", "bold"))
+    print("=" * 60)
+
+    try:
+        status = cm.get_embedding_status()
+    except Exception as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if status["available"]:
+        print(c(f"  状态:       ✅ 可用", "green"))
+        print(f"  模型:       {status['model_name']}")
+        print(f"  维度:       {status['dimension']}")
+        print(f"  向量数量:   {status['embedding_count']}")
+    else:
+        print(c(f"  状态:       ❌ 不可用", "red"))
+        print(c(f"  原因:       sentence-transformers 未安装", "yellow"))
+        print(c(f"  安装命令:   pip install sentence-transformers", "cyan"))
+        print(f"\n  注意: 向量检索不可用时，搜索自动降级为 TF-IDF + Fuzzy")
+
+    cm.close()
+    return 0
 
 
 def cmd_cleanup(args):

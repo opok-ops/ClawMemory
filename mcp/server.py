@@ -146,7 +146,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
     },
     {
         "name": "memory_search",
-        "description": "Hybrid search over the memory store (TF-IDF + fuzzy fallback).",
+        "description": "Hybrid search: vector recall + TF-IDF + fuzzy (v5.4.5). Set use_embedding=false to disable vector search.",
         "inputSchema": {
             "type": "object",
             "required": ["query"],
@@ -156,6 +156,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "min_relevance": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.0},
                 "category": {"type": "string", "description": "按分类过滤（可选）"},
                 "agent_id": {"type": "string", "description": "按 Agent ID 过滤（可选）"},
+                "use_embedding": {"type": "boolean", "default": true, "description": "启用向量召回（v5.4.5，默认 true）"},
             },
         },
     },
@@ -473,6 +474,25 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             },
         },
     },
+    # v5.4.5 新增向量检索工具
+    {
+        "name": "rebuild_embeddings",
+        "description": "重建所有记忆的嵌入向量（需安装 sentence-transformers）。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "batch_size": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100},
+            },
+        },
+    },
+    {
+        "name": "embedding_status",
+        "description": "查看嵌入向量引擎状态：是否可用、模型名、维度、向量数量。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
 ]
 
 
@@ -591,12 +611,16 @@ def h_memory_add(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 
 def h_memory_search(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     categories = [args["category"]] if args.get("category") else None
+    use_emb = args.get("use_embedding", True)
+    if not isinstance(use_emb, bool):
+        use_emb = True
     res = mf.search(
         query=str(args["query"]),
         max_results=_safe_int(args.get("max_results", 5), 5, 1, 100),
         min_relevance=float(args.get("min_relevance", 0.0)),
         categories=categories,
         agent_id=args.get("agent_id") or "",
+        use_embedding=use_emb,
     )
     items = []
     for c in res.chunks:
@@ -841,6 +865,15 @@ def h_session_focus(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     ))
 
 
+def h_rebuild_embeddings(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    batch_size = _safe_int(args.get("batch_size", 100), 100, 1, 1000)
+    return _clean(mf.rebuild_embeddings(batch_size=batch_size))
+
+
+def h_embedding_status(mf, _args: Dict[str, Any]) -> Dict[str, Any]:
+    return _clean(mf.get_embedding_status())
+
+
 HANDLERS: Dict[str, Any] = {
     "memory_add": h_memory_add,
     "memory_search": h_memory_search,
@@ -875,6 +908,9 @@ HANDLERS: Dict[str, Any] = {
     "skill_extract": h_skill_extract,
     "rerank_search": h_rerank_search,
     "session_focus": h_session_focus,
+    # v5.4.5 新增向量检索
+    "rebuild_embeddings": h_rebuild_embeddings,
+    "embedding_status": h_embedding_status,
 }
 
 
@@ -887,7 +923,7 @@ def _handle_initialize(request: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "protocolVersion": "2024-11-05",
         "capabilities": {"tools": {}, "logging": {}},
-        "serverInfo": {"name": "mindforge", "version": "5.4.2"},
+        "serverInfo": {"name": "mindforge", "version": "5.4.5"},
     }
 
 

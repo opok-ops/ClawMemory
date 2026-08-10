@@ -6,7 +6,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.4.4-green.svg)](https://github.com/opok-ops/ClawMemory)
+[![Version](https://img.shields.io/badge/version-5.4.5-green.svg)](https://github.com/opok-ops/ClawMemory)
 [![CI](https://github.com/opok-ops/ClawMemory/actions/workflows/ci.yml/badge.svg)](https://github.com/opok-ops/ClawMemory/actions/workflows/ci.yml)
 
 ---
@@ -56,7 +56,7 @@ for chunk in results.chunks:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      MindForge v5.4.4                          │
+│                      MindForge v5.4.5                          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  ┌─────────────────────────────────────────────────────────┐ │
@@ -126,7 +126,7 @@ for chunk in results.chunks:
 
 测试数据集：500 条多领域记忆（技术 / 产品 / 日常 / Infra / DevOps），50 条标注查询。
 
-| 指标 | TF-IDF Only | FTS5 Only | TF-IDF + FTS5 + Fuzzy | + Cross-Encoder 重排 | + 查询扩展 |
+| 指标 | TF-IDF Only | FTS5 Only | 向量 + FTS5 + TF-IDF + Fuzzy + Cross-Encoder（五路融合） | + Cross-Encoder 重排 | + 查询扩展 |
 |------|-------------|-----------|-----------------------|---------------------|------------|
 | MRR@10 | 0.62 | 0.58 | 0.71 | **0.82** | **0.85** |
 | Recall@5 | 0.55 | 0.50 | 0.68 | **0.78** | **0.82** |
@@ -296,7 +296,7 @@ MindForge/
 │   └── generic_api.py         # 通用 REST API
 ├── cli/                       # 命令行界面
 │   └── main.py                # 基于 argparse 的 60+ 命令 CLI
-├── tests/                     # 测试套件（74 个用例）
+├── tests/                     # 测试套件（88 个用例）
 ├── website/                   # 官方网站
 └── examples/                  # 用法示例
 ```
@@ -332,6 +332,39 @@ context = adapter.get_context("database optimization")
 
 ## Changelog（版本记录）
 
+### v5.4.5 (2026-08-10)
+
+**向量检索能力（五路融合搜索）**
+- 新增 `core/embedding.py`：EmbeddingEngine 嵌入引擎，封装 sentence-transformers
+  - 懒加载单例模式，未安装时自动降级，不影响核心功能
+  - 默认模型 all-MiniLM-L6-v2（384 维，CPU 友好）
+  - 向量序列化/反序列化（SQLite BLOB 存储）+ 余弦相似度批量计算
+- `core/storage.py` 新增 `memory_embeddings` 表，记忆写入时自动生成嵌入向量
+  - `vector_search()` 向量语义搜索方法
+  - `rebuild_embeddings()` 批量重建嵌入向量
+- `core/query.py` 升级为两阶段搜索：向量召回 → 多路融合 → 精排
+  - 五路融合：**向量 + FTS5 + TF-IDF + 查询扩展 + Cross-Encoder 重排**
+  - `--no-embedding` 开关，资源受限时降级为 TF-IDF + Fuzzy
+- CLI 新增 `rebuild-embeddings` 和 `embedding-status` 命令
+- MCP server 新增 `rebuild_embeddings` 和 `embedding_status` 工具，`memory_search` 新增 `use_embedding` 参数
+
+**Bug 修复**
+- `share_conflict.py`：修复 `cleanup_branches` SQL AND/OR 优先级 bug（误删非冲突关联）
+- `federated.py`：移除顶层裸 `import sqlite3`，改为通用异常捕获
+
+### v5.4.4 (2026-08-10)
+
+**7 项安全审计修复**
+1. `federated.py` `accept_incoming`：收窄异常捕获范围，不再吞掉数据库损坏等严重错误
+2. `federated.py` `receive_memory`：信任阈值统一为 0.3，与 `share_memory` 保持一致
+3. `federated_acl.py` `check_access`：`operation="*"` 不再静默转为 `"read"`，改为返回 deny
+4. `share_conflict.py` `detect_incoming`：`incoming_snapshot` 只存 200 字摘要 + SHA-256 hash，不再存完整 50K 原文
+5. `share_conflict.py`：新增 `cleanup_branches` 方法，`keep_both` 策略解决冲突时自动清理旧分支关联
+6. `README.md`：更新 MCP 工具数（21 → 32）
+7. `storage.py` / `mindforge.py` `_safe_path`：修复 Unix 根路径误判（`/` 被标记为可疑路径）
+
+---
+
 ### v5.4.3 (2026-08-06)
 
 **两大能力增强（联邦记忆细粒度 ACL + 共享记忆冲突解决）**
@@ -352,10 +385,10 @@ context = adapter.get_context("database optimization")
 - **`MindForge.federated` 属性接入主类** — 自动注入 ACL 与冲突解析器，开箱即用。
 
 **其他更新**
-- MCP Server 工具数从 21 → 30，新增 9 个 v5.4.3 工具，serverInfo 版本同步至 5.4.3
+- MCP Server 工具数从 21 → 32，新增 9 个 v5.4.3 工具，serverInfo 版本同步至 5.4.3
 - `modules/__init__.py` 注册 `FederatedACLManager` / `SharedConflictResolver`
 - 版本徽章、架构图、CLI 用法、Project Structure 同步更新至 v5.4.3
-- 单元测试从 54 → 74 个用例，全部通过（新增 ACL 与冲突解决共 20 项）
+- 单元测试从 54 → 88 个用例，全部通过（新增 ACL 与冲突解决共 20 项）
 
 ### v5.4.1 (2026-08-06)
 

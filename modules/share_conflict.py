@@ -431,8 +431,8 @@ class SharedConflictResolver:
             try:
                 conn.execute(
                     "DELETE FROM memory_links"
-                    " WHERE (source_id = ? AND target_id = ?)"
-                    " OR (source_id = ? AND target_id = ?)"
+                    " WHERE ((source_id = ? AND target_id = ?)"
+                    " OR (source_id = ? AND target_id = ?))"
                     " AND link_type = 'conflict_branch'",
                     (row["local_memory_id"], branch_id,
                      branch_id, row["local_memory_id"]))

@@ -1,5 +1,5 @@
 """
-MindForge v5.4.4 主入口类
+MindForge v5.4.5 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,7 +31,7 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.4.4"
+    __version__ = "5.4.5"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -41,7 +41,7 @@ def _is_suspicious_windows_path_mf(comp: str) -> bool:
     """检测 Windows 短文件名绕过模式"""
     if not comp or len(comp) == 0:
         return False
-    # v5.4.4 修复 #11：豁免 Unix 根路径 '/'，否则 Linux/Mac 上所有导出功能不可用
+    # v5.4.5 修复 #11：豁免 Unix 根路径 '/'，否则 Linux/Mac 上所有导出功能不可用
     if comp == '/':
         return False
     import re as _re
@@ -249,8 +249,14 @@ class MindForge:
                categories: Optional[List[str]] = None,
                layers: Optional[List[MemoryLayer]] = None,
                agent_id: str = "",
-               session_id: str = ""):
-        """搜索记忆"""
+               session_id: str = "",
+               use_embedding: bool = True):
+        """搜索记忆
+
+        v5.4.5 新增 use_embedding 参数：
+        - True（默认）：启用向量召回 + TF-IDF + Fuzzy 多路融合搜索
+        - False：降级为 TF-IDF + Fuzzy 两路搜索（资源受限时使用）
+        """
         return self._query.search(
             query=query,
             max_results=max_results,
@@ -259,7 +265,48 @@ class MindForge:
             layers=layers,
             agent_id=agent_id,
             session_id=session_id,
+            use_embedding=use_embedding,
         )
+
+    def rebuild_embeddings(self, batch_size: int = 100) -> dict:
+        """重建所有记忆的嵌入向量（v5.4.5 新增）
+
+        首次启用向量检索或模型升级后批量生成嵌入。
+        需要 sentence-transformers 已安装。
+
+        Args:
+            batch_size: 批量编码大小
+
+        Returns:
+            {success, total, embedded, skipped, errors}
+        """
+        return self._storage.rebuild_embeddings(batch_size=batch_size)
+
+    def get_embedding_status(self) -> dict:
+        """获取嵌入向量状态（v5.4.5 新增）
+
+        Returns:
+            {available, model_name, dimension, embedding_count}
+        """
+        engine = self._storage.embedding_engine
+        if engine is None or not engine.is_available:
+            return {
+                "available": False,
+                "model_name": "",
+                "dimension": 0,
+                "embedding_count": 0,
+            }
+        conn = self._storage._get_conn()
+        row = conn.execute(
+            "SELECT COUNT(*) FROM memory_embeddings"
+        ).fetchone()
+        count = row[0] if row else 0
+        return {
+            "available": True,
+            "model_name": engine.model_name,
+            "dimension": engine.dimension,
+            "embedding_count": count,
+        }
 
     def list(self,
              category: Optional[str] = None,

@@ -6,7 +6,6 @@ MindForge v5.0 联邦记忆网络
 import json
 import hashlib
 import hmac
-import sqlite3  # v5.2.8 修复：_verify_memory_exists 的 except 子句引用了未导入的 sqlite3
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -359,7 +358,9 @@ class FederatedMemory:
         try:
             entry = self.storage.get_memory(memory_id)
             return entry is not None
-        except sqlite3.OperationalError:
+        except Exception:
+            # v5.4.5 修复：移除顶层 import sqlite3，改为通用异常捕获
+            # OperationalError 等数据库异常在此场景下统一返回 False
             return False
 
     def _compute_signature(self, data: Dict, peer_id: str) -> str:
