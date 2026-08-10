@@ -204,7 +204,8 @@ class FederatedMemory:
             return False
 
         peer = self.peers[from_peer]
-        if peer.trust_level < 0.2:
+        # v5.4.4 修复 #3：统一信任阈值为 0.3，与 share_memory 保持一致
+        if peer.trust_level < 0.3:
             return False
 
         if not self._verify_signature(memory_data, signature, from_peer):
@@ -244,8 +245,13 @@ class FederatedMemory:
             incoming.setdefault("from_peer", item.get("from", ""))
             try:
                 detection = self.conflict_resolver.detect_incoming(incoming)
-            except Exception:
-                detection = {"conflict": False, "action": "new"}
+            except (ValueError, KeyError, TypeError) as e:
+                # v5.4.4 修复 #2：只捕获预期异常，不吞掉数据库损坏等严重错误
+                import logging
+                logging.getLogger(__name__).warning(
+                    "detect_incoming 异常（已降级为 new）: %s", e)
+                detection = {"conflict": False, "action": "new",
+                             "error": str(e)}
             if detection.get("conflict"):
                 if resolve_strategy in ("lww", "keep_both"):
                     resolution = self.conflict_resolver.resolve(

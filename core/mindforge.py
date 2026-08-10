@@ -1,5 +1,5 @@
 """
-MindForge v5.4.3 主入口类
+MindForge v5.4.4 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -31,7 +31,7 @@ from .query import QueryEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.4.3"
+    __version__ = "5.4.4"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -40,6 +40,9 @@ except (ImportError, ValueError):
 def _is_suspicious_windows_path_mf(comp: str) -> bool:
     """检测 Windows 短文件名绕过模式"""
     if not comp or len(comp) == 0:
+        return False
+    # v5.4.4 修复 #11：豁免 Unix 根路径 '/'，否则 Linux/Mac 上所有导出功能不可用
+    if comp == '/':
         return False
     import re as _re
     # v5.3.7 修复：豁免 Windows 盘符根（如 C:\、D:），之前误报导致所有导出功能失效

@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional
 CONFLICT_TYPES = ("content", "version", "concurrent")
 
 # 冲突状态
-CONFLICT_STATUS = ("open", "resolved", "dismissed")
+CONFLICT_STATUS = ("open", "resolved", "dismissed", "archived")
 
 # 解决策略
 RESOLVE_STRATEGIES = ("lww", "keep_both")
@@ -150,9 +150,13 @@ class SharedConflictResolver:
             "updated_at": getattr(local, "updated_at", 0.0),
             "category": local.category,
         }
+        # v5.4.4 修复 #8：只存摘要 + hash，不再存完整 50K 原文，防止数据库膨胀
+        import hashlib as _hl
+        _content_str = str(content)
         incoming_snapshot = {
-            "content": str(content)[:50000],
-            "content_preview": str(content)[:200],
+            "content_preview": _content_str[:200],
+            "content_hash": _hl.sha256(_content_str.encode("utf-8")).hexdigest()[:16],
+            "content_length": len(_content_str),
             "version": incoming_version,
             "timestamp": incoming.get("timestamp") or now,
             "from_peer": from_peer,
@@ -217,8 +221,8 @@ class SharedConflictResolver:
             incoming_snapshot = json.loads(row["incoming_snapshot"] or "{}")
         except json.JSONDecodeError:
             incoming_snapshot = {}
-        incoming_content = (incoming_snapshot.get("content")
-                            or incoming_snapshot.get("content_preview", ""))
+        # v5.4.4 修复 #8：不再存储完整 content，改用 content_preview
+        incoming_content = incoming_snapshot.get("content_preview", "")
         incoming_version = int(incoming_snapshot.get("version", 0) or 0)
         incoming_ts = float(incoming_snapshot.get("timestamp", 0.0) or 0.0)
         from_peer = str(incoming_snapshot.get("from_peer", "") or row["incoming_peer"])
@@ -369,3 +373,81 @@ class SharedConflictResolver:
             "by_type": {r["conflict_type"]: r["c"] for r in by_type},
             "by_resolution": {r["resolution"]: r["c"] for r in by_resolution},
         }
+
+    def cleanup_branches(self, days_old: int = 30,
+                         dry_run: bool = True,
+                         actor: str = "") -> Dict[str, Any]:
+        """v5.4.4 新增 #9：清理 keep_both 策略产生的旧分支记忆。
+
+        长期运行后 keep_both 会堆积大量分支记忆，本方法可定期清理：
+        - 查找 resolved 状态、resolution 为 keep_both 且超过 days_old 天的冲突
+        - dry_run=True 时仅返回统计，不实际删除
+        - dry_run=False 时删除分支记忆和 conflict_branch 关联，并将冲突标记为 archived
+
+        Args:
+            days_old: 清理多少天前的已解决冲突（默认 30 天）
+            dry_run: True 时仅统计不删除，False 时实际执行清理
+            actor: 操作者标识
+
+        Returns:
+            {"total_found": int, "cleaned": int, "freed_memory_ids": [...], ...}
+        """
+        days_old = max(1, min(3650, int(days_old)))
+        now = time.time()
+        cutoff = now - days_old * 86400
+
+        conn = self._conn()
+        rows = conn.execute(
+            "SELECT id, local_memory_id, resolved_memory_id, resolution, created_at"
+            " FROM share_conflicts"
+            " WHERE status = 'resolved' AND resolution = 'keep_both'"
+            " AND resolved_at > 0 AND resolved_at < ?"
+            " ORDER BY resolved_at ASC",
+            (cutoff,)).fetchall()
+
+        result = {
+            "total_found": len(rows),
+            "cleaned": 0,
+            "freed_memory_ids": [],
+            "archived_conflicts": [],
+            "dry_run": dry_run,
+            "days_old": days_old,
+        }
+
+        if dry_run or not rows:
+            return result
+
+        for row in rows:
+            branch_id = row["resolved_memory_id"]
+            conflict_id = row["id"]
+            if branch_id:
+                try:
+                    branch = self.storage.get_memory(branch_id)
+                    if branch is not None:
+                        self.storage.delete_memory(branch_id)
+                        result["freed_memory_ids"].append(branch_id)
+                except Exception:
+                    pass
+            try:
+                conn.execute(
+                    "DELETE FROM memory_links"
+                    " WHERE (source_id = ? AND target_id = ?)"
+                    " OR (source_id = ? AND target_id = ?)"
+                    " AND link_type = 'conflict_branch'",
+                    (row["local_memory_id"], branch_id,
+                     branch_id, row["local_memory_id"]))
+            except Exception:
+                pass
+            conn.execute(
+                "UPDATE share_conflicts SET status = 'archived'"
+                " WHERE id = ?",
+                (conflict_id,))
+            result["archived_conflicts"].append(conflict_id)
+            result["cleaned"] += 1
+
+        conn.commit()
+        self.storage._add_audit("conflict_cleanup_branches", "", actor, "",
+                                "INTERNAL",
+                                {"cleaned": result["cleaned"],
+                                 "days_old": days_old})
+        return result

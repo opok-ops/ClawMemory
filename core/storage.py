@@ -1,5 +1,5 @@
 """
-MindForge v5.4.3 存储引擎
+MindForge v5.4.4 存储引擎
 支持四层记忆架构：感官记忆 → 短期记忆 → 长期记忆 → 永久记忆
 """
 
@@ -30,6 +30,9 @@ from .encryption import EncryptionEngine, EncryptedBlob, SecurityError
 def _is_suspicious_windows_path(comp: str) -> bool:
     """检测 Windows 短文件名绕过模式（如 PROGRA~1、FILE~1.TXT）"""
     if not comp or len(comp) == 0:
+        return False
+    # v5.4.4 修复 #11：豁免 Unix 根路径 '/'，否则 Linux/Mac 上所有导出功能不可用
+    if comp == '/':
         return False
     import re as _re
     # v5.3.7 修复：豁免 Windows 盘符根（如 C:\、D:），之前误报导致所有导出功能失效

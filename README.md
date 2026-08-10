@@ -1,4 +1,4 @@
-﻿# MindForge
+# MindForge
 
 **生产级 AI Agent 终身记忆系统**
 
@@ -6,7 +6,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.4.3-green.svg)](https://github.com/opok-ops/ClawMemory)
+[![Version](https://img.shields.io/badge/version-5.4.4-green.svg)](https://github.com/opok-ops/ClawMemory)
 [![CI](https://github.com/opok-ops/ClawMemory/actions/workflows/ci.yml/badge.svg)](https://github.com/opok-ops/ClawMemory/actions/workflows/ci.yml)
 
 ---
@@ -56,7 +56,7 @@ for chunk in results.chunks:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      MindForge v5.4.3                          │
+│                      MindForge v5.4.4                          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  ┌─────────────────────────────────────────────────────────┐ │
@@ -146,7 +146,7 @@ for chunk in results.chunks:
 | 搜索策略 | FTS5 + TF-IDF + Fuzzy + 查询扩展 + Cross-Encoder 重排 | 纯向量 | 纯向量 | 纯向量 |
 | 检索精度 NDCG@10 | 0.84 | — | — | — |
 | 云端依赖 | 零（纯本地） | 强依赖 | 强依赖 | 强依赖 |
-| 接入方式 | CLI 60+命令 + SDK + MCP Server 15工具 | 仅 SDK | 仅 SDK | 仅 SDK |
+| 接入方式 | CLI 60+命令 + SDK + MCP Server 30工具 | 仅 SDK | 仅 SDK | 仅 SDK |
 | 意图路由 | 三层（规则+关键词+LLM） | 无 | 无 | 无 |
 | 矛盾检测 | 三类冲突 + 自动衰减 | 无 | 无 | 无 |
 | 技能转化 | 聚类→槽位→步骤→触发词 | 无 | 无 | 无 |

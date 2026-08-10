@@ -257,9 +257,15 @@ class FederatedACLManager:
         if is_owner:
             return {"allowed": True, "effect": "allow",
                     "reason": "owner 始终允许", "matched_rule": None}
-        if operation not in ACL_OPERATIONS or operation == "*":
-            # 请求方不应以 * 查询，* 仅用于规则定义
-            operation = "read"
+        if operation == "*":
+            # v5.4.4 修复 #7：不再静默转为 read，而是返回明确拒绝
+            return {"allowed": False, "effect": "deny",
+                    "reason": "operation='*' 不允许用于查询，请指定具体操作（read/write/reshare）",
+                    "matched_rule": None}
+        if operation not in ACL_OPERATIONS:
+            return {"allowed": False, "effect": "deny",
+                    "reason": f"无效操作: {operation}（可选: read/write/reshare）",
+                    "matched_rule": None}
 
         tags_lower = {str(t).strip().lower() for t in (memory_tags or []) if str(t).strip()}
         now = time.time()
