@@ -335,7 +335,7 @@ context = adapter.get_context("database optimization")
 
 ### v5.4.5 (2026-08-10)
 
-**向量检索能力（五路融合搜索）**
+**向量检索能力（六路融合搜索）**
 - 新增 `core/embedding.py`：EmbeddingEngine 嵌入引擎，封装 sentence-transformers
   - 懒加载单例模式，未安装时自动降级，不影响核心功能
   - 默认模型 all-MiniLM-L6-v2（384 维，CPU 友好）

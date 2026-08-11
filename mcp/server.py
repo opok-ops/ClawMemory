@@ -156,7 +156,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "min_relevance": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.0},
                 "category": {"type": "string", "description": "按分类过滤（可选）"},
                 "agent_id": {"type": "string", "description": "按 Agent ID 过滤（可选）"},
-                "use_embedding": {"type": "boolean", "default": true, "description": "启用向量召回（v5.4.5，默认 true）"},
+                "use_embedding": {"type": "boolean", "default": True, "description": "启用向量召回（v5.4.5，默认 true）"},
             },
         },
     },
