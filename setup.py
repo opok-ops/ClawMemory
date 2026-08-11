@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+﻿from setuptools import setup, find_packages
 from pathlib import Path
 import re
 
@@ -41,6 +41,7 @@ setup(
             "pytest",
             "pytest-cov",
         ],
+        "embedding": ["sentence-transformers>=2.2.0"],
     },
     entry_points={
         "console_scripts": [
