@@ -273,7 +273,8 @@ MindForge/
 │   ├── storage.py             # SQLite 存储引擎（FTS5 + CRUD）
 │   ├── encryption.py          # AES-256-GCM 加密
 │   ├── indexer.py             # TF-IDF 索引 + 水合加载
-│   ├── query.py               # 混合搜索（TF-IDF + Fuzzy）
+│   ├── query.py               # 两阶段搜索（向量召回 + TF-IDF + Fuzzy 融合）
+│   ├── embedding.py           # 嵌入引擎（sentence-transformers，v5.4.5 新增）
 │   └── types.py               # 数据类 + 枚举
 ├── modules/                   # 功能层 Function Layer
 │   ├── recall.py              # 多因子召回评分
