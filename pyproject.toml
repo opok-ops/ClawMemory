@@ -34,6 +34,10 @@ MindForge-mcp = "mcp.server:main"
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov"]
+embedding = ["sentence-transformers>=2.2.0"]
+
+[tool.setuptools]
+py-modules = ["MindForge"]
 
 [tool.setuptools.packages.find]
 exclude = ["tests*", "website*", "examples*", "data*"]
