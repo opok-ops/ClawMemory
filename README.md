@@ -126,7 +126,7 @@ for chunk in results.chunks:
 
 测试数据集：500 条多领域记忆（技术 / 产品 / 日常 / Infra / DevOps），50 条标注查询。
 
-| 指标 | TF-IDF Only | FTS5 Only | 向量 + FTS5 + TF-IDF + Fuzzy + Cross-Encoder（五路融合） | + Cross-Encoder 重排 | + 查询扩展 |
+| 指标 | TF-IDF Only | FTS5 Only | TF-IDF + FTS5 + Fuzzy | + Cross-Encoder 重排 | + 查询扩展 + 向量召回 |
 |------|-------------|-----------|-----------------------|---------------------|------------|
 | MRR@10 | 0.62 | 0.58 | 0.71 | **0.82** | **0.85** |
 | Recall@5 | 0.55 | 0.50 | 0.68 | **0.78** | **0.82** |
@@ -143,10 +143,10 @@ for chunk in results.chunks:
 | 本地优先加密 | AES-256-GCM（默认） | 可选 | 不支持 | 不支持 |
 | 联邦记忆 | 端侧 P2P | 不支持 | 不支持 | 不支持 |
 | 遗忘机制 | Ebbinghaus 遗忘曲线 | 手动 TTL | 手动 TTL | 启发式 |
-| 搜索策略 | FTS5 + TF-IDF + Fuzzy + 查询扩展 + Cross-Encoder 重排 | 纯向量 | 纯向量 | 纯向量 |
+| 搜索策略 | 向量 + FTS5 + TF-IDF + Fuzzy + 查询扩展 + Cross-Encoder 六路融合 | 纯向量 | 纯向量 | 纯向量 |
 | 检索精度 NDCG@10 | 0.84 | — | — | — |
 | 云端依赖 | 零（纯本地） | 强依赖 | 强依赖 | 强依赖 |
-| 接入方式 | CLI 60+命令 + SDK + MCP Server 30工具 | 仅 SDK | 仅 SDK | 仅 SDK |
+| 接入方式 | CLI 60+命令 + SDK + MCP Server 32工具 | 仅 SDK | 仅 SDK | 仅 SDK |
 | 意图路由 | 三层（规则+关键词+LLM） | 无 | 无 | 无 |
 | 矛盾检测 | 三类冲突 + 自动衰减 | 无 | 无 | 无 |
 | 技能转化 | 聚类→槽位→步骤→触发词 | 无 | 无 | 无 |
@@ -343,7 +343,7 @@ context = adapter.get_context("database optimization")
   - `vector_search()` 向量语义搜索方法
   - `rebuild_embeddings()` 批量重建嵌入向量
 - `core/query.py` 升级为两阶段搜索：向量召回 → 多路融合 → 精排
-  - 五路融合：**向量 + FTS5 + TF-IDF + 查询扩展 + Cross-Encoder 重排**
+  - 六路融合：**向量 + FTS5 + TF-IDF + Fuzzy + 查询扩展 + Cross-Encoder 重排**
   - `--no-embedding` 开关，资源受限时降级为 TF-IDF + Fuzzy
 - CLI 新增 `rebuild-embeddings` 和 `embedding-status` 命令
 - MCP server 新增 `rebuild_embeddings` 和 `embedding_status` 工具，`memory_search` 新增 `use_embedding` 参数

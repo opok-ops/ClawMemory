@@ -1,4 +1,4 @@
-"""MindForge v5.4.4 单元测试"""
+"""MindForge v5.4.5 单元测试"""
 import sys
 from pathlib import Path
 
