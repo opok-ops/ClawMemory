@@ -6,7 +6,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.4.5-green.svg)](https://github.com/opok-ops/MindForge)
+[![Version](https://img.shields.io/badge/version-5.4.6-green.svg)](https://github.com/opok-ops/MindForge)
 [![CI](https://github.com/opok-ops/MindForge/actions/workflows/ci.yml/badge.svg)](https://github.com/opok-ops/MindForge/actions/workflows/ci.yml)
 
 ---
@@ -22,7 +22,7 @@ MindForge init
 
 ```bash
 # 添加一条记忆
-MindForge add "用户偏好带类型提示的 Python 代码风格" --category preferences --importance high
+MindForge add "用户偏好带类型提示的 Python 代码风格" --category preferences --importance HIGH
 
 # 检索记忆
 MindForge search "coding preferences"
@@ -56,7 +56,7 @@ for chunk in results.chunks:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      MindForge v5.4.5                          │
+│                      MindForge v5.4.6                          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  ┌─────────────────────────────────────────────────────────┐ │
@@ -142,11 +142,16 @@ for chunk in results.chunks:
 | 架构 | 四层记忆 + 知识图谱 | 扁平存储 | Block 分块 | 时序图谱 |
 | 本地优先加密 | AES-256-GCM（默认） | 可选 | 不支持 | 不支持 |
 | 联邦记忆 | 端侧 P2P | 不支持 | 不支持 | 不支持 |
-| 遗忘机制 | Ebbinghaus 遗忘曲线 | 手动 TTL | 手动 TTL | 启发式 |
+| 遗忘机制 | Ebbinghaus 遗忘曲线 + 自动归档 | 手动 TTL | 手动 TTL | 启发式 |
 | 搜索策略 | 向量 + FTS5 + TF-IDF + Fuzzy + 查询扩展 + Cross-Encoder 六路融合 | 纯向量 | 纯向量 | 纯向量 |
 | 检索精度 NDCG@10 | 0.84 | — | — | — |
 | 云端依赖 | 零（纯本地） | 强依赖 | 强依赖 | 强依赖 |
-| 接入方式 | CLI 60+命令 + SDK + MCP Server 32工具 | 仅 SDK | 仅 SDK | 仅 SDK |
+| 接入方式 | CLI 70+命令 + SDK + MCP Server 32工具 + REST API | 仅 SDK | 仅 SDK | 仅 SDK |
+| 智能导入去重 | 语义相似度去重（v5.4.6） | 无 | 无 | 无 |
+| Embedding 多后端 | sentence-transformers / OpenAI / Ollama / HTTP | 仅 OpenAI | 仅 OpenAI | 仅 OpenAI |
+| 记忆健康仪表盘 | JSON/HTML 报告（v5.4.6） | 无 | 无 | 无 |
+| CLI Shell 补全 | bash/zsh/fish（v5.4.6） | 无 | 无 | 无 |
+| Obsidian 导出 | Vault 格式 + 双向链接（v5.4.6） | 无 | 无 | 无 |
 | 意图路由 | 三层（规则+关键词+LLM） | 无 | 无 | 无 |
 | 矛盾检测 | 三类冲突 + 自动衰减 | 无 | 无 | 无 |
 | 技能转化 | 聚类→槽位→步骤→触发词 | 无 | 无 | 无 |
@@ -274,7 +279,7 @@ MindForge/
 │   ├── encryption.py          # AES-256-GCM 加密
 │   ├── indexer.py             # TF-IDF 索引 + 水合加载
 │   ├── query.py               # 两阶段搜索（向量召回 + TF-IDF + Fuzzy 融合）
-│   ├── embedding.py           # 嵌入引擎（sentence-transformers，v5.4.5 新增）
+│   ├── embedding.py           # 嵌入引擎（多后端适配器，v5.4.5 新增，v5.4.6 增强）
 │   └── types.py               # 数据类 + 枚举
 ├── modules/                   # 功能层 Function Layer
 │   ├── recall.py              # 多因子召回评分
@@ -332,6 +337,67 @@ context = adapter.get_context("database optimization")
 ---
 
 ## Changelog（版本记录）
+
+### v5.4.6 (2026-08-14)
+
+**高价值新功能（拉开竞品差距）**
+
+1. **智能导入去重（Smart Import Dedup）** — `import-json` / `import-csv` 时自动检测重复记忆。语义相似度 > 阈值则跳过，支持嵌入向量（精确）和 difflib（降级）两种模式。CLI 新增 `--dedup-threshold` 参数。竞品均无此能力。
+   - `MindForge import-json data.json --force --dedup-threshold 0.85`
+   - `MindForge import-csv data.csv --force --dedup-threshold 0.85`
+
+2. **REST API 服务（serve --api）** — 新增标准 REST API，暴露核心 CRUD + search + stats + health 端点。基于 Python 内置 http.server，无需额外依赖。非 Python 应用（JS、Go、移动端）可直接调用。
+   - `MindForge serve --api --port 9000`
+   - 端点：`GET/POST /api/memories`、`GET/PUT/DELETE /api/memories/{id}`、`GET /api/search`、`GET /api/stats`、`GET /api/health`、`POST /api/import`、`GET /api/export`
+
+3. **Embedding 多后端适配器** — 新增 adapter 层，支持四种嵌入后端：
+   - `sentence-transformers`（本地 CPU 推理，默认）
+   - `OpenAI Embedding API`（`text-embedding-3-small`，需 API key）
+   - `Ollama`（本地推理服务，`nomic-embed-text`）
+   - 自定义 HTTP 端点
+   - 通过环境变量 `MINDFORGE_EMBEDDING_BACKEND` 配置，对没有 GPU 但有 API key 的用户友好
+
+**中等价值增强**
+
+4. **记忆健康仪表盘（health --dashboard）** — 输出 JSON/HTML 报告：记忆增长曲线、分类分布、层级分布、重要度分布、衰减预警 Top20、高访问低重要度 Top10。支持 `--html` 输出可视化 HTML。
+   - `MindForge health --dashboard`
+   - `MindForge health --dashboard --html`
+
+5. **增量 Embedding 索引** — `rebuild-embeddings` 默认改为增量模式（只处理缺失项），`add_memory` 时已自动写入 embedding。全量重建需 `--full`。5000+ 记忆时体感差异明显。
+   - `MindForge rebuild-embeddings`（增量）
+   - `MindForge rebuild-embeddings --full`（全量）
+
+6. **记忆自动归档机制（Auto-Archive）** — 感官层和短期层到期后自动归档（移到 `archived_memories` 表）而非直接删除。可配置保留天数，支持手动恢复和永久清理。
+   - `MindForge archive --hours 24 --layer sensory`
+   - `MindForge archived-list` / `MindForge archived-restore <id>` / `MindForge archived-purge --older-than-days 90`
+
+**锦上添花**
+
+7. **CLI Shell 自动补全** — 支持 bash / zsh / fish 自动补全，一行命令搞定。
+   - `MindForge --install-completion bash`
+
+8. **Obsidian 导出格式** — 新增 `export-obsidian` 命令，生成 Obsidian vault 格式（每条记忆一个 .md + YAML frontmatter + #标签 + [[双向链接]]）。
+   - `MindForge export-obsidian ./vault --starred`
+
+**必改修复**
+
+- `setup.py` / `pyproject.toml`：3 处 ClawMemory URL 残留 → 统一为 MindForge
+- README Quick Start：`--importance high` → `--importance HIGH`（CLI 要求大写）
+- README 架构图版本号：v5.4.5 → v5.4.6
+
+**Bug 修复**
+
+- `EmbeddingEngine.cosine_similarity`：降级模式下相同向量返回 0.3 而非 1.0。根因是假设向量已归一化（直接点积），但降级模式或外部 API 返回的向量可能未归一化。改为完整余弦相似度计算（dot / (norm1 * norm2)）。
+- `core/mindforge.py`：`import_json` 智能去重路径引用未定义的 `logger`（NameError）。补上 `import logging` + `logger = logging.getLogger(__name__)`。
+- `core/storage.py`：SQLite 连接跨线程复用崩溃（`SQLite objects created in a thread can only be used in that same thread`）。REST API 场景下 API 线程访问主线程创建的连接导致 500。改为 `threading.local()` 每线程独立连接（WAL 模式支持多连接并发）。
+- `cli/main.py`：`_main_dispatch` 引用未定义的 `cmd_agent_influence`（定义在 `main()` 调用之后），导致所有实际命令 NameError 崩溃。入口 `if __name__ == "__main__"` 移至文件末尾。
+- `cli/main.py`：`--install-completion` 因 `add_subparsers(required=True)` 无法使用（argparse 先报"缺少 command"）。改为 `required=False` + 无子命令时打印帮助。
+- `core/embedding.py`：`create_backend` 对未知后端名静默回退到本地模型（拼写错误无提示）。改为抛 `ValueError` 并列出支持的选项。
+
+**版本同步**
+- `__init__.py` / `pyproject.toml` / `setup.py` / `MindForge.py` / `core/*.py` / `cli/main.py` / `tests/test_core.py` / `mcp/server.py` / 官网全部同步至 v5.4.6
+
+---
 
 ### v5.4.5 (2026-08-10)
 

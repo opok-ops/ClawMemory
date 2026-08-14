@@ -1,13 +1,17 @@
 """
-MindForge v5.4.5 主入口类
+MindForge v5.4.6 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
 from typing import Optional, List, Dict, Any
 from pathlib import Path
+from datetime import datetime, timezone
 import json
 import csv
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .types import (
     PrivacyLevel,
@@ -26,12 +30,13 @@ from .storage import StorageEngine, MemoryEntry
 from .encryption import EncryptionEngine, init_engine as _init_engine
 from .indexer import IndexEngine
 from .query import QueryEngine
+from .embedding import EmbeddingEngine
 
 # 安全获取版本号：包安装模式从根包导入，脚本模式用 fallback
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.4.5"
+    __version__ = "5.4.6"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -268,19 +273,23 @@ class MindForge:
             use_embedding=use_embedding,
         )
 
-    def rebuild_embeddings(self, batch_size: int = 100) -> dict:
-        """重建所有记忆的嵌入向量（v5.4.5 新增）
+    def rebuild_embeddings(self, batch_size: int = 100,
+                           incremental: bool = True) -> dict:
+        """重建/增量构建嵌入向量（v5.4.5 新增，v5.4.6 增量模式）
 
-        首次启用向量检索或模型升级后批量生成嵌入。
-        需要 sentence-transformers 已安装。
+        v5.4.6 改进：默认 incremental=True，只处理缺失嵌入的记忆。
+        add_memory 时已自动生成嵌入，此方法仅补全缺失项。
+        全量重建（模型升级后）设 incremental=False。
 
         Args:
             batch_size: 批量编码大小
+            incremental: True=只处理缺失项（默认），False=全量重建
 
         Returns:
-            {success, total, embedded, skipped, errors}
+            {success, total, embedded, skipped, errors, mode}
         """
-        return self._storage.rebuild_embeddings(batch_size=batch_size)
+        return self._storage.rebuild_embeddings(batch_size=batch_size,
+                                                  incremental=incremental)
 
     def get_embedding_status(self) -> dict:
         """获取嵌入向量状态（v5.4.5 新增）
@@ -481,6 +490,120 @@ class MindForge:
             starred_only=starred_only,
         )
 
+    def export_obsidian(self, output_dir: str,
+                        category: Optional[str] = None,
+                        layer: Optional[MemoryLayer] = None,
+                        starred_only: bool = False) -> Dict[str, Any]:
+        """导出记忆为 Obsidian Vault 格式（v5.4.6 新增）
+
+        每条记忆生成一个 .md 文件，包含：
+        - YAML frontmatter（元数据）
+        - 正文内容
+        - #标签
+        - [[双向链接]] 到关联记忆
+
+        Args:
+            output_dir: 输出目录（Obsidian vault 根目录）
+            category: 限定分类
+            layer: 限定层级
+            starred_only: 仅导出收藏的记忆
+
+        Returns:
+            {exported, output_dir, errors}
+        """
+        import re as _re
+
+        entries = self._storage.list_memories(
+            category=category,
+            layer=layer,
+            starred=starred_only if starred_only else None,
+            limit=100000,
+        )
+
+        vault_path = _safe_path(output_dir)
+        vault_path.mkdir(parents=True, exist_ok=True)
+
+        # 获取记忆关联（用于双向链接）
+        link_map = {}
+        try:
+            conn = self._storage._get_conn()
+            link_rows = conn.execute(
+                "SELECT source_id, target_id FROM memory_links"
+            ).fetchall()
+            for row in link_rows:
+                src = row[0] if isinstance(row[0], str) else row["source_id"]
+                tgt = row[1] if isinstance(row[1], str) else row["target_id"]
+                if src not in link_map:
+                    link_map[src] = []
+                link_map[src].append(tgt)
+        except Exception:
+            pass
+
+        exported = 0
+        errors = 0
+
+        for entry in entries:
+            try:
+                # 生成文件名：使用 ID 前 8 位 + 内容摘要
+                slug = _re.sub(r'[^\w\s-]', '', entry.content[:40]).strip()
+                slug = _re.sub(r'[\s_]+', '-', slug).lower()[:40]
+                if not slug:
+                    slug = "untitled"
+                filename = f"{entry.id[:8]}_{slug}.md"
+
+                # YAML frontmatter
+                frontmatter_lines = [
+                    "---",
+                    f"id: {entry.id}",
+                    f"category: {entry.category}",
+                    f"layer: {entry.layer.value if hasattr(entry.layer, 'value') else entry.layer}",
+                    f"importance: {entry.importance.value if hasattr(entry.importance, 'value') else entry.importance}",
+                    f"privacy: {entry.privacy.value if hasattr(entry.privacy, 'value') else entry.privacy}",
+                    f"created: {datetime.fromtimestamp(entry.created_at, tz=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ') if entry.created_at else ''}",
+                    f"updated: {datetime.fromtimestamp(entry.updated_at, tz=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ') if entry.updated_at else ''}",
+                    f"starred: {entry.starred}",
+                    f"access_count: {entry.access_count}",
+                ]
+                if entry.tags:
+                    frontmatter_lines.append(f"tags: [{', '.join(entry.tags)}]")
+                frontmatter_lines.append("---")
+
+                # 正文
+                body_lines = [
+                    "",
+                    f"# {entry.content[:80]}",
+                    "",
+                    entry.content,
+                    "",
+                ]
+
+                # 标签
+                if entry.tags:
+                    body_lines.append("## Tags")
+                    body_lines.append(" ".join(f"#{t}" for t in entry.tags))
+                    body_lines.append("")
+
+                # 双向链接
+                links = link_map.get(entry.id, [])
+                if links:
+                    body_lines.append("## Links")
+                    for link_id in links:
+                        body_lines.append(f"- [[{link_id[:8]}_{link_id}]]")
+                    body_lines.append("")
+
+                # 写入文件
+                file_path = vault_path / filename
+                file_path.write_text("\n".join(frontmatter_lines + body_lines), encoding="utf-8")
+                exported += 1
+            except Exception:
+                errors += 1
+
+        return {
+            "exported": exported,
+            "output_dir": str(vault_path),
+            "errors": errors,
+        }
+
     def health_check(self) -> dict:
         """数据库健康检查（v5.0.5 新增）
 
@@ -490,6 +613,102 @@ class MindForge:
             dict: 含 status (healthy/warning/critical) 和 recommendations 列表
         """
         return self._storage.health_check()
+
+    def health_dashboard(self) -> dict:
+        """记忆健康仪表盘（v5.4.6 新增）
+
+        生成可视化报告数据：记忆增长曲线、分类分布、衰减预警、
+        Top10 高访问低重要度记忆。
+
+        Returns:
+            dict: 含 growth_curve, category_distribution, decay_warnings,
+                  top_access_low_importance, layer_distribution, importance_distribution
+        """
+        import time as _time
+        from collections import Counter
+
+        entries = self._storage.list_memories(limit=100000)
+        now = _time.time()
+
+        # 1. 记忆增长曲线（按天聚合最近 30 天）
+        growth = {}
+        for e in entries:
+            if e.created_at > 0:
+                day = _time.strftime("%Y-%m-%d", _time.gmtime(e.created_at))
+                growth[day] = growth.get(day, 0) + 1
+        # 按日期排序，计算累计
+        sorted_days = sorted(growth.keys())
+        cumulative = 0
+        growth_curve = []
+        for day in sorted_days:
+            cumulative += growth[day]
+            growth_curve.append({"date": day, "daily": growth[day], "cumulative": cumulative})
+        # 只保留最近 30 天
+        growth_curve = growth_curve[-30:] if len(growth_curve) > 30 else growth_curve
+
+        # 2. 分类分布
+        cat_counter = Counter(e.category for e in entries if e.category != "trash")
+        category_dist = [{"category": cat, "count": cnt}
+                         for cat, cnt in cat_counter.most_common(20)]
+
+        # 3. 层级分布
+        layer_counter = Counter(e.layer.value if hasattr(e.layer, 'value') else str(e.layer)
+                                for e in entries)
+        layer_dist = [{"layer": layer, "count": cnt}
+                      for layer, cnt in layer_counter.most_common()]
+
+        # 4. 衰减预警（forgetting_score 高的记忆）
+        decay_warnings = []
+        for e in entries:
+            if hasattr(e, 'forgetting_score') and e.forgetting_score >= 0.5:
+                decay_warnings.append({
+                    "id": e.id,
+                    "content": e.content[:100],
+                    "category": e.category,
+                    "forgetting_score": round(e.forgetting_score, 3),
+                    "access_count": e.access_count,
+                    "strength": round(e.strength, 3) if hasattr(e, 'strength') else 0,
+                })
+        decay_warnings.sort(key=lambda x: x["forgetting_score"], reverse=True)
+        decay_warnings = decay_warnings[:20]
+
+        # 5. Top10 高访问低重要度记忆
+        access_low_imp = []
+        for e in entries:
+            imp_val = e.importance.to_int() if hasattr(e.importance, 'to_int') else 1
+            if e.access_count >= 3 and imp_val <= 1:  # LOW or MEDIUM
+                access_low_imp.append({
+                    "id": e.id,
+                    "content": e.content[:100],
+                    "category": e.category,
+                    "access_count": e.access_count,
+                    "importance": e.importance.value if hasattr(e.importance, 'value') else str(e.importance),
+                })
+        access_low_imp.sort(key=lambda x: x["access_count"], reverse=True)
+        access_low_imp = access_low_imp[:10]
+
+        # 6. 重要度分布
+        imp_counter = Counter(e.importance.value if hasattr(e.importance, 'value') else str(e.importance)
+                              for e in entries)
+        importance_dist = [{"importance": imp, "count": cnt}
+                           for imp, cnt in imp_counter.most_common()]
+
+        return {
+            "generated_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime(now)),
+            "total_memories": len(entries),
+            "growth_curve": growth_curve,
+            "category_distribution": category_dist,
+            "layer_distribution": layer_dist,
+            "importance_distribution": importance_dist,
+            "decay_warnings": decay_warnings,
+            "top_access_low_importance": access_low_imp,
+            "summary": {
+                "categories": len(cat_counter),
+                "decay_warning_count": len(decay_warnings),
+                "high_access_low_importance_count": len(access_low_imp),
+                "avg_growth_per_day": round(cumulative / max(len(sorted_days), 1), 1),
+            },
+        }
 
     def rebuild_fts(self) -> dict:
         """重建 FTS 全文索引（v5.0.6 新增）
@@ -591,8 +810,21 @@ class MindForge:
 
     def import_json(self, input_path: str,
                     skip_duplicates: bool = True,
-                    target_layer: Optional[MemoryLayer] = None) -> Dict[str, int]:
-        """从 JSON 文件导入记忆（v5.2.9 安全加固：路径校验 + 内容长度限制 + 枚举校验）"""
+                    target_layer: Optional[MemoryLayer] = None,
+                    dedup_threshold: float = 0.0) -> Dict[str, int]:
+        """从 JSON 文件导入记忆
+
+        v5.2.9 安全加固：路径校验 + 内容长度限制 + 枚举校验
+        v5.4.6 新增：智能导入去重（dedup_threshold > 0 时启用语义相似度去重）
+
+        Args:
+            input_path: JSON 文件路径
+            skip_duplicates: 是否跳过 ID 重复的记忆
+            target_layer: 导入到指定层级
+            dedup_threshold: 语义去重阈值 (0-1)，0=禁用，>0 时启用。
+                             相似度 > 阈值则跳过（或合并标签）。
+                             需要嵌入引擎可用，否则降级为文本相似度。
+        """
         # v5.2.9 安全加固：防止路径遍历 + 文件大小限制
         path = _safe_path(input_path, must_exist=True, allowed_exts={".json"}, max_size=500 * 1024 * 1024)
 
@@ -605,7 +837,28 @@ class MindForge:
             raise ValueError(f"记忆条数过多（{len(memories_raw)} 条，上限 100000），请分批导入")
 
         memories = memories_raw
-        stats = {"imported": 0, "skipped": 0, "failed": 0}
+        stats = {"imported": 0, "skipped": 0, "failed": 0, "deduped": 0}
+
+        # v5.4.6 智能去重：预加载已有记忆内容用于相似度比较
+        _existing_contents = None
+        _dedup_engine = None
+        if dedup_threshold > 0:
+            from difflib import SequenceMatcher
+            try:
+                existing_entries = self._storage.list_memories(limit=100000)
+                _existing_contents = [(e.id, e.content) for e in existing_entries]
+            except Exception:
+                _existing_contents = []
+            # 尝试使用嵌入引擎（如果可用）
+            try:
+                eng = self._storage.embedding_engine
+                if eng and eng.is_available:
+                    _dedup_engine = eng
+            except Exception:
+                pass
+            logger.info("智能去重已启用 (threshold=%.2f, existing=%d, embedding=%s)",
+                        dedup_threshold, len(_existing_contents),
+                        "on" if _dedup_engine else "off")
 
         # v5.2.9 安全加固：内容长度白名单常量
         _MAX_CONTENT = 1000000  # 单条记忆内容 1MB
@@ -642,6 +895,33 @@ class MindForge:
                 if existing and skip_duplicates:
                     stats["skipped"] += 1
                     continue
+
+                # v5.4.6 智能去重：语义相似度检查
+                if dedup_threshold > 0 and _existing_contents:
+                    is_dup = False
+                    if _dedup_engine:
+                        # 使用嵌入向量计算语义相似度
+                        new_vec = _dedup_engine.encode(content)
+                        if new_vec:
+                            for ex_id, ex_content in _existing_contents:
+                                ex_vec = _dedup_engine.encode(ex_content)
+                                if ex_vec:
+                                    sim = EmbeddingEngine.cosine_similarity(new_vec, ex_vec)
+                                    if sim >= dedup_threshold:
+                                        is_dup = True
+                                        logger.debug("去重命中(semantic): sim=%.3f vs %s", sim, ex_id)
+                                        break
+                    else:
+                        # 降级：使用文本相似度（difflib）
+                        for ex_id, ex_content in _existing_contents:
+                            sim = SequenceMatcher(None, content, ex_content).ratio()
+                            if sim >= dedup_threshold:
+                                is_dup = True
+                                logger.debug("去重命中(text): sim=%.3f vs %s", sim, ex_id)
+                                break
+                    if is_dup:
+                        stats["deduped"] += 1
+                        continue
 
                 layer = target_layer
                 if not layer and mem_data.get("layer"):
@@ -701,6 +981,145 @@ class MindForge:
                 )
 
                 stats["imported"] += 1
+                # v5.4.6 智能去重：将新导入的内容加入比较池
+                if _existing_contents is not None:
+                    _existing_contents.append((entry.id, content))
+            except (ValueError, TypeError, KeyError, AttributeError):
+                stats["failed"] += 1
+
+        return stats
+
+    def import_csv(self, input_path: str,
+                   skip_duplicates: bool = True,
+                   target_layer: Optional[MemoryLayer] = None,
+                   dedup_threshold: float = 0.0) -> Dict[str, int]:
+        """从 CSV 文件导入记忆（v5.4.6 新增）
+
+        支持 smart import dedup（同 import_json）。
+
+        Args:
+            input_path: CSV 文件路径
+            skip_duplicates: 是否跳过重复
+            target_layer: 导入到指定层级
+            dedup_threshold: 语义去重阈值 (0-1)，0=禁用
+
+        Returns:
+            {imported, skipped, failed, deduped}
+        """
+        path = _safe_path(input_path, must_exist=True, allowed_exts={".csv"}, max_size=500 * 1024 * 1024)
+
+        import csv as _csv
+        with open(path, "r", encoding="utf-8-sig", newline="") as f:
+            reader = _csv.DictReader(f)
+            # 转为统一的 memories 格式
+            memories = []
+            for row in reader:
+                tags_str = row.get("tags", "")
+                tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
+                memories.append({
+                    "content": row.get("content", ""),
+                    "category": row.get("category", "general"),
+                    "tags": tags,
+                    "privacy": row.get("privacy", "INTERNAL"),
+                    "importance": row.get("importance", "MEDIUM"),
+                    "layer": row.get("layer", ""),
+                    "source_session": row.get("source_session", ""),
+                    "source_agent": row.get("source_agent", ""),
+                })
+
+        # 复用 import_json 的去重逻辑
+        stats = {"imported": 0, "skipped": 0, "failed": 0, "deduped": 0}
+
+        _existing_contents = None
+        _dedup_engine = None
+        if dedup_threshold > 0:
+            from difflib import SequenceMatcher
+            try:
+                existing_entries = self._storage.list_memories(limit=100000)
+                _existing_contents = [(e.id, e.content) for e in existing_entries]
+            except Exception:
+                _existing_contents = []
+            try:
+                eng = self._storage.embedding_engine
+                if eng and eng.is_available:
+                    _dedup_engine = eng
+            except Exception:
+                pass
+
+        _MAX_CONTENT = 1000000
+
+        for mem_data in memories:
+            try:
+                content = str(mem_data.get("content", ""))[:_MAX_CONTENT]
+                if not content:
+                    stats["failed"] += 1
+                    continue
+
+                category = str(mem_data.get("category", "general"))[:256]
+                tags = [str(t)[:128] for t in mem_data.get("tags", [])[:64] if t]
+
+                # 智能去重
+                if dedup_threshold > 0 and _existing_contents:
+                    is_dup = False
+                    if _dedup_engine:
+                        new_vec = _dedup_engine.encode(content)
+                        if new_vec:
+                            for ex_id, ex_content in _existing_contents:
+                                ex_vec = _dedup_engine.encode(ex_content)
+                                if ex_vec:
+                                    sim = EmbeddingEngine.cosine_similarity(new_vec, ex_vec)
+                                    if sim >= dedup_threshold:
+                                        is_dup = True
+                                        break
+                    else:
+                        for ex_id, ex_content in _existing_contents:
+                            sim = SequenceMatcher(None, content, ex_content).ratio()
+                            if sim >= dedup_threshold:
+                                is_dup = True
+                                break
+                    if is_dup:
+                        stats["deduped"] += 1
+                        continue
+
+                layer = target_layer
+                if not layer and mem_data.get("layer"):
+                    try:
+                        layer = MemoryLayer(str(mem_data["layer"]))
+                    except ValueError:
+                        layer = self.config.default_layer
+
+                privacy = self.config.default_privacy
+                if mem_data.get("privacy"):
+                    try:
+                        privacy = PrivacyLevel(str(mem_data["privacy"]))
+                    except ValueError:
+                        pass
+
+                importance = self.config.default_importance
+                if mem_data.get("importance"):
+                    try:
+                        importance = Importance(str(mem_data["importance"]))
+                    except ValueError:
+                        pass
+
+                entry = self._storage.add_memory(
+                    content=content,
+                    category=category,
+                    tags=tags,
+                    privacy=privacy,
+                    importance=importance,
+                    layer=layer or self.config.default_layer,
+                )
+
+                self._index.index_memory(
+                    entry.id,
+                    content,
+                    metadata={"category": category},
+                )
+
+                stats["imported"] += 1
+                if _existing_contents is not None:
+                    _existing_contents.append((entry.id, content))
             except (ValueError, TypeError, KeyError, AttributeError):
                 stats["failed"] += 1
 
@@ -783,6 +1202,37 @@ class MindForge:
             被清理的记忆数量
         """
         return self._storage.cleanup_expired(max_age_hours, layer)
+
+    def auto_archive(self, max_age_hours: int = 24,
+                     layer: str = "sensory") -> Dict[str, Any]:
+        """自动归档过期记忆（v5.4.6 新增）
+
+        将到期记忆移到 archived_memories 表，而非直接删除。
+        可通过 restore_archived() 恢复。
+
+        Args:
+            max_age_hours: 最大保留时长（小时）
+            layer: 记忆层级（sensory/short_term）
+
+        Returns:
+            {archived, layer, max_age_hours}
+        """
+        return self._storage.auto_archive(max_age_hours, layer)
+
+    def list_archived(self, layer: Optional[str] = None,
+                      category: Optional[str] = None,
+                      limit: int = 50,
+                      offset: int = 0) -> List[Dict[str, Any]]:
+        """列出归档记忆（v5.4.6 新增）"""
+        return self._storage.list_archived(layer, category, limit, offset)
+
+    def restore_archived(self, archive_id: str) -> Dict[str, Any]:
+        """从归档恢复记忆（v5.4.6 新增）"""
+        return self._storage.restore_archived(archive_id)
+
+    def purge_archived(self, older_than_days: int = 90) -> int:
+        """永久删除过期归档记忆（v5.4.6 新增）"""
+        return self._storage.purge_archived(older_than_days)
 
     def batch_add(self, entries: List[Dict[str, Any]]) -> int:
         """批量添加记忆（v5.1.3 新增）

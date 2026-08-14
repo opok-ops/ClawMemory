@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.4.5 CLI - 命令行工具
+MindForge v5.4.6 CLI - 命令行工具
 =================================
 
 Usage:
@@ -91,7 +91,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.4.5"
+    __version__ = "5.4.6"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -1009,9 +1009,101 @@ def cmd_export_md(args):
     return 0
 
 
+def _generate_dashboard_html(dashboard: dict) -> str:
+    """生成健康仪表盘 HTML 报告（v5.4.6 新增）"""
+    growth_rows = ""
+    for point in dashboard.get("growth_curve", [])[-15:]:
+        growth_rows += f"<tr><td>{point['date']}</td><td>{point['daily']}</td><td>{point['cumulative']}</td></tr>\n"
+
+    cat_rows = ""
+    for cat in dashboard.get("category_distribution", [])[:10]:
+        cat_rows += f"<tr><td>{cat['category']}</td><td>{cat['count']}</td></tr>\n"
+
+    decay_rows = ""
+    for item in dashboard.get("decay_warnings", [])[:10]:
+        decay_rows += (f"<tr><td>{item['content'][:60]}...</td><td>{item['category']}</td>"
+                       f"<td>{item['forgetting_score']}</td><td>{item['access_count']}</td></tr>\n")
+
+    access_rows = ""
+    for item in dashboard.get("top_access_low_importance", []):
+        access_rows += (f"<tr><td>{item['content'][:60]}...</td><td>{item['category']}</td>"
+                        f"<td>{item['access_count']}</td><td>{item['importance']}</td></tr>\n")
+
+    return f"""<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>MindForge Health Dashboard</title>
+<style>
+body {{ font-family: -apple-system, sans-serif; margin: 20px; background: #f5f5f5; }}
+h1 {{ color: #333; }}
+h2 {{ color: #555; border-bottom: 2px solid #ddd; padding-bottom: 5px; }}
+table {{ border-collapse: collapse; width: 100%; margin: 10px 0; background: white; }}
+th, td {{ border: 1px solid #ddd; padding: 8px 12px; text-align: left; }}
+th {{ background: #4CAF50; color: white; }}
+tr:nth-child(even) {{ background: #f9f9f9; }}
+.summary {{ display: flex; gap: 20px; margin: 20px 0; }}
+.card {{ background: white; padding: 15px 25px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+.card .num {{ font-size: 28px; font-weight: bold; color: #4CAF50; }}
+.card .label {{ color: #777; font-size: 13px; }}
+</style>
+</head>
+<body>
+<h1>MindForge Health Dashboard</h1>
+<p>Generated: {dashboard.get('generated_at', '')}</p>
+
+<div class="summary">
+  <div class="card"><div class="num">{dashboard.get('total_memories', 0)}</div><div class="label">Total Memories</div></div>
+  <div class="card"><div class="num">{dashboard.get('summary', {}).get('categories', 0)}</div><div class="label">Categories</div></div>
+  <div class="card"><div class="num">{dashboard.get('summary', {}).get('decay_warning_count', 0)}</div><div class="label">Decay Warnings</div></div>
+  <div class="card"><div class="num">{dashboard.get('summary', {}).get('high_access_low_importance_count', 0)}</div><div class="label">High Access / Low Importance</div></div>
+</div>
+
+<h2>Memory Growth Curve (Recent 15 Days)</h2>
+<table><tr><th>Date</th><th>Daily</th><th>Cumulative</th></tr>
+{growth_rows}</table>
+
+<h2>Category Distribution (Top 10)</h2>
+<table><tr><th>Category</th><th>Count</th></tr>
+{cat_rows}</table>
+
+<h2>Decay Warnings (Top 10)</h2>
+<table><tr><th>Content</th><th>Category</th><th>Forgetting Score</th><th>Access Count</th></tr>
+{decay_rows}</table>
+
+<h2>Top 10 High Access / Low Importance</h2>
+<table><tr><th>Content</th><th>Category</th><th>Access Count</th><th>Importance</th></tr>
+{access_rows}</table>
+</body>
+</html>"""
+
+
 def cmd_health(args):
-    """数据库健康检查（v5.0.5 新增）"""
+    """数据库健康检查（v5.0.5 新增，v5.4.6 新增 --dashboard）"""
     cm = _get_memory(args)
+
+    # v5.4.6 仪表盘模式
+    if getattr(args, 'dashboard', False):
+        print_banner()
+        print(c("📊 MindForge 记忆健康仪表盘", "bold"))
+        print("=" * 50)
+
+        dashboard = cm.health_dashboard()
+
+        if getattr(args, 'html', False):
+            # 输出 HTML 报告
+            html_report = _generate_dashboard_html(dashboard)
+            output_file = Path("./data/health_dashboard.html")
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.write_text(html_report, encoding="utf-8")
+            print(c(f"\n✅ HTML 报告已生成: {output_file}", "green"))
+        else:
+            # 输出 JSON
+            print(json.dumps(dashboard, ensure_ascii=False, indent=2))
+
+        cm.close()
+        return 0
+
     print_banner()
     print(c("🩺 MindForge 健康检查", "bold"))
     print("=" * 50)
@@ -1622,7 +1714,24 @@ def cmd_compliance(args):
 
 
 def cmd_serve(args):
-    """启动 Web UI"""
+    """启动 Web UI 或 REST API"""
+    if getattr(args, 'api', False):
+        # v5.4.6 REST API 模式
+        print(c("启动 MindForge REST API...", "cyan"))
+        cm = _get_memory(args)
+        try:
+            from api.server import start_api_server
+            start_api_server(cm, host=args.host, port=args.port)
+        except KeyboardInterrupt:
+            print("\n服务已停止")
+        except (OSError, ValueError) as e:
+            print(c(f"启动失败：{e}", "red"))
+            return 1
+        finally:
+            cm.close()
+        return 0
+
+    # Web UI 模式（原有行为）
     print(c("启动 MindForge Web UI...", "cyan"))
     print(f"  地址: http://localhost:{args.port}")
     print(f"  数据库: {args.db_path}")
@@ -2128,6 +2237,118 @@ def cmd_space_stats(args):
     return 0
 
 
+def _install_shell_completion(shell: str):
+    """安装 Shell 自动补全（v5.4.6 新增）
+
+    生成并安装 bash/zsh/fish 自动补全脚本。
+    """
+    # 收集所有子命令名称
+    commands = [
+        "init", "add", "search", "list", "get", "update", "delete",
+        "stats", "star", "unstar", "batch-delete", "tag-search",
+        "deduplicate", "export-md", "health", "summarize", "vacuum",
+        "purge-trash", "analyze", "import-md", "migrate",
+        "export-html", "export-xml", "import-xml",
+        "export-json", "import-json", "import-csv",
+        "merge", "remind", "tags", "cats", "timeline", "top",
+        "random", "rename-tag", "rename-cat", "config", "doctor",
+        "find", "audit", "recent", "trash", "restore",
+        "consolidate", "graph", "personality",
+        "agent-stats", "agent-list", "evolve",
+        "agent-transfer", "agent-clean", "agent-list-memories",
+        "agent-rank", "agent-forget", "agent-profile",
+        "agent-merge", "agent-export", "agent-search", "agent-compare",
+        "drama-search", "char-ranking", "agent-diff", "agent-purge",
+        "drama-progress-update", "drama-rec2",
+        "agent-timeline", "agent-heatmap", "drama-binge",
+        "char-network", "agent-sentiment", "memory-decay",
+        "drama-compare", "char-arc", "memory-cluster",
+        "agent-insight", "drama-summary", "scene-tension",
+        "memory-link", "memory-recall", "drama-pacing",
+        "char-interaction", "quality", "similar",
+        "backup", "export", "import", "compliance", "serve",
+        "cleanup", "archive", "archived-list", "archived-restore",
+        "archived-purge",
+        "batch-add", "import-url",
+        "export-excel", "import-excel", "copy", "move",
+        "fuzzy-search", "search-history",
+        "batch-add-tags", "batch-remove-tags", "merge-tags",
+        "db-backup", "db-backups", "db-restore", "db-clean-backups",
+        "drama-add", "drama-list", "drama-get",
+        "memory-reflection", "rebuild-embeddings", "embedding-status",
+        "memory-lineage", "memory-reinforce",
+        "drama-plot-thread", "drama-episode-curve", "drama-screen-time",
+        "fed-acl-add", "fed-acl-remove", "fed-acl-list",
+        "fed-acl-check", "fed-acl-stats",
+        "share-conflicts", "share-conflict-resolve",
+        "share-conflict-dismiss", "share-conflict-stats",
+        "export-obsidian",
+    ]
+
+    cmds_str = " ".join(commands)
+
+    if shell == "bash":
+        script = f"""# MindForge CLI auto-completion (bash)
+_mindforge_completions() {{
+    local cur prev opts
+    cur="${{COMP_WORDS[COMP_CWORD]}}"
+    opts="{cmds_str}"
+    COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+}}
+complete -F _mindforge_completions mindforge
+complete -F _mindforge_completions MindForge
+"""
+        target = Path.home() / ".bash_completion.d" / "mindforge"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(script, encoding="utf-8")
+        # Also append to .bashrc if not already there
+        bashrc = Path.home() / ".bashrc"
+        source_line = f"[ -f {target} ] && source {target}"
+        if bashrc.exists():
+            content = bashrc.read_text(encoding="utf-8", errors="ignore")
+            if "mindforge" not in content:
+                with open(bashrc, "a", encoding="utf-8") as f:
+                    f.write(f"\n{source_line}\n")
+        print(c(f"✅ Bash 补全已安装到 {target}", "green"))
+        print(c("   重新打开终端或执行 source ~/.bashrc 生效", "yellow"))
+
+    elif shell == "zsh":
+        script = f"""#compdef mindforge MindForge
+# MindForge CLI auto-completion (zsh)
+_mindforge() {{
+    local -a commands
+    commands=({' '.join(repr(c) for c in commands)})
+    _describe 'command' commands
+}}
+compdef _mindforge mindforge MindForge
+"""
+        # zsh completion directory
+        fpath = Path.home() / ".zsh" / "completions"
+        fpath.mkdir(parents=True, exist_ok=True)
+        target = fpath / "_mindforge"
+        target.write_text(script, encoding="utf-8")
+        zshrc = Path.home() / ".zshrc"
+        fpath_line = f"fpath=({fpath} $fpath)"
+        if zshrc.exists():
+            content = zshrc.read_text(encoding="utf-8", errors="ignore")
+            if str(fpath) not in content:
+                with open(zshrc, "a", encoding="utf-8") as f:
+                    f.write(f"\n{fpath_line}\nautoload -Uz compinit && compinit\n")
+        print(c(f"✅ Zsh 补全已安装到 {target}", "green"))
+        print(c("   重新打开终端或执行 source ~/.zshrc 生效", "yellow"))
+
+    elif shell == "fish":
+        script = f"""# MindForge CLI auto-completion (fish)
+complete -c mindforge -f -a '{cmds_str}'
+complete -c MindForge -f -a '{cmds_str}'
+"""
+        target = Path.home() / ".config" / "fish" / "completions" / "mindforge.fish"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(script, encoding="utf-8")
+        print(c(f"✅ Fish 补全已安装到 {target}", "green"))
+        print(c("   重新打开终端生效", "yellow"))
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="mindforge",
@@ -2135,11 +2356,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", "-v", action="version", version=f"MindForge v{__version__}")
+    parser.add_argument("--install-completion", dest="install_completion",
+                        choices=["bash", "zsh", "fish"],
+                        help="安装 Shell 自动补全（v5.4.6 新增，支持 bash/zsh/fish）")
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")
 
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", required=False)
 
     p_init = sub.add_parser("init", help="初始化 MindForge")
     p_init.add_argument("--no-encrypt", action="store_true", help="不启用加密（CI/自动化场景）")
@@ -2291,6 +2515,10 @@ def main():
                              help="仅导出收藏的记忆")
 
     p_health = sub.add_parser("health", help="数据库健康检查（v5.0.5 新增）")
+    p_health.add_argument("--dashboard", action="store_true",
+                           help="输出记忆健康仪表盘 JSON 报告（v5.4.6 新增）")
+    p_health.add_argument("--html", action="store_true",
+                           help="仪表盘输出为 HTML 格式（配合 --dashboard 使用）")
 
     p_summarize = sub.add_parser("summarize", help="记忆摘要（v5.0.5 新增）")
     p_summarize.add_argument("--category", "-c", help="限定分类")
@@ -2340,6 +2568,17 @@ def main():
     p_import_json = sub.add_parser("import-json", help="从 JSON 导入记忆（v5.1.5 新增）")
     p_import_json.add_argument("input", help="JSON 文件路径")
     p_import_json.add_argument("--force", action="store_true", help="强制导入（覆盖重复）")
+    p_import_json.add_argument("--dedup-threshold", type=float, default=0.0,
+                               help="智能去重阈值 0-1（v5.4.6，0=禁用，0.85=推荐）")
+
+    # v5.4.6 新增
+    p_import_csv = sub.add_parser("import-csv", help="从 CSV 导入记忆（v5.4.6 新增）")
+    p_import_csv.add_argument("input", help="CSV 文件路径")
+    p_import_csv.add_argument("--force", action="store_true", help="强制导入（覆盖重复）")
+    p_import_csv.add_argument("--dedup-threshold", type=float, default=0.0,
+                               help="智能去重阈值 0-1（0=禁用，0.85=推荐）")
+    p_import_csv.add_argument("--layer", choices=["sensory", "short_term", "long_term", "permanent"],
+                               help="导入到指定层级")
 
     p_merge = sub.add_parser("merge", help="合并重复记忆（v5.1.5 新增）")
     p_merge.add_argument("--threshold", type=float, default=0.8, help="相似度阈值")
@@ -2987,14 +3226,46 @@ def main():
 
     p_compliance = sub.add_parser("compliance", help="合规报告")
 
-    p_serve = sub.add_parser("serve", help="启动 Web UI")
+    p_serve = sub.add_parser("serve", help="启动 Web UI 或 REST API")
     p_serve.add_argument("--port", type=int, default=8080, help="端口")
+    p_serve.add_argument("--api", action="store_true",
+                          help="启动 REST API 模式（v5.4.6 新增）")
+    p_serve.add_argument("--host", default="127.0.0.1",
+                          help="绑定地址（默认 127.0.0.1，0.0.0.0 允许外部访问）")
 
     p_cleanup = sub.add_parser("cleanup", help="清理过期记忆（v5.1.3 新增）")
     p_cleanup.add_argument("--hours", type=int, default=24, help="超过 N 小时的记忆将被清理，默认 24")
     p_cleanup.add_argument("--layer", "-l", default="sensory",
                            choices=["sensory", "short_term", "long_term", "permanent"],
                            help="要清理的记忆层级，默认 sensory")
+
+    # v5.4.6 新增：归档命令
+    p_archive = sub.add_parser("archive", help="自动归档过期记忆（v5.4.6 新增）")
+    p_archive.add_argument("--hours", type=int, default=24, help="超过 N 小时的记忆将被归档")
+    p_archive.add_argument("--layer", "-l", default="sensory",
+                           choices=["sensory", "short_term"],
+                           help="要归档的记忆层级")
+
+    p_archived_list = sub.add_parser("archived-list", help="列出归档记忆（v5.4.6 新增）")
+    p_archived_list.add_argument("--layer", "-l", help="按层级过滤")
+    p_archived_list.add_argument("--category", "-c", help="按分类过滤")
+    p_archived_list.add_argument("--limit", "-n", type=int, default=20, help="返回数量")
+
+    p_archived_restore = sub.add_parser("archived-restore", help="从归档恢复记忆（v5.4.6 新增）")
+    p_archived_restore.add_argument("archive_id", help="归档记录 ID")
+
+    p_archived_purge = sub.add_parser("archived-purge", help="永久删除过期归档记忆（v5.4.6 新增）")
+    p_archived_purge.add_argument("--older-than-days", type=int, default=90, help="归档超过 N 天的永久删除")
+
+    # v5.4.6 新增：Obsidian 导出
+    p_export_obsidian = sub.add_parser("export-obsidian",
+                                        help="导出为 Obsidian Vault 格式（v5.4.6 新增）")
+    p_export_obsidian.add_argument("output_dir", help="输出目录（Obsidian vault 根目录）")
+    p_export_obsidian.add_argument("--category", "-c", help="按分类筛选")
+    p_export_obsidian.add_argument("--layer", "-l",
+                                    choices=["sensory", "short_term", "long_term", "permanent"],
+                                    help="按层级筛选")
+    p_export_obsidian.add_argument("--starred", action="store_true", help="仅导出收藏记忆")
 
     p_batch_add = sub.add_parser("batch-add", help="从文件批量添加记忆（v5.1.3 新增）")
     p_batch_add.add_argument("input", help="输入 JSON 文件路径")
@@ -3265,14 +3536,26 @@ def main():
 
     # ===== v5.4.5 新增向量检索命令 =====
     p_rebuild_emb = sub.add_parser("rebuild-embeddings",
-                                   help="重建所有记忆的嵌入向量（v5.4.5 新增）")
+                                   help="重建/增量构建嵌入向量（v5.4.5 新增，v5.4.6 增量模式）")
     p_rebuild_emb.add_argument("--batch-size", "-b", type=int, default=100,
                                help="批量编码大小（默认 100）")
+    p_rebuild_emb.add_argument("--full", action="store_true",
+                               help="全量重建（默认仅处理缺失项）")
 
     p_emb_status = sub.add_parser("embedding-status",
                                   help="查看嵌入向量状态（v5.4.5 新增）")
 
     args = parser.parse_args()
+
+    # v5.4.6 Shell 自动补全安装
+    if getattr(args, 'install_completion', None):
+        _install_shell_completion(args.install_completion)
+        return
+
+    # 无子命令时打印帮助（v5.4.6 修复：required=False 后需手动处理）
+    if not getattr(args, "command", None):
+        parser.print_help()
+        return
 
     # v5.2.8 修复：统一展开逗号分隔的标签（覆盖全部 nargs="+" 的 --tags 命令）
     if isinstance(getattr(args, "tags", None), list):
@@ -4349,6 +4632,7 @@ def _main_dispatch(args):
         "import-xml": cmd_import_xml,
         "export-json": cmd_export_json,
         "import-json": cmd_import_json,
+        "import-csv": cmd_import_csv,
         "merge": cmd_merge,
         "remind": cmd_remind,
         "tags": cmd_tags,
@@ -4411,6 +4695,11 @@ def _main_dispatch(args):
         "compliance": cmd_compliance,
         "serve": cmd_serve,
         "cleanup": cmd_cleanup,
+        "archive": cmd_archive,
+        "archived-list": cmd_archived_list,
+        "archived-restore": cmd_archived_restore,
+        "archived-purge": cmd_archived_purge,
+        "export-obsidian": cmd_export_obsidian,
         "batch-add": cmd_batch_add,
         "import-url": cmd_import_url,
         "export-excel": cmd_export_excel,
@@ -4541,14 +4830,16 @@ def _main_dispatch(args):
 
 
 def cmd_rebuild_embeddings(args):
-    """重建所有记忆的嵌入向量（v5.4.5 新增）"""
+    """重建/增量构建嵌入向量（v5.4.5 新增，v5.4.6 增量模式）"""
     cm = _get_memory(args)
 
-    print(c("\n🔧 重建嵌入向量（v5.4.5）", "bold"))
+    incremental = not getattr(args, 'full', False)
+    mode_label = "增量构建" if incremental else "全量重建"
+    print(c(f"\n🔧 {mode_label}嵌入向量（v5.4.6）", "bold"))
     print("=" * 60)
 
     try:
-        result = cm.rebuild_embeddings(batch_size=args.batch_size)
+        result = cm.rebuild_embeddings(batch_size=args.batch_size, incremental=incremental)
     except Exception as e:
         print(c(f"\n❌ 失败: {e}", "red"))
         cm.close()
@@ -4557,11 +4848,13 @@ def cmd_rebuild_embeddings(args):
     if not result.get("success"):
         print(c(f"\n❌ {result.get('error', '未知错误')}", "red"))
         print(c("   安装 sentence-transformers: pip install sentence-transformers", "yellow"))
+        print(c("   或配置 OpenAI/Ollama 后端: MINDFORGE_EMBEDDING_BACKEND=openai", "yellow"))
         cm.close()
         return 1
 
-    print(c(f"\n✅ 重建完成", "green"))
-    print(f"   总记忆数:   {result['total']}")
+    print(c(f"\n✅ {mode_label}完成", "green"))
+    print(f"   模式:       {result.get('mode', mode_label)}")
+    print(f"   待处理:     {result['total']}")
     print(f"   已生成向量: {result['embedded']}")
     print(f"   跳过（空）: {result['skipped']}")
     if result['errors']:
@@ -4609,6 +4902,79 @@ def cmd_cleanup(args):
     print(c(f"\n✅ 清理完成", "green"))
     print(f"   清理了 {count} 条过期记忆（层级: {args.layer}, 超过 {args.hours} 小时）")
 
+    cm.close()
+    return 0
+
+
+def cmd_archive(args):
+    """自动归档过期记忆（v5.4.6 新增）"""
+    cm = _get_memory(args)
+    result = cm.auto_archive(max_age_hours=args.hours, layer=args.layer)
+    print(c(f"\n✅ 归档完成（v5.4.6）", "green"))
+    print(f"   归档了 {result['archived']} 条记忆（层级: {result['layer']}, 超过 {result['max_age_hours']} 小时）")
+    print(c("   使用 archived-list 查看归档记录，archived-restore 恢复", "cyan"))
+    cm.close()
+    return 0
+
+
+def cmd_archived_list(args):
+    """列出归档记忆（v5.4.6 新增）"""
+    cm = _get_memory(args)
+    entries = cm.list_archived(layer=args.layer, category=args.category, limit=args.limit)
+    if not entries:
+        print(c("⚠️  没有归档记忆", "yellow"))
+        cm.close()
+        return 0
+    print(c(f"\n📦 归档记忆（{len(entries)} 条）", "bold"))
+    print("=" * 60)
+    for e in entries:
+        content_preview = (e.get("content") or "")[:60]
+        print(f"   [{e.get('archive_id', e.get('id', ''))[:8]}] "
+              f"[{e.get('category', '')}] {content_preview}...")
+        print(f"     层级: {e.get('layer', '')} | 归档时间: {format_time(e.get('archived_at', 0))}")
+    cm.close()
+    return 0
+
+
+def cmd_archived_restore(args):
+    """从归档恢复记忆（v5.4.6 新增）"""
+    cm = _get_memory(args)
+    result = cm.restore_archived(args.archive_id)
+    if result.get("restored"):
+        print(c(f"\n✅ 恢复成功", "green"))
+        print(f"   记忆 ID: {result.get('memory_id', '')}")
+    else:
+        print(c(f"\n❌ 恢复失败: {result.get('error', '未知错误')}", "red"))
+    cm.close()
+    return 0 if result.get("restored") else 1
+
+
+def cmd_archived_purge(args):
+    """永久删除过期归档记忆（v5.4.6 新增）"""
+    cm = _get_memory(args)
+    count = cm.purge_archived(older_than_days=args.older_than_days)
+    print(c(f"\n✅ 清理完成", "green"))
+    print(f"   永久删除了 {count} 条归档记忆（超过 {args.older_than_days} 天）")
+    cm.close()
+    return 0
+
+
+def cmd_export_obsidian(args):
+    """导出为 Obsidian Vault 格式（v5.4.6 新增）"""
+    cm = _get_memory(args)
+    layer = MemoryLayer.from_string(args.layer) if args.layer else None
+    result = cm.export_obsidian(
+        output_dir=args.output_dir,
+        category=args.category,
+        layer=layer,
+        starred_only=args.starred,
+    )
+    print(c(f"\n✅ Obsidian Vault 导出完成（v5.4.6）", "green"))
+    print(f"   导出目录: {result['output_dir']}")
+    print(f"   导出记忆: {result['exported']} 条")
+    if result['errors']:
+        print(c(f"   错误: {result['errors']} 条", "yellow"))
+    print(c("   在 Obsidian 中打开该目录即可使用", "cyan"))
     cm.close()
     return 0
 
@@ -5016,29 +5382,100 @@ def cmd_import_json(args):
             print(f"   - [{category}] {content_preview}...")
         if len(memories) > 5:
             print(f"   ... 还有 {len(memories) - 5} 条")
+        if args.dedup_threshold > 0:
+            print(c(f"   智能去重已启用（阈值={args.dedup_threshold}）", "purple"))
         print(c("\n确认导入？加 --force 执行", "yellow"))
         cm.close()
         return 1
 
-    imported = 0
-    skipped = 0
-    for mem in memories:
-        try:
-            cm.add(
-                content=mem.get("content", ""),
-                category=mem.get("category", "general"),
-                tags=mem.get("tags", []),
-                privacy=PrivacyLevel.from_string(mem.get("privacy", "internal")),
-                importance=Importance.from_string(mem.get("importance", "medium")),
-                layer=MemoryLayer.from_string(mem.get("layer", "short_term")),
-            )
-            imported += 1
-        except (ValueError, TypeError):
-            skipped += 1
+    # v5.4.6 智能去重
+    dedup_threshold = getattr(args, 'dedup_threshold', 0.0) or 0.0
 
-    print(c(f"\n✅ JSON 导入完成", "green"))
-    print(f"   成功导入：{c(str(imported), 'green')} 条")
-    print(f"   导入失败：{c(str(skipped), 'yellow')} 条")
+    if dedup_threshold > 0:
+        stats = cm.import_json(
+            str(input_path),
+            skip_duplicates=not args.force,
+            dedup_threshold=dedup_threshold,
+        )
+        print(c(f"\n✅ JSON 导入完成（智能去重）", "green"))
+        print(f"   成功导入：{c(str(stats['imported']), 'green')} 条")
+        print(f"   去重跳过：{c(str(stats.get('deduped', 0)), 'purple')} 条")
+        print(f"   ID 重复：{c(str(stats['skipped']), 'yellow')} 条")
+        print(f"   导入失败：{c(str(stats['failed']), 'red')} 条")
+    else:
+        imported = 0
+        skipped = 0
+        for mem in memories:
+            try:
+                cm.add(
+                    content=mem.get("content", ""),
+                    category=mem.get("category", "general"),
+                    tags=mem.get("tags", []),
+                    privacy=PrivacyLevel.from_string(mem.get("privacy", "internal")),
+                    importance=Importance.from_string(mem.get("importance", "medium")),
+                    layer=MemoryLayer.from_string(mem.get("layer", "short_term")),
+                )
+                imported += 1
+            except (ValueError, TypeError):
+                skipped += 1
+
+        print(c(f"\n✅ JSON 导入完成", "green"))
+        print(f"   成功导入：{c(str(imported), 'green')} 条")
+        print(f"   导入失败：{c(str(skipped), 'yellow')} 条")
+    cm.close()
+    return 0
+
+
+def cmd_import_csv(args):
+    """从 CSV 导入记忆（v5.4.6 新增，支持智能去重）"""
+    cm = _get_memory(args)
+
+    try:
+        input_path = _safe_import_path(args.input)
+    except ValueError as e:
+        print(c(f"❌ 路径校验失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if not input_path.exists():
+        print(c(f"\n❌ 文件不存在: {input_path}", "red"))
+        return 1
+
+    target_layer = None
+    if hasattr(args, 'layer') and args.layer:
+        target_layer = MemoryLayer.from_string(args.layer)
+
+    dedup_threshold = getattr(args, 'dedup_threshold', 0.0) or 0.0
+
+    if not args.force:
+        # 预览 CSV 行数
+        try:
+            import csv as _csv
+            with open(input_path, 'r', encoding='utf-8-sig', newline='') as f:
+                row_count = sum(1 for _ in _csv.DictReader(f))
+        except Exception:
+            row_count = 0
+        print(c(f"\n🔍 将导入 {row_count} 条记忆（CSV）", "cyan"))
+        if dedup_threshold > 0:
+            print(c(f"   智能去重已启用（阈值={dedup_threshold}）", "purple"))
+        print(c("\n确认导入？加 --force 执行", "yellow"))
+        cm.close()
+        return 1
+
+    stats = cm.import_csv(
+        str(input_path),
+        skip_duplicates=not args.force,
+        target_layer=target_layer,
+        dedup_threshold=dedup_threshold,
+    )
+
+    print(c(f"\n✅ CSV 导入完成", "green"))
+    print(f"   成功导入：{c(str(stats['imported']), 'green')} 条")
+    if stats.get('deduped', 0) > 0:
+        print(f"   去重跳过：{c(str(stats['deduped']), 'purple')} 条")
+    if stats.get('skipped', 0) > 0:
+        print(f"   ID 重复：{c(str(stats['skipped']), 'yellow')} 条")
+    print(f"   导入失败：{c(str(stats['failed']), 'red')} 条")
     cm.close()
     return 0
 
@@ -8863,9 +9300,6 @@ def cmd_schedule(args):
     return 1
 
 
-if __name__ == "__main__":
-    main()
-
 def cmd_agent_influence(args):
     """Agent 记忆影响力图谱（v5.4.3 新增）"""
     cm = _get_memory(args)
@@ -9162,3 +9596,9 @@ def cmd_scene_rhythm(args):
 
     cm.close()
     return 0
+
+
+if __name__ == "__main__":
+    # v5.4.6 修复：入口必须位于文件末尾，
+    # 否则 dispatch 表中引用的 cmd_agent_influence 等函数尚未定义
+    main()
