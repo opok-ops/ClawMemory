@@ -57,7 +57,7 @@
   <div class="hero-inner">
     <div class="hero-badge">
       <span class="badge-dot"></span>
-      <span>v5.4.5 全新升级 · 联邦记忆细粒度 ACL + 共享冲突解决</span>
+      <span>v5.4.6 全新升级 · 智能导入去重 + REST API + 多后端嵌入适配器</span>
     </div>
     <h1 class="hero-title">
       让 AI Agent
@@ -379,9 +379,29 @@
     <div class="changelog-list">
       <div class="cl-item">
         <div class="cl-left">
+          <span class="cl-ver">v5.4.6</span>
+          <span class="cl-date">2026-08-14</span>
+          <span class="cl-badge latest">最新</span>
+        </div>
+        <div class="cl-body">
+          <h4>🚀 智能导入去重 + REST API + 多后端嵌入适配器</h4>
+          <ul>
+            <li><strong>智能导入去重</strong>：import-json/import-csv 时自动检测重复（语义相似度 > 阈值则跳过）</li>
+            <li><strong>REST API</strong>：serve --api 暴露核心 CRUD + search + stats 端点</li>
+            <li><strong>Embedding 多后端</strong>：支持 sentence-transformers / OpenAI / Ollama / 自定义 HTTP</li>
+            <li><strong>记忆健康仪表盘</strong>：health --dashboard 输出增长曲线/分类分布/衰减预警</li>
+            <li><strong>增量 Embedding</strong>：rebuild-embeddings 默认增量模式，5000+ 记忆体感明显</li>
+            <li><strong>自动归档</strong>：感官/短期记忆到期归档（非删除），支持恢复</li>
+            <li><strong>CLI Shell 补全</strong>：--install-completion bash/zsh/fish</li>
+            <li><strong>Obsidian 导出</strong>：export-obsidian 生成 Vault 格式 + 双向链接</li>
+            <li>Bug 修复：cosine_similarity 降级模式 + ClawMemory URL 残留 + importance 大小写 + SQLite 跨线程（REST API）+ CLI dispatch 悬空引用 + 补全安装</li>
+          </ul>
+        </div>
+      </div>
+      <div class="cl-item">
+        <div class="cl-left">
           <span class="cl-ver">v5.4.5</span>
           <span class="cl-date">2026-08-10</span>
-          <span class="cl-badge latest">最新</span>
         </div>
         <div class="cl-body">
           <h4>🧠 向量检索能力（六路融合搜索）</h4>

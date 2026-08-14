@@ -1,5 +1,5 @@
 """
-MindForge v5.4.5 存储引擎
+MindForge v5.4.6 存储引擎
 支持四层记忆架构：感官记忆 → 短期记忆 → 长期记忆 → 永久记忆
 """
 
@@ -9,6 +9,7 @@ import math
 import uuid
 import time
 import logging
+import threading
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import List, Optional, Dict, Any, Tuple
@@ -344,16 +345,20 @@ class StorageEngine:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.encryption = encryption
         self.encrypted = encrypted and encryption is not None
-        self._conn: Optional[sqlite3.Connection] = None
+        # v5.4.6 线程安全：SQLite 连接不能跨线程复用。
+        # 使用 threading.local 为每个线程维护独立连接（REST API 场景必需）。
+        self._conn_local = threading.local()
         self._init_db()
 
     def _get_conn(self) -> sqlite3.Connection:
-        if self._conn is None:
-            self._conn = sqlite3.connect(str(self.db_path))
-            self._conn.row_factory = sqlite3.Row
-            self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.execute("PRAGMA foreign_keys=ON")
-        return self._conn
+        conn = getattr(self._conn_local, "conn", None)
+        if conn is None:
+            conn = sqlite3.connect(str(self.db_path))
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys=ON")
+            self._conn_local.conn = conn
+        return conn
 
     def _init_db(self):
         conn = self._get_conn()
@@ -597,6 +602,29 @@ class StorageEngine:
                 updated_at REAL
             );
             CREATE INDEX IF NOT EXISTS idx_embedding_model ON memory_embeddings(model_name);
+
+            -- 归档记忆（v5.4.6 新增：auto-archive 机制）
+            CREATE TABLE IF NOT EXISTS archived_memories (
+                id TEXT PRIMARY KEY,
+                original_id TEXT NOT NULL,
+                content TEXT DEFAULT '',
+                category TEXT DEFAULT 'general',
+                tags TEXT DEFAULT '[]',
+                privacy TEXT DEFAULT 'INTERNAL',
+                importance TEXT DEFAULT 'MEDIUM',
+                memory_type TEXT DEFAULT 'text',
+                layer TEXT DEFAULT 'short_term',
+                source_session TEXT DEFAULT '',
+                source_agent TEXT DEFAULT '',
+                metadata TEXT DEFAULT '{}',
+                original_created_at REAL DEFAULT 0,
+                original_updated_at REAL DEFAULT 0,
+                archived_at REAL DEFAULT 0,
+                archived_reason TEXT DEFAULT 'expired'
+            );
+            CREATE INDEX IF NOT EXISTS idx_archived_layer ON archived_memories(layer);
+            CREATE INDEX IF NOT EXISTS idx_archived_category ON archived_memories(category);
+            CREATE INDEX IF NOT EXISTS idx_archived_at ON archived_memories(archived_at);
         """)
         conn.commit()
 
@@ -5504,10 +5532,18 @@ class StorageEngine:
             if action in HIGH_SENSITIVE_ACTIONS:
                 raise SecurityError(f"高敏感操作审计失败，拒绝执行: {action}") from e
 
+    def _close_conns(self):
+        """关闭当前线程持有的 SQLite 连接（v5.4.6 线程安全改造）"""
+        conn = getattr(self._conn_local, "conn", None)
+        if conn is not None:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+            self._conn_local.conn = None
+
     def close(self):
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+        self._close_conns()
 
     def cleanup_expired(self, max_age_hours: int = 24, layer: str = "sensory") -> int:
         """清理过期记忆（v5.1.3 新增）
@@ -6325,6 +6361,211 @@ class StorageEngine:
         ).fetchall()
         return [(row[0], row[1]) for row in rows]
 
+    # ===== 归档机制（v5.4.6 新增）=====
+
+    def auto_archive(self, max_age_hours: int = 24,
+                     layer: str = "sensory",
+                     actor: str = "system") -> Dict[str, Any]:
+        """自动归档过期记忆（v5.4.6 新增）
+
+        将到期的感官层/短期层记忆移到 archived_memories 表，
+        而非直接删除。可配置保留天数，支持手动恢复。
+
+        Args:
+            max_age_hours: 最大保留时长（小时）
+            layer: 记忆层级（sensory/short_term）
+            actor: 操作者
+
+        Returns:
+            {archived, layer, max_age_hours}
+        """
+        conn = self._get_conn()
+        now = time.time()
+        cutoff_time = now - (max_age_hours * 3600)
+
+        rows = conn.execute(
+            "SELECT id, content, category, tags, privacy, importance,"
+            " memory_type, layer, source_session, source_agent, metadata,"
+            " created_at, updated_at"
+            " FROM memories"
+            " WHERE layer = ? AND category != 'trash' AND created_at < ?",
+            (layer, cutoff_time)
+        ).fetchall()
+
+        if not rows:
+            return {"archived": 0, "layer": layer, "max_age_hours": max_age_hours}
+
+        archived_count = 0
+        for row in rows:
+            try:
+                import uuid as _uuid
+                archive_id = str(_uuid.uuid4())
+                conn.execute(
+                    "INSERT OR REPLACE INTO archived_memories"
+                    " (id, original_id, content, category, tags, privacy,"
+                    " importance, memory_type, layer, source_session,"
+                    " source_agent, metadata, original_created_at,"
+                    " original_updated_at, archived_at, archived_reason)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'expired')",
+                    (archive_id, row["id"], row["content"], row["category"],
+                     row["tags"], row["privacy"], row["importance"],
+                     row["memory_type"], row["layer"], row["source_session"],
+                     row["source_agent"], row["metadata"],
+                     row["created_at"], row["updated_at"], now)
+                )
+                # 软删除原记忆
+                conn.execute(
+                    "UPDATE memories SET category = 'trash',"
+                    " metadata = JSON_SET(metadata, '$.archived_id', ?),"
+                    " updated_at = ? WHERE id = ?",
+                    (archive_id, now, row["id"])
+                )
+                # 从 FTS 删除
+                if not self.encrypted:
+                    conn.execute(
+                        "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags)"
+                        " VALUES('delete', (SELECT rowid FROM memories WHERE id = ?), '', '', '')",
+                        (row["id"],)
+                    )
+                # 删除嵌入向量
+                conn.execute(
+                    "DELETE FROM memory_embeddings WHERE memory_id = ?",
+                    (row["id"],)
+                )
+                archived_count += 1
+            except Exception:
+                continue
+
+        conn.commit()
+
+        # 审计日志
+        if archived_count > 0:
+            try:
+                conn.execute(
+                    "INSERT INTO audit_log (id, memory_id, action, actor,"
+                    " session_id, details, timestamp)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (str(_uuid.uuid4()), "", "auto_archive", actor, "",
+                     json.dumps({"count": archived_count, "layer": layer,
+                                 "max_age_hours": max_age_hours}), now)
+                )
+                conn.commit()
+            except Exception:
+                pass
+
+        return {"archived": archived_count, "layer": layer, "max_age_hours": max_age_hours}
+
+    def list_archived(self, layer: Optional[str] = None,
+                      category: Optional[str] = None,
+                      limit: int = 50,
+                      offset: int = 0) -> List[Dict[str, Any]]:
+        """列出归档记忆（v5.4.6 新增）"""
+        conn = self._get_conn()
+        query = "SELECT * FROM archived_memories WHERE 1=1"
+        params = []
+        if layer:
+            query += " AND layer = ?"
+            params.append(layer)
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        query += " ORDER BY archived_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        rows = conn.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def restore_archived(self, archive_id: str,
+                         actor: str = "system") -> Dict[str, Any]:
+        """从归档恢复记忆（v5.4.6 新增）
+
+        Args:
+            archive_id: 归档记录 ID
+            actor: 操作者
+
+        Returns:
+            {restored, memory_id, error}
+        """
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM archived_memories WHERE id = ?",
+            (archive_id,)
+        ).fetchone()
+
+        if not row:
+            return {"restored": False, "error": "归档记录不存在"}
+
+        now = time.time()
+        original_id = row["original_id"]
+
+        # 恢复到 memories 表（如果原记录还在 trash 中则恢复，否则新建）
+        existing = conn.execute(
+            "SELECT id FROM memories WHERE id = ?", (original_id,)
+        ).fetchone()
+
+        if existing:
+            # 恢复原记录
+            conn.execute(
+                "UPDATE memories SET category = ?, updated_at = ?"
+                " WHERE id = ?",
+                (row["category"], now, original_id)
+            )
+            # 重新加入 FTS
+            if not self.encrypted:
+                conn.execute(
+                    "INSERT INTO memory_fts(rowid, content, category, tags)"
+                    " VALUES((SELECT rowid FROM memories WHERE id = ?), ?, ?, ?)",
+                    (original_id, row["content"], row["category"], row["tags"])
+                )
+        else:
+            # 原记录已硬删除，新建
+            import uuid as _uuid
+            new_id = str(_uuid.uuid4())
+            conn.execute(
+                "INSERT INTO memories (id, content, category, tags, privacy,"
+                " importance, memory_type, layer, encrypted, access_count,"
+                " strength, forgetting_score, source_session, source_agent,"
+                " metadata, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1.0, 0.0, ?, ?, ?, ?, ?)",
+                (new_id, row["content"], row["category"], row["tags"],
+                 row["privacy"], row["importance"], row["memory_type"],
+                 row["layer"], row["source_session"], row["source_agent"],
+                 row["metadata"], row["original_created_at"], now)
+            )
+            if not self.encrypted:
+                conn.execute(
+                    "INSERT INTO memory_fts(rowid, content, category, tags)"
+                    " VALUES((SELECT rowid FROM memories WHERE id = ?), ?, ?, ?)",
+                    (new_id, row["content"], row["category"], row["tags"])
+                )
+
+        # 删除归档记录
+        conn.execute("DELETE FROM archived_memories WHERE id = ?", (archive_id,))
+        conn.commit()
+
+        return {"restored": True, "memory_id": original_id}
+
+    def purge_archived(self, older_than_days: int = 90,
+                       actor: str = "system") -> int:
+        """永久删除过期的归档记忆（v5.4.6 新增）
+
+        Args:
+            older_than_days: 归档超过 N 天的记忆将被永久删除
+            actor: 操作者
+
+        Returns:
+            删除数量
+        """
+        conn = self._get_conn()
+        now = time.time()
+        cutoff = now - (older_than_days * 86400)
+        cursor = conn.execute(
+            "DELETE FROM archived_memories WHERE archived_at < ?",
+            (cutoff,)
+        )
+        count = cursor.rowcount
+        conn.commit()
+        return count
+
     def vector_search(self, query: str, top_k: int = 20,
                       categories=None,
                       layers=None
@@ -6393,27 +6634,42 @@ class StorageEngine:
 
         return results
 
-    def rebuild_embeddings(self, batch_size: int = 100) -> Dict[str, Any]:
-        """重建所有记忆的嵌入向量（v5.4.5 新增）
+    def rebuild_embeddings(self, batch_size: int = 100,
+                           incremental: bool = True) -> Dict[str, Any]:
+        """重建/增量构建记忆的嵌入向量（v5.4.5 新增，v5.4.6 增量模式）
 
-        用于首次启用向量检索或模型升级后批量生成嵌入。
+        v5.4.6 改进：默认 incremental=True，只处理缺失嵌入的记忆，
+        5000+ 记忆时体感差异明显。设 incremental=False 则全量重建。
 
         Args:
             batch_size: 批量编码大小
+            incremental: True=只处理缺失项（默认），False=全量重建
 
         Returns:
-            {success, total, embedded, skipped, errors}
+            {success, total, embedded, skipped, errors, incremental}
         """
         engine = self.embedding_engine
         if engine is None or not engine.is_available:
-            return {"success": False, "error": "EmbeddingEngine 不可用（未安装 sentence-transformers）"}
+            return {"success": False, "error": "EmbeddingEngine 不可用（未安装 sentence-transformers 或未配置后端）"}
 
         conn = self._get_conn()
-        # 获取所有非回收站、非加密的记忆
-        rows = conn.execute(
-            "SELECT id, content FROM memories"
-            " WHERE category != 'trash' AND encrypted = 0"
-        ).fetchall()
+
+        if incremental:
+            # v5.4.6 增量模式：只处理缺失嵌入的记忆
+            rows = conn.execute(
+                "SELECT m.id, m.content FROM memories m"
+                " LEFT JOIN memory_embeddings me ON m.id = me.memory_id"
+                " WHERE m.category != 'trash' AND m.encrypted = 0"
+                " AND me.memory_id IS NULL"
+            ).fetchall()
+            mode_label = "incremental"
+        else:
+            # 全量重建模式
+            rows = conn.execute(
+                "SELECT id, content FROM memories"
+                " WHERE category != 'trash' AND encrypted = 0"
+            ).fetchall()
+            mode_label = "full"
 
         total = len(rows)
         embedded = 0
@@ -6455,6 +6711,7 @@ class StorageEngine:
             "embedded": embedded,
             "skipped": skipped,
             "errors": errors,
+            "mode": mode_label,
         }
 
 
@@ -6838,46 +7095,42 @@ class StorageEngine:
                     result["backup_created"] = pre_backup["path"]
                     pre_backup_path = pre_backup["path"]
 
-            if self._conn:
-                self._conn.close()
-                self._conn = None
+            self._close_conns()
 
             shutil.copy2(str(backup_file), str(self.db_path))
 
             self._init_db()
 
             # PRAGMA integrity_check 校验（v5.2.7 新增：确保恢复的数据库结构完整）
-            if self._conn:
-                try:
-                    cur = self._conn.execute("PRAGMA integrity_check")
-                    integrity_row = cur.fetchone()
-                    cur.close()
-                except sqlite3.DatabaseError as ie:
-                    result["error"] = f"数据库完整性校验异常: {ie}"
-                    # 校验异常时尝试回滚到恢复前的备份
-                    if pre_backup_path:
-                        try:
-                            self._conn.close()
-                            self._conn = None
-                            shutil.copy2(pre_backup_path, str(self.db_path))
-                            self._init_db()
-                        except (OSError, IOError):
-                            pass
-                    return result
+            conn_now = self._get_conn()
+            try:
+                cur = conn_now.execute("PRAGMA integrity_check")
+                integrity_row = cur.fetchone()
+                cur.close()
+            except sqlite3.DatabaseError as ie:
+                result["error"] = f"数据库完整性校验异常: {ie}"
+                # 校验异常时尝试回滚到恢复前的备份
+                if pre_backup_path:
+                    try:
+                        self._close_conns()
+                        shutil.copy2(pre_backup_path, str(self.db_path))
+                        self._init_db()
+                    except (OSError, IOError):
+                        pass
+                return result
 
-                if integrity_row is None or str(integrity_row[0]).lower() != "ok":
-                    integrity_msg = integrity_row[0] if integrity_row else "无结果"
-                    result["error"] = f"数据库完整性校验失败: {integrity_msg}"
-                    # 完整性校验失败时尝试回滚到恢复前的备份
-                    if pre_backup_path:
-                        try:
-                            self._conn.close()
-                            self._conn = None
-                            shutil.copy2(pre_backup_path, str(self.db_path))
-                            self._init_db()
-                        except (OSError, IOError):
-                            pass
-                    return result
+            if integrity_row is None or str(integrity_row[0]).lower() != "ok":
+                integrity_msg = integrity_row[0] if integrity_row else "无结果"
+                result["error"] = f"数据库完整性校验失败: {integrity_msg}"
+                # 完整性校验失败时尝试回滚到恢复前的备份
+                if pre_backup_path:
+                    try:
+                        self._close_conns()
+                        shutil.copy2(pre_backup_path, str(self.db_path))
+                        self._init_db()
+                    except (OSError, IOError):
+                        pass
+                return result
 
             result["success"] = True
         except (OSError, IOError) as e:
