@@ -325,18 +325,48 @@ def cmd_init(args):
     print(c(f"MindForge v{__version__} 初始化向导", "bold"))
     print("=" * 50)
 
-    password = getpass.getpass("请设置加密密码（用于保护记忆）：")
-    if not password:
-        print(c("❌ 密码不能为空", "red"))
-        return 1
+    # 非加密模式（CI/自动化场景）
+    if getattr(args, 'no_encrypt', False):
+        try:
+            config = MemoryConfig(
+                db_path=args.db_path,
+                key_file=args.key_file,
+                encrypted=False,
+            )
+            cm = MindForge(config=config)
+            cm.init_with_password("")
 
-    password2 = getpass.getpass("请再次输入密码确认：")
-    if password != password2:
-        print(c("❌ 两次密码不一致", "red"))
-        return 1
+            print(c("\n✅ 初始化成功（无加密）！", "green"))
+            print(f"   数据库路径: {args.db_path}")
+            print(c("\n   ⚠️  警告：未启用加密，记忆数据明文存储", "yellow"))
+            return 0
+        except (ValueError, TypeError, OSError) as e:
+            print(c(f"❌ 初始化失败：{e}", "red"))
+            return 1
 
-    if len(password) < 8:
-        print(c("⚠️  警告：密码建议至少 8 位", "yellow"))
+    # 非交互式密码（--password 参数）
+    if getattr(args, 'password', None):
+        password = args.password
+        if len(password) < 8:
+            print(c("⚠️  警告：密码建议至少 8 位", "yellow"))
+    else:
+        # 交互式密码输入
+        try:
+            password = getpass.getpass("请设置加密密码（用于保护记忆）：")
+            if not password:
+                print(c("❌ 密码不能为空", "red"))
+                return 1
+
+            password2 = getpass.getpass("请再次输入密码确认：")
+            if password != password2:
+                print(c("❌ 两次密码不一致", "red"))
+                return 1
+        except (EOFError, OSError):
+            print(c("❌ 无法读取密码：非交互式环境请使用 --password 或 --no-encrypt", "red"))
+            return 1
+
+        if len(password) < 8:
+            print(c("⚠️  警告：密码建议至少 8 位", "yellow"))
 
     print("\n正在生成加密密钥（PBKDF2-SHA256，100000 次迭代）...")
 
@@ -2112,6 +2142,9 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_init = sub.add_parser("init", help="初始化 MindForge")
+    p_init.add_argument("--no-encrypt", action="store_true", help="不启用加密（CI/自动化场景）")
+    p_init.add_argument("--password", default=None, help="直接指定密码（非交互式，CI/脚本场景）")
+
 
     p_add = sub.add_parser("add", help="添加记忆")
     p_add.add_argument("content", help="记忆内容")

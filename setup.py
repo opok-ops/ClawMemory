@@ -1,4 +1,4 @@
-﻿from setuptools import setup, find_packages
+from setuptools import setup, find_packages
 from pathlib import Path
 import re
 
@@ -16,7 +16,7 @@ setup(
     description="AI Agent 终身记忆系统 - 四层记忆架构 · 知识图谱 · 多模态支持",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/opok-ops/ClawMemory",
+    url="https://github.com/opok-ops/MindForge",
     author="MindForge Project",
     license="MIT",
     classifiers=[
@@ -50,8 +50,8 @@ setup(
         ],
     },
     project_urls={
-        "Bug Reports": "https://github.com/opok-ops/ClawMemory/issues",
-        "Source": "https://github.com/opok-ops/ClawMemory",
-        "Homepage": "https://opok-ops.github.io/ClawMemory/",
+        "Bug Reports": "https://github.com/opok-ops/MindForge/issues",
+        "Source": "https://github.com/opok-ops/MindForge",
+        "Homepage": "https://opok-ops.github.io/MindForge/",
     },
 )

@@ -1,4 +1,4 @@
-﻿"""
+"""
 MindForge v5.4.5 查询引擎
 语义检索 + 知识图谱查询 + 上下文优化
 """
@@ -74,7 +74,7 @@ class QueryEngine:
         # 路 1：TF-IDF
         tfidf_results = self.index.search(query, top_k=max_results * 3)
         for doc_id, s in tfidf_results:
-            if s > score_map.get(doc_id, 0.0):
+            if s >= score_map.get(doc_id, 0.0):
                 score_map[doc_id] = s
 
         # 路 2：Fuzzy（TF-IDF 召回不足时补充）
@@ -85,24 +85,37 @@ class QueryEngine:
             for item in supplements:
                 entry = item["entry"]
                 s = min(0.95, float(item["score"]))
-                if s > score_map.get(entry.id, 0.0):
+                if s >= score_map.get(entry.id, 0.0):
                     score_map[entry.id] = s
 
-        # 路 3：向量召回（v5.4.5 新增）
-        strategy_used = "tfidf+fuzzy"
+        # 路 3：FTS5 全文检索
+        try:
+            conn = self.storage._get_conn()
+            fts_results = self.index.fts_search(conn, query, top_k=max_results * 3)
+            for doc_id, s in fts_results:
+                if s >= score_map.get(doc_id, 0.0):
+                    score_map[doc_id] = s
+            if fts_results:
+                strategy_used = "tfidf+fuzzy+fts5"
+            else:
+                strategy_used = "tfidf+fuzzy"
+        except Exception:
+            strategy_used = "tfidf+fuzzy"
+
+        # 路 4：向量召回（v5.4.5 新增）
         if use_embedding:
             try:
                 vector_results = self.storage.vector_search(
                     query, top_k=max_results * 3,
                     categories=categories, layers=layers)
                 if vector_results:
-                    strategy_used = "vector+tfidf+fuzzy"
+                    strategy_used = "vector+tfidf+fuzzy+fts5"
                     for item in vector_results:
                         entry = item["entry"]
                         s = float(item["score"])
                         # 向量分数加权（向量召回的语义匹配更可靠）
                         s = min(0.98, s * 0.95 + 0.05)
-                        if s > score_map.get(entry.id, 0.0):
+                        if s >= score_map.get(entry.id, 0.0):
                             score_map[entry.id] = s
             except Exception:
                 pass  # 向量搜索失败时静默降级

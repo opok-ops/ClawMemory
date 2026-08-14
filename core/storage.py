@@ -427,7 +427,8 @@ class StorageEngine:
 
             CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
                 content, category, tags,
-                content=''
+                content='',
+                tokenize='trigram'
             );
 
             CREATE TABLE IF NOT EXISTS audit_log (
@@ -1177,7 +1178,8 @@ class StorageEngine:
         conn.execute("""
             CREATE VIRTUAL TABLE memory_fts USING fts5(
                 content, category, tags,
-                content=''
+                content='',
+                tokenize='trigram'
             )
         """)
 
@@ -5238,9 +5240,9 @@ class StorageEngine:
         try:
             rows = conn.execute(
                 "SELECT id, content, category, layer, importance, starred, "
-                "bm25(memories_fts) as relevance "
-                "FROM memories_fts "
-                "WHERE memories_fts MATCH ? AND id != ? "
+                "bm25(memory_fts) as relevance "
+                "FROM memory_fts "
+                "WHERE memory_fts MATCH ? AND id != ? "
                 "ORDER BY relevance "
                 "LIMIT ?",
                 (entry.content[:200], memory_id, limit * 2)

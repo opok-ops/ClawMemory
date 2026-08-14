@@ -31,8 +31,17 @@ class TFIDFVectorizer:
 
     def _tokenize(self, text: str) -> List[str]:
         text = text.lower()
-        tokens = re.findall(r'[\w\u4e00-\u9fff]+', text)
-        return [t for t in tokens if len(t) > 1]
+        tokens = []
+        for segment in re.findall(r'[a-z0-9]+|[\u4e00-\u9fff]+', text):
+            if re.match(r'[\u4e00-\u9fff]', segment):
+                if len(segment) <= 2:
+                    tokens.append(segment)
+                else:
+                    for i in range(len(segment) - 1):
+                        tokens.append(segment[i:i+2])
+            elif len(segment) > 1:
+                tokens.append(segment)
+        return tokens
 
     def fit(self, documents: List[str]):
         self.doc_count = len(documents)

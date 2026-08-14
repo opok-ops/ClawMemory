@@ -24,9 +24,9 @@ classifiers = [
 dependencies = ["cryptography>=41.0"]
 
 [project.urls]
-Homepage = "https://opok-ops.github.io/ClawMemory/"
-"Bug Reports" = "https://github.com/opok-ops/ClawMemory/issues"
-Source = "https://github.com/opok-ops/ClawMemory"
+Homepage = "https://opok-ops.github.io/MindForge/"
+"Bug Reports" = "https://github.com/opok-ops/MindForge/issues"
+Source = "https://github.com/opok-ops/MindForge"
 
 [project.scripts]
 MindForge = "cli.main:main"
