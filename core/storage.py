@@ -6725,9 +6725,10 @@ class StorageEngine:
                      layer: Optional[MemoryLayer] = None,
                      limit: int = 20,
                      threshold: float = 0.3) -> List[Dict[str, Any]]:
-        """模糊搜索记忆（v5.2.0 新增）
+        """模糊搜索记忆（v5.2.0 新增，v5.4.7 加入 SequenceMatcher 近似匹配）
 
-        结合全文搜索和相似度计算，支持拼写纠错和近似匹配。
+        结合全文搜索、SequenceMatcher 近似匹配和词重叠计算，
+        支持拼写纠错和近似匹配，无需额外依赖（使用标准库 difflib）。
 
         Args:
             query: 搜索关键词
@@ -6739,6 +6740,8 @@ class StorageEngine:
         Returns:
             带分数的搜索结果列表 [{entry, score, highlights}]
         """
+        from difflib import SequenceMatcher
+
         conn = self._get_conn()
         query_lower = query.lower()
 
@@ -6764,6 +6767,7 @@ class StorageEngine:
             score = 0.0
             highlights = []
 
+            # 1. 精确子串匹配（最高权重）
             if query_lower in content_lower:
                 score += 0.8
                 pos = content_lower.find(query_lower)
@@ -6782,6 +6786,30 @@ class StorageEngine:
                     score += 0.4
                     break
 
+            # 2. SequenceMatcher 近似匹配（支持拼写纠错 / 近似词）
+            if score < 0.8:
+                seq_ratio = SequenceMatcher(None, query_lower, content_lower).ratio()
+                if seq_ratio > 0.4:
+                    score += seq_ratio * 0.5
+                    if not highlights:
+                        pos = content_lower.find(query_lower[0])
+                        if pos >= 0:
+                            highlights.append({
+                                "field": "content",
+                                "start": max(0, pos - 20),
+                                "end": min(len(entry.content), pos + len(query) + 20),
+                                "text": entry.content[max(0, pos - 20):pos + len(query) + 20],
+                                "match_type": "fuzzy"
+                            })
+
+                # 标签近似匹配
+                for tag in tags_lower:
+                    tag_ratio = SequenceMatcher(None, query_lower, tag).ratio()
+                    if tag_ratio > 0.5:
+                        score += tag_ratio * 0.3
+                        break
+
+            # 3. 词重叠兜底
             if score == 0:
                 words = set(query_lower.split())
                 content_words = set(content_lower.split())

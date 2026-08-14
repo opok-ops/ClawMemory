@@ -215,7 +215,31 @@ class MindForge:
             source_agent: str = "",
             starred: bool = False,
             metadata: Optional[Dict[str, Any]] = None) -> MemoryEntry:
-        """添加记忆"""
+        """添加一条记忆到存储并建立索引。
+
+        Args:
+            content: 记忆内容文本。
+            category: 分类标签，默认 "general"。
+            tags: 自定义标签列表。
+            privacy: 隐私级别，默认使用配置中的 default_privacy。
+            importance: 重要程度，默认使用配置中的 default_importance。
+            memory_type: 记忆类型，默认 MemoryType.TEXT。
+            layer: 记忆层级，默认使用配置中的 default_layer。
+            source_session: 来源会话 ID（可选）。
+            source_agent: 来源 Agent 标识（可选）。
+            starred: 是否星标收藏。
+            metadata: 附加元数据字典。
+
+        Returns:
+            MemoryEntry: 新创建的记忆条目。包含自动生成的 id、created_at、
+            updated_at 等字段，调用方可直接通过 entry.id 获取新记忆的唯一标识。
+
+        Example:
+            entry = mf.add("今天开会讨论了 Q3 计划", category="work",
+                           tags=["meeting", "planning"])
+            print(entry.id)          # 自动生成的 UUID
+            print(entry.created_at)  # 创建时间戳
+        """
         privacy = privacy or self.config.default_privacy
         importance = importance or self.config.default_importance
         layer = layer or self.config.default_layer

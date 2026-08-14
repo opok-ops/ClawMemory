@@ -87,40 +87,57 @@ class TFIDFVectorizer:
 
 
 class VectorIndex:
-    """向量索引（简易版）"""
+    """向量索引（简易版，v5.4.7 加入预计算范数缓存）"""
 
     def __init__(self, dim: int = 384):
         self.dim = dim
         self.vectors: Dict[str, List[float]] = {}
         self.metadata: Dict[str, Dict] = {}
+        self._norms: Dict[str, float] = {}  # 预计算 L2 范数缓存
 
     def add(self, doc_id: str, vector: List[float], metadata: Optional[Dict] = None):
         self.vectors[doc_id] = vector
         if metadata:
             self.metadata[doc_id] = metadata
+        self._norms[doc_id] = math.sqrt(sum(v * v for v in vector))
 
     def remove(self, doc_id: str):
         self.vectors.pop(doc_id, None)
         self.metadata.pop(doc_id, None)
+        self._norms.pop(doc_id, None)
 
     def search(self, query_vector: List[float], top_k: int = 10) -> List[Tuple[str, float]]:
         if not self.vectors:
             return []
 
+        # 预计算查询向量范数（只算一次）
+        query_norm = math.sqrt(sum(v * v for v in query_vector))
+        if query_norm == 0:
+            return [(doc_id, 0.0) for doc_id in list(self.vectors.keys())[:top_k]]
+
         scores = []
         for doc_id, vec in self.vectors.items():
-            score = self._cosine(query_vector, vec)
+            score = self._cosine_cached(query_vector, vec, query_norm, self._norms[doc_id])
             scores.append((doc_id, score))
 
         scores.sort(key=lambda x: x[1], reverse=True)
         return scores[:top_k]
 
     def _cosine(self, v1: List[float], v2: List[float]) -> float:
-        dot = sum(a * b for a, b in zip(v1, v2))
+        """保留原始接口（向后兼容），内部走缓存版本"""
         n1 = math.sqrt(sum(a * a for a in v1))
         n2 = math.sqrt(sum(b * b for b in v2))
         if n1 == 0 or n2 == 0:
             return 0
+        dot = sum(a * b for a, b in zip(v1, v2))
+        return dot / (n1 * n2)
+
+    def _cosine_cached(self, v1: List[float], v2: List[float],
+                       n1: float, n2: float) -> float:
+        """使用预计算范数的余弦相似度（search 内部专用）"""
+        if n1 == 0 or n2 == 0:
+            return 0
+        dot = sum(a * b for a, b in zip(v1, v2))
         return dot / (n1 * n2)
 
 
