@@ -6,7 +6,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.4.6-green.svg)](https://github.com/opok-ops/MindForge)
+[![Version](https://img.shields.io/badge/version-5.4.7-green.svg)](https://github.com/opok-ops/MindForge)
 [![CI](https://github.com/opok-ops/MindForge/actions/workflows/ci.yml/badge.svg)](https://github.com/opok-ops/MindForge/actions/workflows/ci.yml)
 
 ---
@@ -56,7 +56,7 @@ for chunk in results.chunks:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      MindForge v5.4.6                          │
+│                      MindForge v5.4.7                          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  ┌─────────────────────────────────────────────────────────┐ │
@@ -337,6 +337,18 @@ context = adapter.get_context("database optimization")
 ---
 
 ## Changelog（版本记录）
+
+### v5.4.7 (2026-08-15)
+
+**关键 Bug 修复 + DSH 插件集成基础**
+
+1. **FTS5 BM25 分数转换修复** — `indexer.py` 的 `fts_search()` 使用 sigmoid 函数 `1.0 / (1.0 + math.exp(row[1]))` 替代线性公式，正确处理 SQLite FTS5 返回的负 BM25 值，避免除零崩溃和负分丢弃。
+2. **REST API 认证机制** — `api/server.py` 新增 Bearer Token 认证，通过 `MINDFORGE_API_KEY` 环境变量配置。所有 `/api/*` 端点需认证（`/api/health` 豁免）。未设置 API Key 时为本地开发模式。
+3. **`/api/tags` OOM 修复** — 用 `SELECT tags FROM memories` SQL 查询替代 `list(limit=100000)` 全量加载，只读取 tags 列。
+4. **搜索 category/layers 预过滤** — `query.py` 在 score_map 排序前按 categories/layers 筛选，避免非匹配记忆占据排序位导致返回结果少于 max_results。
+5. **Ollama 批量编码并行化** — `embedding.py` 的 `OllamaBackend.encode_batch()` 使用 `ThreadPoolExecutor(max_workers=8)` 并行调用，单条时跳过线程池。
+6. **CLI 全局 `--json` 标志** — 为 [dsh-mindforge](https://github.com/opok-ops/dsh-mindforge) 插件集成添加全局 JSON 输出，支持 add/search/stats/delete/health/graph/memory-context/memory-recall。
+7. **cmd_health 资源泄漏修复** — health 命令正常路径补全 `cm.close()` 调用。
 
 ### v5.4.6 (2026-08-14)
 
