@@ -29,9 +29,12 @@ import json
 import logging
 import sys
 import os
+import time
+import threading
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
+from collections import defaultdict
 
 # 确保项目根目录在 path 中
 _PROJECT_ROOT = Path(__file__).parent.parent
@@ -39,6 +42,50 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 logger = logging.getLogger(__name__)
+
+
+# v5.4.7 修复 H-7：简单速率限制器
+class _RateLimiter:
+    """基于 IP 的请求速率限制"""
+    def __init__(self, max_requests=100, window_seconds=60):
+        self.max_requests = max_requests
+        self.window = window_seconds
+        self._requests = defaultdict(list)
+        self._lock = threading.Lock()
+
+    def check(self, client_ip: str) -> bool:
+        """返回 True 表示允许，False 表示限流"""
+        now = time.time()
+        with self._lock:
+            # 清理过期记录
+            self._requests[client_ip] = [
+                t for t in self._requests[client_ip] if now - t < self.window
+            ]
+            if len(self._requests[client_ip]) >= self.max_requests:
+                return False
+            self._requests[client_ip].append(now)
+            return True
+
+
+_rate_limiter = _RateLimiter(max_requests=100, window_seconds=60)
+
+
+def _safe_int(value, default=10, min_val=1, max_val=10000):
+    """v5.4.7 修复 H-1：安全解析整数参数"""
+    try:
+        v = int(value)
+        return max(min_val, min(max_val, v))
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_float(value, default=0.3, min_val=0.0, max_val=1.0):
+    """v5.4.7 修复 H-1：安全解析浮点参数"""
+    try:
+        v = float(value)
+        return max(min_val, min(max_val, v))
+    except (ValueError, TypeError):
+        return default
 
 
 class MindForgeAPIHandler(BaseHTTPRequestHandler):
@@ -89,6 +136,12 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
         path = parsed.path.rstrip("/") or "/"
         qs = parse_qs(parsed.query)
 
+        # v5.4.7 修复 H-7：速率限制
+        client_ip = self.client_address[0]
+        if not _rate_limiter.check(client_ip):
+            self._send_json({"error": "Rate limit exceeded. Try again later."}, 429)
+            return
+
         if path != "/api/health" and not self._check_auth():
             return
 
@@ -121,8 +174,9 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                 if not q:
                     self._send_json({"error": "Missing query parameter 'q'"}, 400)
                     return
-                limit = int(qs.get("limit", ["10"])[0])
-                min_relevance = float(qs.get("min_relevance", ["0.3"])[0])
+                # v5.4.7 修复 H-1：安全解析参数
+                limit = _safe_int(qs.get("limit", ["10"])[0], default=10, min_val=1, max_val=1000)
+                min_relevance = _safe_float(qs.get("min_relevance", ["0.3"])[0], default=0.3, min_val=0.0, max_val=1.0)
                 categories = qs.get("categories", None)
                 result = self.mindforge.search(
                     query=q,
@@ -143,8 +197,9 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                 self._send_json({"query": q, "results": chunks, "total": len(chunks)})
 
             elif path == "/api/memories":
-                limit = int(qs.get("limit", ["50"])[0])
-                offset = int(qs.get("offset", ["0"])[0])
+                # v5.4.7 修复 H-1：安全解析参数
+                limit = _safe_int(qs.get("limit", ["50"])[0], default=50, min_val=1, max_val=10000)
+                offset = _safe_int(qs.get("offset", ["0"])[0], default=0, min_val=0, max_val=1000000)
                 category = qs.get("category", [None])[0]
                 entries = self.mindforge.list(
                     category=category,

@@ -415,22 +415,29 @@ class CrossEncoderReranker:
 
     def rerank(self,
                query: str,
-               candidates: Sequence[Dict[str, Any]],
+               candidates: Sequence,  # v5.4.7 修复 H-5：接受 dict 或 dataclass
                query_category: Optional[str] = None,
                top_k: int = 20) -> List[RerankResult]:
         """candidates 每项需含: memory_id, content, original_score；
-        可含 importance/category/layer 元数据。"""
+        可含 importance/category/layer 元数据。
+        v5.4.7 修复 H-5：支持 dict 和 dataclass (MemoryChunk) 两种输入。"""
         q_norm = self._norm(query)
         q_tokens = self._tokens(query)
 
+        def _get_field(c, field, default=""):
+            """v5.4.7 修复 H-5：兼容 dict 和 dataclass 访问"""
+            if isinstance(c, dict):
+                return c.get(field, default)
+            return getattr(c, field, default)
+
         scored: List[RerankResult] = []
         for rank_before, c in enumerate(candidates, 1):
-            content = str(c.get("content", ""))
+            content = str(_get_field(c, "content", ""))
             d_tokens = self._tokens(content)
             meta = {
-                "importance": c.get("importance"),
-                "category": c.get("category"),
-                "layer": c.get("layer"),
+                "importance": _get_field(c, "importance"),
+                "category": _get_field(c, "category"),
+                "layer": _get_field(c, "layer"),
             }
             q_meta = {"category": query_category or ""}
 
@@ -440,7 +447,7 @@ class CrossEncoderReranker:
             f_prox = self._score_proximity(q_tokens, content)
             f_imp, f_cat, f_layer = self._score_metadata(meta, q_meta)
 
-            original_score = float(c.get("original_score", c.get("score", 0.0)))
+            original_score = float(_get_field(c, "original_score", _get_field(c, "score", 0.0)))
             # 归一化 original_score 到 0-1（若原分 >1 先压缩）
             orig_norm = 1.0 - math.exp(-max(0.0, original_score))
             rerank_raw = (

@@ -21,7 +21,7 @@ import struct
 import logging
 import os
 import json
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 from abc import ABC, abstractmethod
 
 logger = logging.getLogger(__name__)
@@ -522,12 +522,15 @@ class EmbeddingEngine:
         engine = EmbeddingEngine(backend="ollama", model_name="nomic-embed-text")
     """
 
-    _instance = None  # 单例（避免重复加载模型）
+    _instances: Dict[str, "EmbeddingEngine"] = {}  # v5.4.7 修复 L-2：按后端名称缓存实例
 
     def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
+        # v5.4.7 修复 L-2：单例按 backend 键值区分，允许不同后端共存
+        backend = kwargs.get("backend", "") or os.environ.get(
+            "MINDFORGE_EMBEDDING_BACKEND", "sentence_transformers")
+        if backend not in cls._instances:
+            cls._instances[backend] = super().__new__(cls)
+        return cls._instances[backend]
 
     def __init__(self, model_name: str = "", backend: str = ""):
         if hasattr(self, "_initialized"):

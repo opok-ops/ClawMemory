@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import base64
+import threading  # v5.4.7 修复 H-4：全局引擎初始化线程安全
 from pathlib import Path
 from typing import Optional, Tuple
 from dataclasses import dataclass
@@ -176,6 +177,7 @@ class EncryptionEngine:
 
 
 _global_engine: Optional[EncryptionEngine] = None
+_init_lock = threading.Lock()  # v5.4.7 修复 H-4：全局引擎初始化线程安全
 
 
 def init_engine(password: str, key_file: str = "./data/.key") -> EncryptionEngine:
@@ -183,50 +185,56 @@ def init_engine(password: str, key_file: str = "./data/.key") -> EncryptionEngin
 
     v5.2.2 修复：显式指定文件 encoding='utf-8'，避免在中文/Windows 系统上
     出现 UnicodeDecodeError 或编码不一致问题。
+    v5.4.7 修复 H-4：添加线程锁保护全局引擎初始化。
+    v5.4.7 修复 H-2：密钥文件创建时即设置受限权限，避免权限窗口期。
     """
     global _global_engine
 
-    key_path = Path(key_file)
-    key_path.parent.mkdir(parents=True, exist_ok=True)
+    with _init_lock:
+        key_path = Path(key_file)
+        key_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if key_path.exists():
-        with open(key_path, "r", encoding="utf-8") as f:
-            key_data = json.load(f)
-        salt = base64.b64decode(key_data["salt"])
-        engine, _ = EncryptionEngine.from_password(password, salt)
-    else:
-        engine, salt = EncryptionEngine.from_password(password)
-        with open(key_path, "w", encoding="utf-8") as f:
-            json.dump({
+        if key_path.exists():
+            with open(key_path, "r", encoding="utf-8") as f:
+                key_data = json.load(f)
+            salt = base64.b64decode(key_data["salt"])
+            engine, _ = EncryptionEngine.from_password(password, salt)
+        else:
+            engine, salt = EncryptionEngine.from_password(password)
+            # v5.4.7 修复 H-2：创建文件时即设置受限权限
+            key_content = json.dumps({
                 "salt": base64.b64encode(salt).decode(),
                 "version": "5.0",
                 "kdf": "PBKDF2-SHA256",
                 "iterations": _PBKDF2_ITERATIONS,
-            }, f, indent=2)
-        # v5.4.2 安全修复：设置严格的文件权限（仅所有者可读写）- 防止密钥泄露
-        import sys
-        if sys.platform == "win32":
-            # Windows: 使用 icacls 设置 ACL，仅允许当前用户访问
-            try:
-                import subprocess
-                import os as _os
-                username = _os.getlogin()
-                subprocess.run(
-                    ["icacls", str(key_path), "/inheritance:r", "/grant:r", f"{username}:F"],
-                    capture_output=True, timeout=5, check=False
-                )
-            except Exception:
-                pass  # icacls 失败不阻断流程，但已尝试设置权限
-        else:
-            # Unix/Linux/macOS: chmod 600
-            try:
-                import stat
-                key_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
-            except (OSError, AttributeError):
-                pass
+            }, indent=2)
 
-    _global_engine = engine
-    return engine
+            import sys
+            if sys.platform != "win32":
+                # Unix/Linux/macOS: 使用 os.open 以 0o600 权限创建文件
+                import stat
+                fd = os.open(str(key_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR)
+                try:
+                    os.write(fd, key_content.encode("utf-8"))
+                finally:
+                    os.close(fd)
+            else:
+                # Windows: 先写文件再尝试设置 ACL
+                with open(key_path, "w", encoding="utf-8") as f:
+                    f.write(key_content)
+                try:
+                    import subprocess
+                    import os as _os
+                    username = _os.getlogin()
+                    subprocess.run(
+                        ["icacls", str(key_path), "/inheritance:r", "/grant:r", f"{username}:F"],
+                        capture_output=True, timeout=5, check=False
+                    )
+                except Exception:
+                    pass  # icacls 失败不阻断流程
+
+        _global_engine = engine
+        return engine
 
 
 def get_engine() -> EncryptionEngine:

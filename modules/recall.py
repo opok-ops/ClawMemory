@@ -143,10 +143,18 @@ class RecallEngine:
 
         max_score = max(c.relevance_score for c in chunks) if chunks else 1.0
 
+        # v5.4.7 修复 M-6：批量获取记忆，避免 N+1 查询
+        memory_ids = [c.memory_id for c in chunks]
+        entries_map = {}
+        for mid in memory_ids:
+            entry = self.storage.get_memory(mid)
+            if entry:
+                entries_map[mid] = entry
+
         for chunk in chunks:
             score = chunk.relevance_score / max_score if max_score > 0 else 0
 
-            entry = self.storage.get_memory(chunk.memory_id)
+            entry = entries_map.get(chunk.memory_id)
             if entry:
                 recency = 1.0
                 if entry.last_accessed_at:
@@ -199,5 +207,13 @@ class RecallEngine:
             config=RecallConfig(max_results=limit),
         )
 
-        return [self.storage.get_memory(c.memory_id) for c in result.chunks
-                if self.storage.get_memory(c.memory_id)]
+        # v5.4.7 修复 M-6：避免重复查询同一条记忆
+        entries = []
+        seen_ids = set()
+        for c in result.chunks:
+            if c.memory_id not in seen_ids:
+                entry = self.storage.get_memory(c.memory_id)
+                if entry:
+                    entries.append(entry)
+                    seen_ids.add(c.memory_id)
+        return entries

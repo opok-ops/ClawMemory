@@ -186,9 +186,9 @@ def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-# v5.3.3 安全加固：HTML/XSS 消毒，防止存储型 XSS 攻击
+# v5.3.3 安全加固 + v5.4.7 M-5 修复：增强 HTML/XSS 消毒
 _XSS_RE = __import__("re").compile(
-    r'<[^>]*>|javascript:|on\w+\s*=|<script|</script|<iframe|</iframe|<object|<embed',
+    r'<[^>]*>|javascript:|vbscript:|data:text/html|on(?:error|load|click|mouseover|focus|blur|submit|change|input|keydown|keyup|keypress|dblclick|mousedown|mouseup|mousemove|mouseout|mouseenter|mouseleave|contextmenu|wheel|drag|drop|copy|cut|paste|abort|canplay|ended|pause|play|playing|progress|ratechange|seeked|seeking|stalled|suspend|timeupdate|volumechange|waiting|animationstart|animationend|animationiteration|transitionend|toggle|resize|scroll|storage|message|online|offline|popstate|hashchange|beforeunload|pagehide|pageshow|unload)\s*=|<script|</script|<iframe|</iframe|<object|<embed|<svg|<math|<form|<input|<button|<textarea|<select|<option|<applet|<meta|<link|<base',
     __import__("re").IGNORECASE
 )
 
@@ -196,6 +196,7 @@ def _sanitize_html(value: str, max_len: int = 10000) -> str:
     """清洗 HTML 内容，防止存储型 XSS
 
     移除 HTML 标签和危险的事件处理器属性。
+    v5.4.7 M-5 修复：扩展事件处理器列表，增加更多危险标签和协议。
     """
     if not isinstance(value, str):
         return ""
@@ -353,10 +354,11 @@ class StorageEngine:
     def _get_conn(self) -> sqlite3.Connection:
         conn = getattr(self._conn_local, "conn", None)
         if conn is None:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = sqlite3.connect(str(self.db_path), timeout=10.0)
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA busy_timeout=5000")  # v5.4.7 修复 L-4：并发写入时等待 5 秒
             self._conn_local.conn = conn
         return conn
 
@@ -769,6 +771,11 @@ class StorageEngine:
                    starred: bool = False,
                    metadata: Optional[Dict[str, Any]] = None) -> MemoryEntry:
         """添加记忆"""
+        # v5.4.7 修复 L-8：拒绝 None 或空内容
+        if content is None:
+            raise ValueError("content cannot be None")
+        if isinstance(content, str) and not content.strip():
+            raise ValueError("content cannot be empty or whitespace-only")
         # v5.3.9 安全加固：内容长度上限防 DoS（超限直接拒绝，不做静默截断）
         # v5.4.1 重构：统一走 _validate_content_len（模块级常量）
         _validate_content_len(content)
@@ -1100,7 +1107,9 @@ class StorageEngine:
         updates.append("updated_at = ?")
         params.append(now)
         params.append(entry_id)
-        conn.execute(f"UPDATE memories SET {', '.join(updates)} WHERE id = ?", params)
+        cursor = conn.execute(f"UPDATE memories SET {', '.join(updates)} WHERE id = ?", params)
+        if cursor.rowcount == 0:
+            return False  # v5.4.7 修复 C-1：更新不存在的 ID 时返回 False
 
         # FTS 刷新步骤 2：用新值重新插入 FTS 索引条目
         if old_fts_row is not None:
@@ -1294,6 +1303,13 @@ class StorageEngine:
         hard_delete = bool(hard_delete)
 
         conn = self._get_conn()
+
+        # v5.4.7 修复 C-1：先检查记忆是否存在
+        exists = conn.execute(
+            "SELECT 1 FROM memories WHERE id = ?", (entry_id,)
+        ).fetchone()
+        if not exists:
+            return False
 
         if hard_delete:
             # 先取 rowid 和 FTS 字段用于清理
@@ -1713,7 +1729,8 @@ class StorageEngine:
             limit=100000,
         )
 
-        out = Path(output_path)
+        # v5.4.7 修复 M-8：使用 _safe_path 校验输出路径
+        out = _safe_path(output_path, allowed_exts={".md"})
         out.parent.mkdir(parents=True, exist_ok=True)
 
         def _fmt_time(ts: float) -> str:
@@ -2070,22 +2087,6 @@ class StorageEngine:
         long_to_perm_days = 7
         stale_days = 30
 
-        # 统计可升级的短期记忆
-        short_upgrade = conn.execute(
-            "SELECT COUNT(*) FROM memories "
-            "WHERE layer = ? AND category != 'trash' "
-            "AND created_at < ? AND access_count > 0",
-            (MemoryLayer.SHORT_TERM.value, now - short_upgrade_days * day_seconds)
-        ).fetchone()[0] if False else 0
-
-        short_to_long_candidates = conn.execute(
-            "SELECT id FROM memories "
-            "WHERE layer = ? AND category != 'trash' "
-            "AND created_at < ? AND access_count > 0 "
-            "LIMIT 100",
-            (MemoryLayer.SHORT_TERM.value, now - short_upgrade_days * day_seconds)
-        ).fetchall() if False else []
-
         # 重新计算
         short_to_long = conn.execute(
             "SELECT COUNT(*) FROM memories "
@@ -2099,7 +2100,7 @@ class StorageEngine:
             "SELECT COUNT(*) FROM memories "
             "WHERE layer = ? AND category != 'trash' "
             "AND (julianday('now') - julianday(created_at, 'unixepoch')) >= 7 "
-            "AND (starred = 1 OR importance >= 4)",
+            "AND (starred = 1 OR importance IN ('HIGH', 'CRITICAL'))",
             (MemoryLayer.LONG_TERM.value,)
         ).fetchone()[0]
 
@@ -2144,7 +2145,7 @@ class StorageEngine:
             "SELECT id FROM memories "
             "WHERE layer = ? AND category != 'trash' "
             "AND (julianday('now') - julianday(created_at, 'unixepoch')) >= 7 "
-            "AND (starred = 1 OR importance >= 4) LIMIT 100",
+            "AND (starred = 1 OR importance IN ('HIGH', 'CRITICAL')) LIMIT 100",
             (MemoryLayer.LONG_TERM.value,)
         ).fetchall()
         for row in rows:

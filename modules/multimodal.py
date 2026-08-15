@@ -117,6 +117,10 @@ class MultimodalMemory:
                             format: str = "",
                             objects: Optional[List[str]] = None) -> MultimodalContent:
         """创建图像记忆"""
+        # v5.4.7 修复 L-9：限制图像大小（默认 50MB）
+        MAX_IMAGE_SIZE = 50 * 1024 * 1024
+        if len(image_data) > MAX_IMAGE_SIZE:
+            raise ValueError(f"Image too large: {len(image_data)} bytes (max {MAX_IMAGE_SIZE})")
         encoded = base64.b64encode(image_data).decode()
         metadata = ImageMetadata(
             width=width,
@@ -146,6 +150,10 @@ class MultimodalMemory:
                             speaker: str = "",
                             language: str = "") -> MultimodalContent:
         """创建音频记忆"""
+        # v5.4.7 修复 L-9：限制音频大小（默认 100MB）
+        MAX_AUDIO_SIZE = 100 * 1024 * 1024
+        if len(audio_data) > MAX_AUDIO_SIZE:
+            raise ValueError(f"Audio too large: {len(audio_data)} bytes (max {MAX_AUDIO_SIZE})")
         encoded = base64.b64encode(audio_data).decode()
         metadata = AudioMetadata(
             duration_seconds=duration,

@@ -7,9 +7,10 @@ import re
 import json
 import uuid
 import time
+import sqlite3  # v5.4.7 修复 C-3：异常处理中引用 sqlite3.OperationalError 需要此导入
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple, Set
-from collections import defaultdict
+from collections import defaultdict, deque  # v5.4.7 修复 L-7：BFS 使用 deque
 
 
 @dataclass
@@ -230,11 +231,11 @@ class KnowledgeGraph:
             return []
 
         visited = {entity.id}
-        queue = [(entity.id, 0, 1.0)]
+        queue = deque([(entity.id, 0, 1.0)])  # v5.4.7 修复 L-7：使用 deque 替代 list.pop(0)
         results = []
 
         while queue:
-            current_id, current_depth, current_weight = queue.pop(0)
+            current_id, current_depth, current_weight = queue.popleft()
             if current_depth > depth:
                 continue
 

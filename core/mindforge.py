@@ -159,6 +159,7 @@ class MindForge:
 
         之前 key_file 存在/不存在两个分支均为 pass，导致加密引擎从未被实际初始化。
         修复后：根据 key_file 是否存在决定新建或加载加密引擎。
+        v5.4.7 修复 M-9：当 encrypted=True 但无密码时记录警告日志。
         """
         from .encryption import init_engine as _init_engine
 
@@ -168,10 +169,18 @@ class MindForge:
         if not key_file.exists():
             # 密钥文件不存在时，生成新密钥需要密码
             # 此场景下应通过 init_with_password() 完成初始化
+            logger.warning(
+                "encrypted=True but no key file found. "
+                "Call init_with_password() to enable encryption."
+            )
             return
 
         # 密钥文件存在时，需要密码加载
         # 实际解密需在 init_with_password() 中完成
+        logger.warning(
+            "encrypted=True but key file exists and no password provided. "
+            "Call init_with_password() to enable encryption."
+        )
         return
 
     def _init_storage(self):

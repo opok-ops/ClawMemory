@@ -1600,6 +1600,11 @@ def cmd_graph(args):
 
     elif args.graph_action == "extract":
         text = args.text
+        # v5.4.7 修复 H-6：验证 --text 参数
+        if not text:
+            print(c("❌ 错误：graph extract 需要 --text 参数", "red"))
+            cm.close()
+            return 1
         entities = kg.extract_entities(text)
         print(f"\n提取到 {len(entities)} 个实体：")
         for name, etype in entities:
@@ -5790,7 +5795,13 @@ def cmd_rename_tag(args):
     if not args.force:
         print(c(f"\n将标签 '{args.old}' 重命名为 '{args.new}'", "yellow"))
         print(c("此操作将更新所有包含该标签的记忆。", "yellow"))
-        confirm = input("\n确认继续？(y/N): ").strip().lower()
+        try:
+            confirm = input("\n确认继续？(y/N): ").strip().lower()
+        except EOFError:
+            # v5.4.7 修复 M-3：非交互式环境下自动取消
+            print(c("\n❌ 非交互式环境，请使用 --force 参数确认操作", "red"))
+            cm.close()
+            return 1
         if confirm != 'y':
             print("已取消")
             cm.close()
@@ -5810,7 +5821,13 @@ def cmd_rename_cat(args):
     if not args.force:
         print(c(f"\n将分类 '{args.old}' 重命名为 '{args.new}'", "yellow"))
         print(c("此操作将移动所有该分类下的记忆。", "yellow"))
-        confirm = input("\n确认继续？(y/N): ").strip().lower()
+        try:
+            confirm = input("\n确认继续？(y/N): ").strip().lower()
+        except EOFError:
+            # v5.4.7 修复 M-3：非交互式环境下自动取消
+            print(c("\n❌ 非交互式环境，请使用 --force 参数确认操作", "red"))
+            cm.close()
+            return 1
         if confirm != 'y':
             print("已取消")
             cm.close()
