@@ -337,12 +337,22 @@ class OllamaBackend(EmbeddingBackend):
     def encode_batch(self, texts: List[str]) -> Optional[List[List[float]]]:
         if not self.is_available or not texts:
             return None
-        results = []
-        for text in texts:
-            vec = self._call_api(text)
-            if vec is None:
-                return None
-            results.append(vec)
+        if len(texts) == 1:
+            vec = self._call_api(texts[0])
+            return [vec] if vec is not None else None
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        results = [None] * len(texts)
+        with ThreadPoolExecutor(max_workers=min(8, len(texts))) as executor:
+            future_to_idx = {
+                executor.submit(self._call_api, text): i
+                for i, text in enumerate(texts)
+            }
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                vec = future.result()
+                if vec is None:
+                    return None
+                results[idx] = vec
         return results
 
 

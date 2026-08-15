@@ -120,6 +120,20 @@ class QueryEngine:
             except Exception:
                 pass  # 向量搜索失败时静默降级
 
+        # 预过滤：按 categories/layers 筛选 score_map，避免非匹配记忆占据排序位
+        if categories or layers:
+            filtered_map = {}
+            for doc_id, score in list(score_map.items()):
+                entry = self.storage.get_memory(doc_id)
+                if not entry:
+                    continue
+                if categories and entry.category not in categories:
+                    continue
+                if layers and entry.layer not in layers:
+                    continue
+                filtered_map[doc_id] = score
+            score_map = filtered_map
+
         # 合并排序
         raw_results = sorted(score_map.items(), key=lambda x: x[1], reverse=True)
 

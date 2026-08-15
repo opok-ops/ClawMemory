@@ -68,6 +68,19 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
         except (json.JSONDecodeError, UnicodeDecodeError):
             return None
 
+    def _check_auth(self):
+        """验证 Bearer Token（通过 MINDFORGE_API_KEY 环境变量配置）"""
+        api_key = os.environ.get("MINDFORGE_API_KEY", "")
+        if not api_key:
+            return True  # 未设置 API Key 时跳过认证（本地开发模式）
+        auth_header = self.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            if token == api_key:
+                return True
+        self._send_json({"error": "Unauthorized — set Authorization: Bearer <MINDFORGE_API_KEY>"}, 401)
+        return False
+
     def do_OPTIONS(self):
         self._send_json({"status": "ok"})
 
@@ -75,6 +88,9 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
         qs = parse_qs(parsed.query)
+
+        if path != "/api/health" and not self._check_auth():
+            return
 
         try:
             if path == "/api/health":
@@ -86,10 +102,17 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                 self._send_json(result)
 
             elif path == "/api/tags":
-                entries = self.mindforge.list(limit=100000)
+                conn = self.mindforge.storage._get_conn()
+                rows = conn.execute(
+                    "SELECT tags FROM memories WHERE tags IS NOT NULL AND tags != '' AND tags != '[]'"
+                ).fetchall()
                 tag_counts = {}
-                for e in entries:
-                    for tag in e.tags:
+                for row in rows:
+                    try:
+                        tags = json.loads(row[0]) if row[0].strip().startswith('[') else [t.strip() for t in row[0].split(',') if t.strip()]
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                    for tag in tags:
                         tag_counts[tag] = tag_counts.get(tag, 0) + 1
                 self._send_json({"tags": sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)})
 
@@ -171,6 +194,9 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
 
+        if not self._check_auth():
+            return
+
         try:
             body = self._read_body()
             if body is None:
@@ -216,6 +242,9 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
 
+        if not self._check_auth():
+            return
+
         try:
             body = self._read_body()
             if body is None:
@@ -244,6 +273,9 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
+
+        if not self._check_auth():
+            return
 
         try:
             if path.startswith("/api/memories/"):
