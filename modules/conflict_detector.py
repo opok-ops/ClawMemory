@@ -30,12 +30,24 @@ ANTONYM_PAIRS: List[Tuple[str, str]] = [
     ("真", "假"), ("是", "否"), ("对", "错"), ("正确", "错误"),
     ("稳定", "不稳定"), ("可用", "不可用"), ("正常", "异常"), ("存在", "不存在"),
     ("完成", "未完成"), ("已", "未"), ("可以", "不能"), ("应该", "不该"),
+    # v5.4.7 修复：添加常见技术偏好反义对
+    ("vim", "vscode"), ("vim", "vs code"), ("emacs", "vim"),
+    ("python", "java"), ("javascript", "typescript"), ("react", "vue"),
+    ("mac", "windows"), ("linux", "windows"), ("ios", "android"),
+    ("git", "svn"), ("docker", "vm"), ("kubernetes", "docker swarm"),
+    ("rest", "graphql"), ("sql", "nosql"), ("mongodb", "postgresql"),
 ]
 
 # 属性抽取正则：<属性名> 是/为/=/: <值>
 _ATTR_RE = re.compile(
     r"([\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9_\+\-\.\*#]{0,19})"
     r"\s*(?:是|为|=|等于|：|:)\s*"
+    r"([\u4e00-\u9fa5A-Za-z0-9_\-\+\.\*#/%@\$]{1,40})"
+)
+
+# v5.4.7 修复：添加偏好抽取正则，检测 "喜欢/偏好 X" 模式
+_PREFERENCE_RE = re.compile(
+    r"(?:喜欢|偏好|爱用|常用|主要用|习惯用)\s*"
     r"([\u4e00-\u9fa5A-Za-z0-9_\-\+\.\*#/%@\$]{1,40})"
 )
 
@@ -103,12 +115,23 @@ class ConflictDetector:
     """纯 CPU 实现的矛盾检测 + 自动衰减。无外部依赖。"""
 
     def __init__(self,
-                 antonym_pairs: Optional[List[Tuple[str, str]]] = None,
+                 storage_or_antonym_pairs=None,
                  antonym_threshold: int = 1,
                  attr_match_min_length: int = 2,
                  auto_decay_old: float = 0.12,
                  auto_decay_resolve_loser: float = 0.20,
                  auto_boost_resolve_winner: float = 0.08):
+        # v5.4.7 修复：兼容 README 示例中的 ConflictDetector(storage) 用法
+        # 如果第一个参数是 StorageEngine 实例，则忽略它（当前版本不需要）
+        # 如果是 list/tuple，则作为反义词对列表
+        if storage_or_antonym_pairs is None:
+            antonym_pairs = None
+        elif isinstance(storage_or_antonym_pairs, (list, tuple)):
+            antonym_pairs = storage_or_antonym_pairs
+        else:
+            # 假设是 storage 或其他对象，忽略
+            antonym_pairs = None
+
         self.antonyms = list(antonym_pairs or ANTONYM_PAIRS)
         self.antonym_threshold = antonym_threshold
         self.attr_min_len = attr_match_min_length
@@ -149,6 +172,15 @@ class ConflictDetector:
                 attrs[name] = value
         return attrs
 
+    def _extract_preferences(self, text: str) -> List[str]:
+        """v5.4.7 修复：抽取偏好项，如 '喜欢 Vim' -> ['vim']"""
+        prefs = []
+        for m in _PREFERENCE_RE.finditer(text):
+            pref = m.group(1).strip().lower()
+            if len(pref) >= 2:
+                prefs.append(pref)
+        return prefs
+
     def _timeline_status(self, text: str) -> Optional[str]:
         for pattern, status in _STATUS_PATTERNS:
             if pattern.search(text):
@@ -168,6 +200,36 @@ class ConflictDetector:
             conflict_type="antonym", severity=severity,
             evidence={"antonym_pairs": pairs, "hit_count": cnt},
             suggestion="反义词同现，建议人工核验以较新记忆或上下文一致者为准",
+        )
+
+    def detect_preference(self, text_a: str, text_b: str,
+                          id_a: str, id_b: str) -> Optional[ConflictPair]:
+        """v5.4.7 修复：检测偏好冲突，如 '喜欢 Vim' vs '喜欢 VS Code'"""
+        prefs_a = self._extract_preferences(text_a)
+        prefs_b = self._extract_preferences(text_b)
+        if not prefs_a or not prefs_b:
+            return None
+        # 检查是否有不同的偏好项
+        set_a, set_b = set(prefs_a), set(prefs_b)
+        if set_a == set_b:
+            return None  # 相同偏好，不冲突
+        # 检查是否有交集（同一类别但不同选择）
+        # 例如：都提到编辑器但选择不同
+        conflicts = []
+        for pa in set_a:
+            for pb in set_b:
+                if pa != pb:
+                    # 检查是否是同类事物（简单启发式：长度相近且都是技术名词）
+                    if abs(len(pa) - len(pb)) <= 5:
+                        conflicts.append((pa, pb))
+        if not conflicts:
+            return None
+        severity = min(0.40 + 0.10 * len(conflicts), 0.90)
+        return ConflictPair(
+            memory_id_a=id_a, memory_id_b=id_b,
+            conflict_type="preference", severity=severity,
+            evidence={"preference_conflicts": conflicts, "count": len(conflicts)},
+            suggestion=f"偏好不一致：{', '.join(f'{a} vs {b}' for a, b in conflicts[:3])}",
         )
 
     def detect_attribute(self, text_a: str, text_b: str,
@@ -222,7 +284,7 @@ class ConflictDetector:
                     return results
                 ta, tb = str(mi.get("content", "")), str(mj.get("content", ""))
                 id_a, id_b = str(mi.get("id", i)), str(mj.get("id", j))
-                for detector in (self.detect_antonym, self.detect_attribute, self.detect_timeline):
+                for detector in (self.detect_antonym, self.detect_attribute, self.detect_timeline, self.detect_preference):
                     pair = detector(ta, tb, id_a, id_b)
                     if pair is not None:
                         results.append(pair)
