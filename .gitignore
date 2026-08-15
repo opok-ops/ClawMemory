@@ -28,3 +28,8 @@ benchmark_*.py
 benchmark_*.json
 benchmark_*.html
 run_all_tests.py
+.test_run/
+
+# Node / DSH plugin
+node_modules/
+plugins/*/node_modules/
