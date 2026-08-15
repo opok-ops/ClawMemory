@@ -1,4 +1,4 @@
-"""
+﻿"""
 MindForge v5.0 索引引擎
 支持 TF-IDF、向量索引、FTS5 全文检索
 """
@@ -260,6 +260,6 @@ class IndexEngine:
                 ORDER BY score
                 LIMIT ?
             """, (query, top_k)).fetchall()
-            return [(row[0], 1.0 / (1.0 + row[1])) for row in rows]
+            return [(row[0], 1.0 / (1.0 + math.exp(row[1]))) for row in rows]
         except sqlite3.OperationalError:
             return []

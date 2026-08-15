@@ -431,6 +431,12 @@ def cmd_add(args):
         starred=getattr(args, "star", False),
     )
 
+    if getattr(args, 'json_output', False):
+        _json_out({"status": "ok", "id": entry.id, "content": entry.content,
+                   "category": entry.category, "tags": entry.tags,
+                   "layer": entry.layer.value, "importance": args.importance})
+        cm.close()
+        return 0
     print(c("\n✅ 记忆已保存", "green"))
     print(f"   ID: {entry.id}")
     print(f"   分类: {entry.category}")
@@ -458,6 +464,21 @@ def cmd_search(args):
         session_id=args.session,
         use_embedding=use_embedding,
     )
+
+    if getattr(args, 'json_output', False):
+        _json_out({
+            "chunks": [{"memory_id": c.memory_id, "content": c.content,
+                        "category": c.category, "layer": c.layer.value,
+                        "relevance_score": c.relevance_score, "tags": c.tags}
+                       for c in result.chunks],
+            "total_found": result.total_found,
+            "query_time_ms": result.query_time_ms,
+            "strategy_used": result.strategy_used,
+            "token_estimate": result.token_estimate,
+            "layers_used": result.layers_used,
+        })
+        cm.close()
+        return 0
 
     print(f"\n找到 {c(result.total_found, 'cyan')} 条相关记忆"
           f"（耗时 {result.query_time_ms}ms）")
@@ -590,6 +611,11 @@ def cmd_delete(args):
     )
 
     if success:
+        if getattr(args, 'json_output', False):
+            _json_out({"status": "ok", "id": args.memory_id,
+                       "action": "hard_delete" if args.hard else "soft_delete"})
+            cm.close()
+            return 0
         action = "彻底删除" if args.hard else "移到回收站"
         print(c(f"\n🗑️  已{action}", "green"))
     else:
@@ -786,6 +812,10 @@ def cmd_stats(args):
 
     if args.detailed:
         stats = cm.detailed_stats()
+        if getattr(args, 'json_output', False):
+            _json_out(stats)
+            cm.close()
+            return 0
         print_banner()
         print(c("MindForge 详细统计报告", "bold"))
         print("=" * 50)
@@ -1133,6 +1163,10 @@ def cmd_health(args):
     print(f"   孤立 FTS 记录：    {c(str(result['fts_orphans']), 'yellow' if result['fts_orphans'] else 'green')}")
     print(f"   孤立审计日志：    {c(str(result['audit_orphans']), 'yellow' if result['audit_orphans'] else 'green')}")
     print(f"   加密不一致条目：  {c(str(result['encrypted_inconsistent']), 'red' if result['encrypted_inconsistent'] else 'green')}")
+
+    if getattr(args, 'json_output', False):
+        _json_out(result)
+        return 0 if status == "healthy" else (1 if status == "warning" else 2)
 
     print(f"\n💡 建议：")
     for rec in result["recommendations"]:
@@ -1543,6 +1577,10 @@ def cmd_graph(args):
 
     if args.graph_action == "stats":
         stats = kg.get_entity_stats()
+        if getattr(args, 'json_output', False):
+            _json_out(stats)
+            cm.close()
+            return 0
         print(c("知识图谱统计", "bold"))
         print(f"  实体总数: {stats['total_entities']}")
         print(f"  关系总数: {stats['total_relations']}")
@@ -2348,6 +2386,12 @@ complete -c MindForge -f -a '{cmds_str}'
         print(c(f"✅ Fish 补全已安装到 {target}", "green"))
         print(c("   重新打开终端生效", "yellow"))
 
+import json as _json
+
+def _json_out(data, indent=2):
+    """JSON 格式输出（--json 模式）"""
+    print(_json.dumps(data, ensure_ascii=False, indent=indent, default=str))
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -2362,6 +2406,7 @@ def main():
 
     parser.add_argument("--db-path", default="./data/memory.db", help="数据库路径")
     parser.add_argument("--key-file", default="./data/.key", help="密钥文件路径")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON 格式输出（供插件/脚本集成使用）")
 
     sub = parser.add_subparsers(dest="command", required=False)
 
@@ -3663,6 +3708,11 @@ def cmd_memory_context(args):
     print(f"  包含记忆:    {result['included_count']}")
     print(f"  排除记忆:    {result['excluded_count']}")
     print(f"  Token 估计:  {result['token_estimate']}")
+
+    if getattr(args, 'json_output', False):
+        _json_out(result)
+        cm.close()
+        return 0
 
     context = result.get("context", "")
     if not context:
@@ -8757,6 +8807,11 @@ def cmd_memory_recall(args):
         print(c(f"\n❌ {result['error']}", "red"))
         cm.close()
         return 1
+
+    if getattr(args, 'json_output', False):
+        _json_out(result)
+        cm.close()
+        return 0
 
     qk = result.get("query_keywords", [])
     if qk:
