@@ -1,5 +1,5 @@
-﻿"""
-MindForge v5.4.6 查询引擎
+"""
+MindForge v5.4.8 查询引擎
 语义检索 + 知识图谱查询 + 上下文优化
 """
 
@@ -89,6 +89,7 @@ class QueryEngine:
                     score_map[entry.id] = s
 
         # 路 3：FTS5 全文检索
+        fts5_used = False
         try:
             conn = self.storage._get_conn()
             fts_results = self.index.fts_search(conn, query, top_k=max_results * 3)
@@ -96,6 +97,7 @@ class QueryEngine:
                 if s >= score_map.get(doc_id, 0.0):
                     score_map[doc_id] = s
             if fts_results:
+                fts5_used = True
                 strategy_used = "tfidf+fuzzy+fts5"
             else:
                 strategy_used = "tfidf+fuzzy"
@@ -109,7 +111,7 @@ class QueryEngine:
                     query, top_k=max_results * 3,
                     categories=categories, layers=layers)
                 if vector_results:
-                    strategy_used = "vector+tfidf+fuzzy+fts5"
+                    strategy_used = "vector+tfidf+fuzzy" + ("+fts5" if fts5_used else "")
                     for item in vector_results:
                         entry = item["entry"]
                         s = float(item["score"])
@@ -117,8 +119,14 @@ class QueryEngine:
                         s = min(0.98, s * 0.95 + 0.05)
                         if s >= score_map.get(entry.id, 0.0):
                             score_map[entry.id] = s
-            except Exception:
-                pass  # 向量搜索失败时静默降级
+            except Exception as e:
+                # v5.4.7 修复：向量搜索失败时记录警告而非静默降级
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"向量搜索失败（可能未安装 sentence-transformers）: {e}。"
+                    f"降级为 TF-IDF + FTS5 + Fuzzy 三路搜索。"
+                    f"安装命令: pip install sentence-transformers"
+                )
 
         # 预过滤：按 categories/layers 筛选 score_map，避免非匹配记忆占据排序位
         if categories or layers:

@@ -1,5 +1,5 @@
 """
-MindForge v5.4.6 存储引擎
+MindForge v5.4.8 存储引擎
 支持四层记忆架构：感官记忆 → 短期记忆 → 长期记忆 → 永久记忆
 """
 
@@ -186,9 +186,9 @@ def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-# v5.3.3 安全加固：HTML/XSS 消毒，防止存储型 XSS 攻击
+# v5.3.3 安全加固 + v5.4.7 M-5 修复：增强 HTML/XSS 消毒
 _XSS_RE = __import__("re").compile(
-    r'<[^>]*>|javascript:|on\w+\s*=|<script|</script|<iframe|</iframe|<object|<embed',
+    r'<[^>]*>|javascript:|vbscript:|data:text/html|on(?:error|load|click|mouseover|focus|blur|submit|change|input|keydown|keyup|keypress|dblclick|mousedown|mouseup|mousemove|mouseout|mouseenter|mouseleave|contextmenu|wheel|drag|drop|copy|cut|paste|abort|canplay|ended|pause|play|playing|progress|ratechange|seeked|seeking|stalled|suspend|timeupdate|volumechange|waiting|animationstart|animationend|animationiteration|transitionend|toggle|resize|scroll|storage|message|online|offline|popstate|hashchange|beforeunload|pagehide|pageshow|unload)\s*=|<script|</script|<iframe|</iframe|<object|<embed|<svg|<math|<form|<input|<button|<textarea|<select|<option|<applet|<meta|<link|<base',
     __import__("re").IGNORECASE
 )
 
@@ -196,6 +196,7 @@ def _sanitize_html(value: str, max_len: int = 10000) -> str:
     """清洗 HTML 内容，防止存储型 XSS
 
     移除 HTML 标签和危险的事件处理器属性。
+    v5.4.7 M-5 修复：扩展事件处理器列表，增加更多危险标签和协议。
     """
     if not isinstance(value, str):
         return ""
@@ -353,10 +354,11 @@ class StorageEngine:
     def _get_conn(self) -> sqlite3.Connection:
         conn = getattr(self._conn_local, "conn", None)
         if conn is None:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = sqlite3.connect(str(self.db_path), timeout=10.0)
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA busy_timeout=5000")  # v5.4.7 修复 L-4：并发写入时等待 5 秒
             self._conn_local.conn = conn
         return conn
 
@@ -769,6 +771,11 @@ class StorageEngine:
                    starred: bool = False,
                    metadata: Optional[Dict[str, Any]] = None) -> MemoryEntry:
         """添加记忆"""
+        # v5.4.7 修复 L-8：拒绝 None 或空内容
+        if content is None:
+            raise ValueError("content cannot be None")
+        if isinstance(content, str) and not content.strip():
+            raise ValueError("content cannot be empty or whitespace-only")
         # v5.3.9 安全加固：内容长度上限防 DoS（超限直接拒绝，不做静默截断）
         # v5.4.1 重构：统一走 _validate_content_len（模块级常量）
         _validate_content_len(content)
@@ -1100,7 +1107,9 @@ class StorageEngine:
         updates.append("updated_at = ?")
         params.append(now)
         params.append(entry_id)
-        conn.execute(f"UPDATE memories SET {', '.join(updates)} WHERE id = ?", params)
+        cursor = conn.execute(f"UPDATE memories SET {', '.join(updates)} WHERE id = ?", params)
+        if cursor.rowcount == 0:
+            return False  # v5.4.7 修复 C-1：更新不存在的 ID 时返回 False
 
         # FTS 刷新步骤 2：用新值重新插入 FTS 索引条目
         if old_fts_row is not None:
@@ -1294,6 +1303,13 @@ class StorageEngine:
         hard_delete = bool(hard_delete)
 
         conn = self._get_conn()
+
+        # v5.4.7 修复 C-1：先检查记忆是否存在
+        exists = conn.execute(
+            "SELECT 1 FROM memories WHERE id = ?", (entry_id,)
+        ).fetchone()
+        if not exists:
+            return False
 
         if hard_delete:
             # 先取 rowid 和 FTS 字段用于清理
@@ -1713,7 +1729,8 @@ class StorageEngine:
             limit=100000,
         )
 
-        out = Path(output_path)
+        # v5.4.7 修复 M-8：使用 _safe_path 校验输出路径
+        out = _safe_path(output_path, allowed_exts={".md"})
         out.parent.mkdir(parents=True, exist_ok=True)
 
         def _fmt_time(ts: float) -> str:
@@ -2070,22 +2087,6 @@ class StorageEngine:
         long_to_perm_days = 7
         stale_days = 30
 
-        # 统计可升级的短期记忆
-        short_upgrade = conn.execute(
-            "SELECT COUNT(*) FROM memories "
-            "WHERE layer = ? AND category != 'trash' "
-            "AND created_at < ? AND access_count > 0",
-            (MemoryLayer.SHORT_TERM.value, now - short_upgrade_days * day_seconds)
-        ).fetchone()[0] if False else 0
-
-        short_to_long_candidates = conn.execute(
-            "SELECT id FROM memories "
-            "WHERE layer = ? AND category != 'trash' "
-            "AND created_at < ? AND access_count > 0 "
-            "LIMIT 100",
-            (MemoryLayer.SHORT_TERM.value, now - short_upgrade_days * day_seconds)
-        ).fetchall() if False else []
-
         # 重新计算
         short_to_long = conn.execute(
             "SELECT COUNT(*) FROM memories "
@@ -2099,7 +2100,7 @@ class StorageEngine:
             "SELECT COUNT(*) FROM memories "
             "WHERE layer = ? AND category != 'trash' "
             "AND (julianday('now') - julianday(created_at, 'unixepoch')) >= 7 "
-            "AND (starred = 1 OR importance >= 4)",
+            "AND (starred = 1 OR importance IN ('HIGH', 'CRITICAL'))",
             (MemoryLayer.LONG_TERM.value,)
         ).fetchone()[0]
 
@@ -2144,7 +2145,7 @@ class StorageEngine:
             "SELECT id FROM memories "
             "WHERE layer = ? AND category != 'trash' "
             "AND (julianday('now') - julianday(created_at, 'unixepoch')) >= 7 "
-            "AND (starred = 1 OR importance >= 4) LIMIT 100",
+            "AND (starred = 1 OR importance IN ('HIGH', 'CRITICAL')) LIMIT 100",
             (MemoryLayer.LONG_TERM.value,)
         ).fetchall()
         for row in rows:
@@ -5267,10 +5268,11 @@ class StorageEngine:
         # 使用 FTS5 全文搜索找相似内容
         try:
             rows = conn.execute(
-                "SELECT id, content, category, layer, importance, starred, "
+                "SELECT m.id, m.content, m.category, m.layer, m.importance, m.starred, "
                 "bm25(memory_fts) as relevance "
                 "FROM memory_fts "
-                "WHERE memory_fts MATCH ? AND id != ? "
+                "JOIN memories m ON memory_fts.rowid = m.rowid "
+                "WHERE memory_fts MATCH ? AND m.id != ? "
                 "ORDER BY relevance "
                 "LIMIT ?",
                 (entry.content[:200], memory_id, limit * 2)
@@ -6568,30 +6570,79 @@ class StorageEngine:
         conn.commit()
         return count
 
-    def vector_search(self, query: str, top_k: int = 20,
+    @staticmethod
+    def _deserialize_vector_fallback(blob: bytes, expected_dim: int) -> Optional[List[float]]:
+        """engine 不可用时的通用向量反序列化（v5.4.7 新增）
+
+        格式与 EmbeddingEngine.serialize 一致：float32 小端序。
+        """
+        import struct
+        if not blob:
+            return None
+        count = len(blob) // 4
+        if count != expected_dim:
+            return None
+        try:
+            return list(struct.unpack(f'<{count}f', blob))
+        except struct.error:
+            return None
+
+    @staticmethod
+    def _cosine_similarity_batch_fallback(
+        query_vec: List[float],
+        candidates: List[Tuple[str, List[float]]],
+        top_k: int = 20,
+    ) -> List[Tuple[str, float]]:
+        """engine 不可用时的批量余弦相似度计算（v5.4.7 新增）"""
+        if not query_vec or not candidates:
+            return []
+        scored = []
+        for mem_id, vec in candidates:
+            if not vec or len(vec) != len(query_vec):
+                continue
+            dot = sum(a * b for a, b in zip(query_vec, vec))
+            norm1 = sum(a * a for a in query_vec) ** 0.5
+            norm2 = sum(b * b for b in vec) ** 0.5
+            if norm1 == 0.0 or norm2 == 0.0:
+                continue
+            score = max(-1.0, min(1.0, dot / (norm1 * norm2)))
+            scored.append((mem_id, score))
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:top_k]
+
+    def vector_search(self, query: str = "", top_k: int = 20,
                       categories=None,
-                      layers=None
+                      layers=None,
+                      query_vector: Optional[List[float]] = None,
                       ) -> List[Dict[str, Any]]:
-        """向量语义搜索（v5.4.5 新增）
+        """向量语义搜索（v5.4.5 新增，v5.4.7 修复）
 
         使用嵌入向量计算余弦相似度，召回语义相近但用词不同的记忆。
 
+        v5.4.7 改进：支持传入预计算的 query_vector，当 embedding engine
+        不可用时（如 sentence-transformers 被卸载），仍可利用已有向量检索。
+
         Args:
-            query: 搜索查询
+            query: 搜索查询（当 query_vector 未提供时，用于 encode）
             top_k: 返回前 k 个结果
             categories: 限定分类列表
             layers: 限定层级列表
+            query_vector: 预计算的查询向量（可选）。提供后跳过 engine.encode()。
 
         Returns:
             [{entry, score, strategy: 'vector'}, ...]
         """
         engine = self.embedding_engine
-        if engine is None or not engine.is_available:
-            return []
 
-        query_vec = engine.encode(query)
-        if query_vec is None:
-            return []
+        # 确定最终使用的查询向量
+        vec = query_vector
+        if vec is None:
+            # 没有预计算向量，需要 engine 来 encode
+            if engine is None or not engine.is_available:
+                return []
+            vec = engine.encode(query)
+            if vec is None:
+                return []
 
         # 获取所有嵌入向量
         all_embeddings = self._get_all_embeddings()
@@ -6601,15 +6652,24 @@ class StorageEngine:
         # 反序列化并计算相似度
         candidates = []
         for mem_id, blob in all_embeddings:
-            vec = engine.deserialize(blob)
-            if vec and len(vec) == len(query_vec):
-                candidates.append((mem_id, vec))
+            if engine and engine.is_available:
+                deserialized = engine.deserialize(blob)
+                if deserialized and len(deserialized) == len(vec):
+                    candidates.append((mem_id, deserialized))
+            else:
+                # engine 不可用时，使用通用反序列化（float32 小端序）
+                deserialized = self._deserialize_vector_fallback(blob, len(vec))
+                if deserialized:
+                    candidates.append((mem_id, deserialized))
 
         if not candidates:
             return []
 
         # 批量计算余弦相似度，取 top_k
-        scored = engine.cosine_similarity_batch(query_vec, candidates, top_k=top_k * 2)
+        if engine and engine.is_available:
+            scored = engine.cosine_similarity_batch(vec, candidates, top_k=top_k * 2)
+        else:
+            scored = self._cosine_similarity_batch_fallback(vec, candidates, top_k=top_k * 2)
 
         results = []
         for mem_id, score in scored:
@@ -11871,5 +11931,519 @@ class StorageEngine:
             "overall_pace": overall_pace,
             "rhythm_variability": rhythm_variability,
             "suggestions": suggestions,
+        }
+
+    # ===== v5.4.8 新增：Agent 记忆强化 + 跨 Agent 共享 + AI 短剧增强 =====
+
+    def agent_memory_reinforce(self,
+                               agent_id: str,
+                               min_access_count: int = 3,
+                               boost_importance: bool = True,
+                               dry_run: bool = False) -> Dict[str, Any]:
+        """Agent 记忆强化（v5.4.8 新增）
+
+        基于访问频率自动提升高频记忆的重要性等级。
+        频繁被检索的记忆说明价值更高，应自动强化。
+
+        Args:
+            agent_id: Agent ID
+            min_access_count: 最低访问次数阈值
+            boost_importance: 是否自动提升重要性
+            dry_run: 仅预览不执行
+
+        Returns:
+            {evaluated, reinforced, details}
+        """
+        conn = self._get_conn()
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+
+        # 查找高频记忆
+        rows = conn.execute(
+            "SELECT id, content, importance, access_count FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' AND access_count >= ?",
+            (aid, min_access_count)
+        ).fetchall()
+
+        if not rows:
+            return {
+                "agent_id": aid,
+                "evaluated": 0,
+                "reinforced": 0,
+                "details": [],
+            }
+
+        # 重要性升级路径
+        imp_upgrade = {"LOW": "MEDIUM", "MEDIUM": "HIGH"}
+        reinforced = 0
+        details = []
+
+        for r in rows:
+            mem_id, content, cur_imp, access_cnt = r[0], r[1], (r[2] or "MEDIUM").upper(), r[3]
+            new_imp = imp_upgrade.get(cur_imp)
+
+            if new_imp and boost_importance:
+                if not dry_run:
+                    conn.execute(
+                        "UPDATE memories SET importance = ?, updated_at = ? WHERE id = ?",
+                        (new_imp, time.time(), mem_id)
+                    )
+                reinforced += 1
+                details.append({
+                    "id": mem_id,
+                    "content": (content or "")[:80],
+                    "access_count": access_cnt,
+                    "from": cur_imp,
+                    "to": new_imp,
+                })
+
+        if not dry_run and reinforced > 0:
+            conn.commit()
+
+        return {
+            "agent_id": aid,
+            "evaluated": len(rows),
+            "reinforced": reinforced,
+            "dry_run": dry_run,
+            "details": details[:50],
+        }
+
+    def agent_shared_memories(self,
+                              from_agent: str,
+                              to_agent: str,
+                              categories: Optional[List[str]] = None,
+                              max_count: int = 50,
+                              dry_run: bool = False) -> Dict[str, Any]:
+        """跨 Agent 记忆共享（v5.4.8 新增）
+
+        将一个 Agent 的记忆共享给另一个 Agent（复制，非移动）。
+        共享后目标 Agent 可以检索到源 Agent 的知识。
+
+        Args:
+            from_agent: 源 Agent ID
+            to_agent: 目标 Agent ID
+            categories: 只共享指定分类（None 表示全部）
+            max_count: 最大共享数量
+            dry_run: 仅预览
+
+        Returns:
+            {shared_count, details}
+        """
+        conn = self._get_conn()
+        from_aid = _filter_unicode_ctrl(from_agent[:128]) if isinstance(from_agent, str) else ""
+        to_aid = _filter_unicode_ctrl(to_agent[:128]) if isinstance(to_agent, str) else ""
+
+        if not from_aid or not to_aid:
+            return {"error": "Agent ID 不能为空"}
+        if from_aid == to_aid:
+            return {"error": "不能共享给自身"}
+
+        # 查询源 Agent 的记忆
+        query = "SELECT id, content, category, tags, importance, privacy, layer FROM memories WHERE source_agent = ? AND category != 'trash'"
+        params: list = [from_aid]
+
+        if categories:
+            placeholders = ",".join(["?"] * len(categories))
+            query += f" AND category IN ({placeholders})"
+            params.extend(categories[:10])
+
+        query += " LIMIT ?"
+        params.append(max(1, min(1000, max_count)))
+
+        rows = conn.execute(query, params).fetchall()
+
+        if not rows:
+            return {"from_agent": from_aid, "to_agent": to_aid, "shared_count": 0, "details": []}
+
+        shared = 0
+        details = []
+        now = time.time()
+
+        for r in rows:
+            mem_id, content, category, tags, importance, privacy, layer = r
+            # 检查目标 Agent 是否已有相同内容
+            existing = conn.execute(
+                "SELECT id FROM memories WHERE source_agent = ? AND content = ?",
+                (to_aid, content)
+            ).fetchone()
+
+            if existing:
+                continue
+
+            if not dry_run:
+                new_id = str(uuid.uuid4())
+                conn.execute("""
+                    INSERT INTO memories (
+                        id, content, category, tags, importance, privacy, memory_type, layer,
+                        source_agent, created_at, updated_at, last_accessed_at,
+                        access_count, consolidation_count, forgetting_score, strength,
+                        starred, pinned, metadata, encrypted
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'text', ?, ?, ?, ?, ?, 0, 0, 0, 1.0, 0, 0, '{}', 0)
+                """, (
+                    new_id, content, category or "general", tags or "[]",
+                    importance or "MEDIUM", privacy or "INTERNAL", layer or "short_term",
+                    to_aid, now, now, now
+                ))
+                # 同步 FTS
+                try:
+                    conn.execute(
+                        "INSERT INTO memory_fts (rowid, content, category, tags) "
+                        "VALUES ((SELECT rowid FROM memories WHERE id = ?), ?, ?, ?)",
+                        (new_id, content, category or "general", tags or "[]")
+                    )
+                except Exception:
+                    pass
+
+            shared += 1
+            details.append({
+                "source_id": mem_id,
+                "content_preview": (content or "")[:60],
+                "category": category,
+            })
+
+        if not dry_run and shared > 0:
+            conn.commit()
+
+        return {
+            "from_agent": from_aid,
+            "to_agent": to_aid,
+            "shared_count": shared,
+            "dry_run": dry_run,
+            "details": details[:50],
+        }
+
+    def agent_knowledge_domains(self,
+                                agent_id: str,
+                                top_n: int = 10) -> Dict[str, Any]:
+        """Agent 知识领域分析（v5.4.8 新增）
+
+        基于记忆分类和标签分析 Agent 的知识分布。
+
+        Args:
+            agent_id: Agent ID
+            top_n: 返回前 N 个领域
+
+        Returns:
+            {domains: [{name, count, tags}], total_memories}
+        """
+        conn = self._get_conn()
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+
+        # 按分类统计
+        cat_rows = conn.execute(
+            "SELECT category, COUNT(*) as cnt FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' "
+            "GROUP BY category ORDER BY cnt DESC LIMIT ?",
+            (aid, top_n)
+        ).fetchall()
+
+        domains = []
+        for cat, cnt in cat_rows:
+            # 获取该分类下最常见的标签
+            tag_rows = conn.execute(
+                "SELECT tags FROM memories WHERE source_agent = ? AND category = ? LIMIT 100",
+                (aid, cat)
+            ).fetchall()
+
+            tag_counts: Dict[str, int] = {}
+            for tr in tag_rows:
+                try:
+                    tags = json.loads(tr[0]) if tr[0] and tr[0].strip().startswith('[') else []
+                    for t in tags:
+                        if isinstance(t, str) and t:
+                            tag_counts[t] = tag_counts.get(t, 0) + 1
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            top_tags = sorted(tag_counts.items(), key=lambda x: -x[1])[:5]
+
+            domains.append({
+                "name": cat or "general",
+                "count": cnt,
+                "top_tags": [t[0] for t in top_tags],
+            })
+
+        total = conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE source_agent = ? AND category != 'trash'",
+            (aid,)
+        ).fetchone()[0]
+
+        return {
+            "agent_id": aid,
+            "total_memories": total,
+            "domains": domains,
+        }
+
+    def drama_generate_scene(self,
+                             drama_id: str,
+                             scene_title: str,
+                             characters: Optional[List[str]] = None,
+                             mood: str = "neutral",
+                             setting: str = "") -> Dict[str, Any]:
+        """AI 短剧场景生成（v5.4.8 新增）
+
+        基于剧本上下文生成新场景的框架结构。
+        生成内容包括：场景描述、角色对话提示、情感基调建议。
+
+        Args:
+            drama_id: 短剧 ID
+            scene_title: 场景标题
+            characters: 参与角色列表
+            mood: 情感基调 (neutral/happy/sad/tense/romantic)
+            setting: 场景设置描述
+
+        Returns:
+            {scene_id, title, structure, suggestions}
+        """
+        conn = self._get_conn()
+        did = _filter_unicode_ctrl(drama_id[:128]) if isinstance(drama_id, str) else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+
+        # 获取短剧信息
+        drama = conn.execute(
+            "SELECT id, title, genre FROM drama_series WHERE id = ?", (did,)
+        ).fetchone()
+
+        if not drama:
+            return {"error": "短剧不存在"}
+
+        drama_title = drama[1] or "未知短剧"
+        genre = drama[2] or "general"
+
+        # 获取已有场景数量
+        scene_count = conn.execute(
+            "SELECT COUNT(*) FROM drama_scenes WHERE drama_id = ?", (did,)
+        ).fetchone()[0]
+
+        # 获取角色信息
+        char_list = []
+        if characters:
+            for cname in characters[:10]:
+                char = conn.execute(
+                    "SELECT id, name, role FROM drama_characters WHERE drama_id = ? AND name = ?",
+                    (did, cname[:128])
+                ).fetchone()
+                if char:
+                    char_list.append({"id": char[0], "name": char[1], "role": char[2]})
+
+        # 生成场景结构
+        scene_id = str(uuid.uuid4())
+        now = time.time()
+
+        # 情感基调映射
+        mood_templates = {
+            "happy": "轻松愉快的氛围，角色之间互动积极正面",
+            "sad": "悲伤沉重的氛围，可能有离别或失落的情节",
+            "tense": "紧张悬疑的氛围，冲突即将爆发或正在进行",
+            "romantic": "温馨浪漫的氛围，角色之间情感升温",
+            "neutral": "平稳叙事的氛围，推进剧情发展",
+        }
+        mood_desc = mood_templates.get(mood, mood_templates["neutral"])
+
+        # 生成场景建议
+        suggestions = []
+        if genre == "romance":
+            suggestions.append("可以加入角色之间的微妙互动或误会")
+            suggestions.append("考虑设置一个促进感情发展的契机")
+        elif genre == "suspense":
+            suggestions.append("埋下一个伏笔或线索供后续揭示")
+            suggestions.append("制造一个出乎意料的转折")
+        elif genre == "comedy":
+            suggestions.append("加入一个幽默的误会或巧合")
+            suggestions.append("角色可以有夸张但可爱的反应")
+        else:
+            suggestions.append("确保场景推进了主线剧情")
+            suggestions.append("考虑角色在这个场景中的成长或变化")
+
+        if scene_count == 0:
+            suggestions.insert(0, "这是开场场景，需要建立世界观和主要角色")
+        suggestions.append(f"情感基调：{mood_desc}")
+
+        # 存储场景
+        scene_data = {
+            "title": scene_title[:256],
+            "description": f"{setting or scene_title}\n\n[{mood_desc}]",
+            "mood": mood,
+            "characters": [c["name"] for c in char_list],
+            "generated": True,
+            "suggestions": suggestions,
+        }
+
+        conn.execute("""
+            INSERT INTO drama_scenes (
+                id, drama_id, episode, scene_number, title, content,
+                tags, metadata, created_at
+            ) VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?)
+        """, (
+            scene_id, did, scene_count + 1, scene_title[:256],
+            json.dumps(scene_data, ensure_ascii=False),
+            json.dumps([mood], ensure_ascii=False),
+            json.dumps(scene_data, ensure_ascii=False), now
+        ))
+        conn.commit()
+
+        return {
+            "scene_id": scene_id,
+            "drama_id": did,
+            "drama_title": drama_title,
+            "title": scene_title,
+            "scene_order": scene_count + 1,
+            "mood": mood,
+            "mood_description": mood_desc,
+            "characters": char_list,
+            "suggestions": suggestions,
+        }
+
+    def drama_emotion_timeline(self,
+                               drama_id: str) -> Dict[str, Any]:
+        """短剧情感时间线（v5.4.8 新增）
+
+        分析短剧各场景的情感走向，生成情感曲线。
+
+        Args:
+            drama_id: 短剧 ID
+
+        Returns:
+            {drama_id, title, emotion_points, trend, summary}
+        """
+        conn = self._get_conn()
+        did = _filter_unicode_ctrl(drama_id[:128]) if isinstance(drama_id, str) else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+
+        drama = conn.execute(
+            "SELECT id, title FROM drama_series WHERE id = ?", (did,)
+        ).fetchone()
+
+        if not drama:
+            return {"error": "短剧不存在"}
+
+        title = drama[1] or "未知短剧"
+
+        # 获取所有场景
+        scenes = conn.execute(
+            "SELECT id, title, content, scene_number FROM drama_scenes "
+            "WHERE drama_id = ? ORDER BY scene_number",
+            (did,)
+        ).fetchall()
+
+        if not scenes:
+            return {
+                "drama_id": did,
+                "title": title,
+                "emotion_points": [],
+                "trend": "no_data",
+                "summary": "暂无场景数据",
+            }
+
+        # 情感关键词
+        emotion_lexicon = {
+            "positive": {"好", "开心", "成功", "爱", "喜", "乐", "幸福", "happy", "love", "joy", "success"},
+            "negative": {"坏", "悲伤", "失败", "恨", "悲", "痛", "绝望", "sad", "hate", "pain", "fail"},
+            "tense": {"紧张", "危险", "冲突", "对抗", "危机", "tense", "danger", "conflict", "crisis"},
+            "calm": {"平静", "安宁", "日常", "悠闲", "calm", "peace", "quiet", "daily"},
+        }
+
+        emotion_points = []
+        emotion_values = []
+
+        for scene in scenes:
+            scene_id, scene_title, description, order = scene
+            text = ((scene_title or "") + " " + (description or "")).lower()
+
+            # 计算各情感得分
+            scores = {}
+            for emotion, keywords in emotion_lexicon.items():
+                score = sum(1 for kw in keywords if kw in text)
+                scores[emotion] = score
+
+            # 主导情感
+            dominant = max(scores, key=scores.get) if any(scores.values()) else "neutral"
+            intensity = sum(scores.values())
+
+            # 情感值 (-2 到 +2)
+            value = 0
+            if scores["positive"] > scores["negative"]:
+                value = min(2, scores["positive"] - scores["negative"])
+            elif scores["negative"] > scores["positive"]:
+                value = max(-2, -(scores["negative"] - scores["positive"]))
+
+            if scores["tense"] > 2:
+                # 紧张场景增加波动
+                value = value * 0.5 if value > 0 else value * 1.5
+
+            emotion_values.append(value)
+            emotion_points.append({
+                "scene_id": scene_id,
+                "scene_order": order,
+                "title": (scene_title or "")[:50],
+                "dominant_emotion": dominant,
+                "intensity": intensity,
+                "emotion_value": round(value, 2),
+            })
+
+        # 分析趋势
+        if len(emotion_values) < 2:
+            trend = "insufficient_data"
+        else:
+            # 简单线性趋势
+            n = len(emotion_values)
+            x_mean = (n - 1) / 2
+            y_mean = sum(emotion_values) / n
+            numerator = sum((i - x_mean) * (v - y_mean) for i, v in enumerate(emotion_values))
+            denominator = sum((i - x_mean) ** 2 for i in range(n))
+
+            slope = numerator / denominator if denominator > 0 else 0
+
+            if slope > 0.3:
+                trend = "ascending"  # 情感走向积极
+            elif slope < -0.3:
+                trend = "descending"  # 情感走向消极
+            elif abs(slope) <= 0.1:
+                trend = "stable"  # 情感平稳
+            else:
+                # 检查波动
+                diffs = [abs(emotion_values[i] - emotion_values[i-1]) for i in range(1, n)]
+                avg_diff = sum(diffs) / len(diffs)
+                if avg_diff > 1.0:
+                    trend = "volatile"  # 情感波动大
+                else:
+                    trend = "moderate"  # 适度变化
+
+        # 生成摘要
+        summary_parts = []
+        if trend == "ascending":
+            summary_parts.append("剧情情感走向逐渐积极，可能是从困境走向圆满")
+        elif trend == "descending":
+            summary_parts.append("剧情情感走向逐渐消极，可能是悲剧或困境加深")
+        elif trend == "volatile":
+            summary_parts.append("剧情情感波动较大，充满戏剧性转折")
+        elif trend == "stable":
+            summary_parts.append("剧情情感较为平稳，叙事节奏均匀")
+        else:
+            summary_parts.append("剧情情感变化适度，节奏把控良好")
+
+        pos_count = sum(1 for p in emotion_points if p["dominant_emotion"] == "positive")
+        neg_count = sum(1 for p in emotion_points if p["dominant_emotion"] == "negative")
+        tense_count = sum(1 for p in emotion_points if p["dominant_emotion"] == "tense")
+
+        if pos_count > len(emotion_points) * 0.4:
+            summary_parts.append("整体基调偏积极")
+        elif neg_count > len(emotion_points) * 0.4:
+            summary_parts.append("整体基调偏沉重")
+        if tense_count > 0:
+            summary_parts.append(f"有 {tense_count} 个紧张场景")
+
+        return {
+            "drama_id": did,
+            "title": title,
+            "total_scenes": len(emotion_points),
+            "emotion_points": emotion_points,
+            "trend": trend,
+            "summary": "。".join(summary_parts),
         }
 

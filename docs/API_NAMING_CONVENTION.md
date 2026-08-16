@@ -1,4 +1,4 @@
-# MindForge API 命名规范（v5.4.7）
+# MindForge API 命名规范（v5.4.8）
 
 ## 现状问题
 

@@ -1,5 +1,5 @@
 """
-MindForge v5.4.6 主入口类
+MindForge v5.4.8 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -36,7 +36,7 @@ from .embedding import EmbeddingEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.4.6"
+    __version__ = "5.4.8"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -159,6 +159,7 @@ class MindForge:
 
         之前 key_file 存在/不存在两个分支均为 pass，导致加密引擎从未被实际初始化。
         修复后：根据 key_file 是否存在决定新建或加载加密引擎。
+        v5.4.7 修复 M-9：当 encrypted=True 但无密码时记录警告日志。
         """
         from .encryption import init_engine as _init_engine
 
@@ -168,10 +169,18 @@ class MindForge:
         if not key_file.exists():
             # 密钥文件不存在时，生成新密钥需要密码
             # 此场景下应通过 init_with_password() 完成初始化
+            logger.warning(
+                "encrypted=True but no key file found. "
+                "Call init_with_password() to enable encryption."
+            )
             return
 
         # 密钥文件存在时，需要密码加载
         # 实际解密需在 init_with_password() 中完成
+        logger.warning(
+            "encrypted=True but key file exists and no password provided. "
+            "Call init_with_password() to enable encryption."
+        )
         return
 
     def _init_storage(self):
@@ -316,24 +325,29 @@ class MindForge:
                                                   incremental=incremental)
 
     def get_embedding_status(self) -> dict:
-        """获取嵌入向量状态（v5.4.5 新增）
+        """获取嵌入向量状态（v5.4.5 新增，v5.4.7 修复）
+
+        v5.4.7 修复：即使 embedding engine 不可用，也查询 DB 返回实际向量数量，
+        让用户知道历史向量是否存在。
 
         Returns:
             {available, model_name, dimension, embedding_count}
         """
+        # 无论 engine 是否可用，都查询 DB 中实际向量数量
+        conn = self._storage._get_conn()
+        row = conn.execute(
+            "SELECT COUNT(*) FROM memory_embeddings"
+        ).fetchone()
+        count = row[0] if row else 0
+
         engine = self._storage.embedding_engine
         if engine is None or not engine.is_available:
             return {
                 "available": False,
                 "model_name": "",
                 "dimension": 0,
-                "embedding_count": 0,
+                "embedding_count": count,
             }
-        conn = self._storage._get_conn()
-        row = conn.execute(
-            "SELECT COUNT(*) FROM memory_embeddings"
-        ).fetchone()
-        count = row[0] if row else 0
         return {
             "available": True,
             "model_name": engine.model_name,
@@ -3789,4 +3803,81 @@ class MindForge:
         drama_id = "".join(c for c in drama_id[:64]
                            if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
         return self._storage.scene_rhythm(drama_id)
+
+    # ===== v5.4.8 新增 =====
+
+    def agent_memory_reinforce(self, agent_id: str,
+                               min_access_count: int = 3,
+                               boost_importance: bool = True,
+                               dry_run: bool = False) -> Dict[str, Any]:
+        """Agent 记忆强化（v5.4.8）— 基于访问频率自动提升高频记忆重要性"""
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        min_access_count = max(1, int(min_access_count))
+        return self._storage.agent_memory_reinforce(
+            agent_id, min_access_count, boost_importance, dry_run)
+
+    def agent_shared_memories(self, from_agent: str, to_agent: str,
+                              categories: Optional[List[str]] = None,
+                              max_count: int = 50,
+                              dry_run: bool = False) -> Dict[str, Any]:
+        """跨 Agent 记忆共享（v5.4.8）— 将源 Agent 记忆复制给目标 Agent"""
+        if not isinstance(from_agent, str) or not isinstance(to_agent, str):
+            return {"error": "Agent ID 必须为字符串"}
+        if not from_agent or not to_agent:
+            return {"error": "Agent ID 不能为空"}
+        import unicodedata
+        from_agent = "".join(c for c in from_agent[:128]
+                             if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        to_agent = "".join(c for c in to_agent[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        max_count = max(1, min(1000, int(max_count)))
+        return self._storage.agent_shared_memories(
+            from_agent, to_agent, categories, max_count, dry_run)
+
+    def agent_knowledge_domains(self, agent_id: str,
+                                top_n: int = 10) -> Dict[str, Any]:
+        """Agent 知识领域分析（v5.4.8）— 分析 Agent 知识分布"""
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        top_n = max(1, min(100, int(top_n)))
+        return self._storage.agent_knowledge_domains(agent_id, top_n)
+
+    def drama_generate_scene(self, drama_id: str, scene_title: str,
+                             characters: Optional[List[str]] = None,
+                             mood: str = "neutral",
+                             setting: str = "") -> Dict[str, Any]:
+        """AI 短剧场景生成（v5.4.8）— 基于上下文生成新场景"""
+        if not isinstance(drama_id, str) or not isinstance(scene_title, str):
+            return {"error": "短剧 ID 和场景标题必须为字符串"}
+        if not drama_id or not scene_title:
+            return {"error": "短剧 ID 和场景标题不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        scene_title = "".join(c for c in scene_title[:256]
+                              if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        mood = "".join(c for c in mood[:32]
+                       if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        setting = "".join(c for c in setting[:512]
+                          if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        if characters:
+            characters = [str(c)[:64] for c in characters[:50] if c]
+        return self._storage.drama_generate_scene(
+            drama_id, scene_title, characters, mood, setting)
+
+    def drama_emotion_timeline(self, drama_id: str) -> Dict[str, Any]:
+        """短剧情感时间线（v5.4.8）— 分析情感走向和曲线"""
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        return self._storage.drama_emotion_timeline(drama_id)
 
