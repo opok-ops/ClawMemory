@@ -1,5 +1,5 @@
 """
-MindForge v5.4.6 嵌入引擎
+MindForge v5.4.7 嵌入引擎
 
 多后端适配器架构（v5.4.6 新增）：
 - sentence-transformers（本地 CPU 推理，默认）

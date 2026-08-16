@@ -1,5 +1,5 @@
 """
-MindForge v5.4.6 主入口类
+MindForge v5.4.7 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
