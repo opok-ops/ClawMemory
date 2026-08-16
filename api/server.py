@@ -268,6 +268,9 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                     content=content,
                     category=body.get("category", "general"),
                     tags=body.get("tags", []),
+                    importance=body.get("importance"),
+                    starred=body.get("starred"),
+                    source_agent=body.get("source_agent", ""),
                 )
                 self._send_json(entry.to_dict() if hasattr(entry, "to_dict") else vars(entry), 201)
 
@@ -281,6 +284,9 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                             content=mem.get("content", ""),
                             category=mem.get("category", "general"),
                             tags=mem.get("tags", []),
+                            importance=mem.get("importance"),
+                            starred=mem.get("starred"),
+                            source_agent=mem.get("source_agent", ""),
                         )
                         imported += 1
                     except Exception:

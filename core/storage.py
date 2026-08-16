@@ -11989,6 +11989,8 @@ class StorageEngine:
                         "UPDATE memories SET importance = ?, updated_at = ? WHERE id = ?",
                         (new_imp, time.time(), mem_id)
                     )
+                    # 审计记录
+                    self._add_audit("reinforce", mem_id, agent_id, "", "")
                 reinforced += 1
                 details.append({
                     "id": mem_id,
@@ -12056,19 +12058,21 @@ class StorageEngine:
         if not rows:
             return {"from_agent": from_aid, "to_agent": to_aid, "shared_count": 0, "details": []}
 
+        # 批量去重：一次性获取目标 Agent 已有内容（避免 N+1 查询）
+        existing_contents = set(
+            r[0] for r in conn.execute(
+                "SELECT content FROM memories WHERE source_agent = ?", (to_aid,)
+            ).fetchall()
+        )
+
         shared = 0
         details = []
         now = time.time()
 
         for r in rows:
             mem_id, content, category, tags, importance, privacy, layer = r
-            # 检查目标 Agent 是否已有相同内容
-            existing = conn.execute(
-                "SELECT id FROM memories WHERE source_agent = ? AND content = ?",
-                (to_aid, content)
-            ).fetchone()
-
-            if existing:
+            # 检查目标 Agent 是否已有相同内容（O(1) 查找）
+            if content in existing_contents:
                 continue
 
             if not dry_run:
@@ -12085,17 +12089,20 @@ class StorageEngine:
                     importance or "MEDIUM", privacy or "INTERNAL", layer or "short_term",
                     to_aid, now, now, now
                 ))
-                # 同步 FTS
+                # 同步 FTS（失败时记录日志）
                 try:
                     conn.execute(
                         "INSERT INTO memory_fts (rowid, content, category, tags) "
                         "VALUES ((SELECT rowid FROM memories WHERE id = ?), ?, ?, ?)",
                         (new_id, content, category or "general", tags or "[]")
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("FTS sync failed for shared memory %s: %s", new_id, e)
+                # 审计记录
+                self._add_audit("share", new_id, to_aid, "", "")
 
             shared += 1
+            existing_contents.add(content)  # 更新去重集合
             details.append({
                 "source_id": mem_id,
                 "content_preview": (content or "")[:60],
@@ -12280,7 +12287,7 @@ class StorageEngine:
             ) VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?)
         """, (
             scene_id, did, scene_count + 1, scene_title[:256],
-            json.dumps(scene_data, ensure_ascii=False),
+            scene_data["description"],
             json.dumps([mood], ensure_ascii=False),
             json.dumps(scene_data, ensure_ascii=False), now
         ))
@@ -12324,10 +12331,10 @@ class StorageEngine:
 
         title = drama[1] or "未知短剧"
 
-        # 获取所有场景
+        # 获取所有场景（按集数和场景号排序）
         scenes = conn.execute(
             "SELECT id, title, content, scene_number FROM drama_scenes "
-            "WHERE drama_id = ? ORDER BY scene_number",
+            "WHERE drama_id = ? ORDER BY episode, scene_number",
             (did,)
         ).fetchall()
 

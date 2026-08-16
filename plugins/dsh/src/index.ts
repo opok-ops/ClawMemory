@@ -141,8 +141,8 @@ export function apply(ctx: CordisContext, config: MindForgePluginConfig = {}) {
       await ensureInitialized()
       const result = await client.search({
         q: String(args.q),
-        limit: args.limit ? Number(args.limit) : 5,
-        min_relevance: args.min_relevance ? Number(args.min_relevance) : 0.3,
+        limit: args.limit !== undefined ? Number(args.limit) : 5,
+        min_relevance: args.min_relevance !== undefined ? Number(args.min_relevance) : 0.3,
       })
       if (opts.compactOutput) {
         return {
