@@ -271,7 +271,7 @@ class MindForge:
         self._index.index_memory(
             entry.id,
             content,
-            metadata={"category": category, "tags": tags or [], "importance": importance.value},
+            metadata={"category": category, "tags": tags or [], "importance": importance.value if isinstance(importance, Importance) else str(importance)},
         )
 
         return entry
