@@ -6570,30 +6570,79 @@ class StorageEngine:
         conn.commit()
         return count
 
-    def vector_search(self, query: str, top_k: int = 20,
+    @staticmethod
+    def _deserialize_vector_fallback(blob: bytes, expected_dim: int) -> Optional[List[float]]:
+        """engine 不可用时的通用向量反序列化（v5.4.7 新增）
+
+        格式与 EmbeddingEngine.serialize 一致：float32 小端序。
+        """
+        import struct
+        if not blob:
+            return None
+        count = len(blob) // 4
+        if count != expected_dim:
+            return None
+        try:
+            return list(struct.unpack(f'<{count}f', blob))
+        except struct.error:
+            return None
+
+    @staticmethod
+    def _cosine_similarity_batch_fallback(
+        query_vec: List[float],
+        candidates: List[Tuple[str, List[float]]],
+        top_k: int = 20,
+    ) -> List[Tuple[str, float]]:
+        """engine 不可用时的批量余弦相似度计算（v5.4.7 新增）"""
+        if not query_vec or not candidates:
+            return []
+        scored = []
+        for mem_id, vec in candidates:
+            if not vec or len(vec) != len(query_vec):
+                continue
+            dot = sum(a * b for a, b in zip(query_vec, vec))
+            norm1 = sum(a * a for a in query_vec) ** 0.5
+            norm2 = sum(b * b for b in vec) ** 0.5
+            if norm1 == 0.0 or norm2 == 0.0:
+                continue
+            score = max(-1.0, min(1.0, dot / (norm1 * norm2)))
+            scored.append((mem_id, score))
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:top_k]
+
+    def vector_search(self, query: str = "", top_k: int = 20,
                       categories=None,
-                      layers=None
+                      layers=None,
+                      query_vector: Optional[List[float]] = None,
                       ) -> List[Dict[str, Any]]:
-        """向量语义搜索（v5.4.5 新增）
+        """向量语义搜索（v5.4.5 新增，v5.4.7 修复）
 
         使用嵌入向量计算余弦相似度，召回语义相近但用词不同的记忆。
 
+        v5.4.7 改进：支持传入预计算的 query_vector，当 embedding engine
+        不可用时（如 sentence-transformers 被卸载），仍可利用已有向量检索。
+
         Args:
-            query: 搜索查询
+            query: 搜索查询（当 query_vector 未提供时，用于 encode）
             top_k: 返回前 k 个结果
             categories: 限定分类列表
             layers: 限定层级列表
+            query_vector: 预计算的查询向量（可选）。提供后跳过 engine.encode()。
 
         Returns:
             [{entry, score, strategy: 'vector'}, ...]
         """
         engine = self.embedding_engine
-        if engine is None or not engine.is_available:
-            return []
 
-        query_vec = engine.encode(query)
-        if query_vec is None:
-            return []
+        # 确定最终使用的查询向量
+        vec = query_vector
+        if vec is None:
+            # 没有预计算向量，需要 engine 来 encode
+            if engine is None or not engine.is_available:
+                return []
+            vec = engine.encode(query)
+            if vec is None:
+                return []
 
         # 获取所有嵌入向量
         all_embeddings = self._get_all_embeddings()
@@ -6603,15 +6652,24 @@ class StorageEngine:
         # 反序列化并计算相似度
         candidates = []
         for mem_id, blob in all_embeddings:
-            vec = engine.deserialize(blob)
-            if vec and len(vec) == len(query_vec):
-                candidates.append((mem_id, vec))
+            if engine and engine.is_available:
+                deserialized = engine.deserialize(blob)
+                if deserialized and len(deserialized) == len(vec):
+                    candidates.append((mem_id, deserialized))
+            else:
+                # engine 不可用时，使用通用反序列化（float32 小端序）
+                deserialized = self._deserialize_vector_fallback(blob, len(vec))
+                if deserialized:
+                    candidates.append((mem_id, deserialized))
 
         if not candidates:
             return []
 
         # 批量计算余弦相似度，取 top_k
-        scored = engine.cosine_similarity_batch(query_vec, candidates, top_k=top_k * 2)
+        if engine and engine.is_available:
+            scored = engine.cosine_similarity_batch(vec, candidates, top_k=top_k * 2)
+        else:
+            scored = self._cosine_similarity_batch_fallback(vec, candidates, top_k=top_k * 2)
 
         results = []
         for mem_id, score in scored:

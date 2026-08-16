@@ -325,24 +325,29 @@ class MindForge:
                                                   incremental=incremental)
 
     def get_embedding_status(self) -> dict:
-        """获取嵌入向量状态（v5.4.5 新增）
+        """获取嵌入向量状态（v5.4.5 新增，v5.4.7 修复）
+
+        v5.4.7 修复：即使 embedding engine 不可用，也查询 DB 返回实际向量数量，
+        让用户知道历史向量是否存在。
 
         Returns:
             {available, model_name, dimension, embedding_count}
         """
+        # 无论 engine 是否可用，都查询 DB 中实际向量数量
+        conn = self._storage._get_conn()
+        row = conn.execute(
+            "SELECT COUNT(*) FROM memory_embeddings"
+        ).fetchone()
+        count = row[0] if row else 0
+
         engine = self._storage.embedding_engine
         if engine is None or not engine.is_available:
             return {
                 "available": False,
                 "model_name": "",
                 "dimension": 0,
-                "embedding_count": 0,
+                "embedding_count": count,
             }
-        conn = self._storage._get_conn()
-        row = conn.execute(
-            "SELECT COUNT(*) FROM memory_embeddings"
-        ).fetchone()
-        count = row[0] if row else 0
         return {
             "available": True,
             "model_name": engine.model_name,
