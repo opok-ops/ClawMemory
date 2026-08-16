@@ -222,12 +222,12 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
             elif path == "/api/export":
                 entries = self.mindforge.list(limit=100000)
                 memories = [e.to_dict() if hasattr(e, "to_dict") else vars(e) for e in entries]
-                self._send_json({"version": "5.4.7", "total": len(memories), "memories": memories})
+                self._send_json({"version": "5.4.8", "total": len(memories), "memories": memories})
 
             elif path == "/":
                 self._send_json({
                     "name": "MindForge REST API",
-                    "version": "5.4.7",
+                    "version": "5.4.8",
                     "endpoints": [
                         "GET /api/memories", "POST /api/memories",
                         "GET /api/memories/{id}", "PUT /api/memories/{id}",
@@ -313,6 +313,8 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                     content=body.get("content"),
                     category=body.get("category"),
                     tags=body.get("tags"),
+                    importance=body.get("importance"),
+                    starred=body.get("starred"),
                 )
                 if success:
                     self._send_json({"status": "updated", "id": mem_id})

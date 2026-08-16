@@ -1,8 +1,6 @@
-# MindForge DSH Plugin — patch configuration
-# This file tells Cordis how to mount the plugin into the DSH runtime.
-# The plugin registers tools and hooks into agent lifecycle events.
+# MindForge DSH Plugin v0.1.1 — patch configuration
+# Registers memory tools and hooks into agent lifecycle events.
 
-# Register the MindForge memory plugin as a service provider
 - id: mindforge-memory
   plugin:
     name: mindforge-dsh-plugin
@@ -10,7 +8,7 @@
       - tools
       - agentLoop
   config:
-    # MindForge REST API endpoint (default: localhost)
+    # MindForge REST API endpoint
     host: "127.0.0.1"
     port: 8765
     # Auto-start MindForge backend if not running
@@ -19,17 +17,21 @@
     # mindforgePath: "/path/to/MindForge"
     # Python executable path (for auto-start)
     # pythonPath: "python3"
-    # Database path for MindForge (relative to mindforgePath or absolute)
+    # Database path
     dbPath: "mindforge_agent.db"
-    # Whether to auto-capture turn summaries as memories
+    # Auto-capture turn summaries as memories
     autoCapture: true
-    # Whether to inject recalled memories into agent context
+    # Inject recalled memories into agent context
     autoInject: true
     # Max memories to inject per turn
     maxInjectMemories: 5
     # Min relevance score for auto-injection
     minRelevance: 0.3
-    # Tags to auto-assign to captured memories
+    # Tags for auto-captured memories
     captureTags: ["dsh", "agent-session"]
-    # Importance level for captured memories
+    # Importance for captured memories
     captureImportance: "MEDIUM"
+    # Compact tool output (saves tokens)
+    compactOutput: true
+    # Memory injection format: full | compact | ids-only
+    injectFormat: "compact"

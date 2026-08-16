@@ -1,6 +1,6 @@
 {
   "name": "mindforge-dsh-plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MindForge memory engine plugin for DeepSeek Harness — local-first, 4-layer memory with encryption",
   "license": "MIT",
   "type": "module",
@@ -25,13 +25,16 @@
       "patch": "cordis.patch.yml"
     }
   },
-  "dependencies": {},
+  "dependencies": {
+    "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.5.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": ">=4.0.0"
+    "@deepseek-ai/cordis": "^4.0.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
