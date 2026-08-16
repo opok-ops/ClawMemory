@@ -246,20 +246,38 @@ class IndexEngine:
 
         self._fitted = True
 
+    @staticmethod
+    def _escape_fts5_query(query: str) -> str:
+        """转义 FTS5 查询特殊字符（v5.4.7 新增）
+
+        FTS5 MATCH 语法中 + - * ( ) " : 等是特殊字符，
+        直接传入会导致 OperationalError。用双引号包裹为短语查询，
+        同时转义内部的双引号。
+        """
+        # 去除首尾空白
+        q = query.strip()
+        if not q:
+            return q
+        # 转义内部双引号
+        q = q.replace('"', '""')
+        # 用双引号包裹为短语查询
+        return f'"{q}"'
+
     def fts_search(self, conn: sqlite3.Connection, query: str,
                    top_k: int = 10) -> List[Tuple[str, float]]:
-        """FTS5 全文搜索"""
+        """FTS5 全文搜索（v5.4.7 修复：特殊字符转义）"""
         try:
+            escaped = self._escape_fts5_query(query)
+            if not escaped:
+                return []
             rows = conn.execute("""
                 SELECT m.id, bm25(memory_fts) as score
                 FROM memory_fts
-                JOIN memories m ON memory_fts.rowid = (
-                    SELECT rowid FROM memories WHERE id = m.id
-                )
+                JOIN memories m ON memory_fts.rowid = m.rowid
                 WHERE memory_fts MATCH ?
                 ORDER BY score
                 LIMIT ?
-            """, (query, top_k)).fetchall()
+            """, (escaped, top_k)).fetchall()
             return [(row[0], 1.0 / (1.0 + math.exp(row[1]))) for row in rows]
         except sqlite3.OperationalError:
             return []

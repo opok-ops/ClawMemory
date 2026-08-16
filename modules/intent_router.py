@@ -301,6 +301,11 @@ class IntentRouter:
         self._cache[cache_key] = (top_name, result.confidence, candidates)
         return result
 
+    # v5.4.7 修复：添加 classify_intent 别名，与 README 文档保持一致
+    def classify_intent(self, text: str, force_override: Optional[str] = None) -> IntentResult:
+        """classify() 的别名方法，与 README 文档中的 API 名称保持一致。"""
+        return self.classify(text, force_override)
+
     # -- batch --------------------------------------------------------------
 
     def classify_batch(self, texts: List[str]) -> List[IntentResult]:

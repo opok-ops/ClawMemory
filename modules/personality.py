@@ -6,6 +6,7 @@ MindForge v5.0 人格化引擎
 import json
 import time
 import re
+import sqlite3  # v5.4.7 修复 C-4：异常处理中引用 sqlite3.OperationalError 需要此导入
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Tuple
 from collections import defaultdict, Counter

@@ -1,0 +1,8 @@
+{
+  "name": "mindforge-dsh-plugin",
+  "version": "0.1.0",
+  "description": "MindForge memory engine plugin for DeepSeek Harness",
+  "entry": "lib/index.js",
+  "type": "bundle",
+  "patch": "cordis.patch.yml"
+}

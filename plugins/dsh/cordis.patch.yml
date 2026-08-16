@@ -1,0 +1,37 @@
+# MindForge DSH Plugin v0.1.1 — patch configuration
+# Registers memory tools and hooks into agent lifecycle events.
+
+- id: mindforge-memory
+  plugin:
+    name: mindforge-dsh-plugin
+    inject:
+      - tools
+      - agentLoop
+  config:
+    # MindForge REST API endpoint
+    host: "127.0.0.1"
+    port: 8765
+    # Auto-start MindForge backend if not running
+    autoStart: true
+    # Path to MindForge project root (for auto-start)
+    # mindforgePath: "/path/to/MindForge"
+    # Python executable path (for auto-start)
+    # pythonPath: "python3"
+    # Database path
+    dbPath: "mindforge_agent.db"
+    # Auto-capture turn summaries as memories
+    autoCapture: true
+    # Inject recalled memories into agent context
+    autoInject: true
+    # Max memories to inject per turn
+    maxInjectMemories: 5
+    # Min relevance score for auto-injection
+    minRelevance: 0.3
+    # Tags for auto-captured memories
+    captureTags: ["dsh", "agent-session"]
+    # Importance for captured memories
+    captureImportance: "MEDIUM"
+    # Compact tool output (saves tokens)
+    compactOutput: true
+    # Memory injection format: full | compact | ids-only
+    injectFormat: "compact"

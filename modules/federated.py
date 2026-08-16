@@ -297,8 +297,9 @@ class FederatedMemory:
         local_results = []
         if self.storage and query:
             try:
-                local_results = self.storage.search_memories(
-                    query=query, limit=max_per_peer * len(search_peers) or max_per_peer)
+                # v5.4.7 修复 H-3：使用 fuzzy_search 替代不存在的 search_memories
+                local_results = self.storage.fuzzy_search(
+                    query, limit=max_per_peer * len(search_peers) or max_per_peer)
             except Exception:
                 pass
 
