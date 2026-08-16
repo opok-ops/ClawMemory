@@ -253,9 +253,7 @@ class IndexEngine:
             rows = conn.execute("""
                 SELECT m.id, bm25(memory_fts) as score
                 FROM memory_fts
-                JOIN memories m ON memory_fts.rowid = (
-                    SELECT rowid FROM memories WHERE id = m.id
-                )
+                JOIN memories m ON memory_fts.rowid = m.rowid
                 WHERE memory_fts MATCH ?
                 ORDER BY score
                 LIMIT ?

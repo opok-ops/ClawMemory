@@ -5268,10 +5268,11 @@ class StorageEngine:
         # 使用 FTS5 全文搜索找相似内容
         try:
             rows = conn.execute(
-                "SELECT id, content, category, layer, importance, starred, "
+                "SELECT m.id, m.content, m.category, m.layer, m.importance, m.starred, "
                 "bm25(memory_fts) as relevance "
                 "FROM memory_fts "
-                "WHERE memory_fts MATCH ? AND id != ? "
+                "JOIN memories m ON memory_fts.rowid = m.rowid "
+                "WHERE memory_fts MATCH ? AND m.id != ? "
                 "ORDER BY relevance "
                 "LIMIT ?",
                 (entry.content[:200], memory_id, limit * 2)

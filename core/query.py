@@ -89,6 +89,7 @@ class QueryEngine:
                     score_map[entry.id] = s
 
         # 路 3：FTS5 全文检索
+        fts5_used = False
         try:
             conn = self.storage._get_conn()
             fts_results = self.index.fts_search(conn, query, top_k=max_results * 3)
@@ -96,6 +97,7 @@ class QueryEngine:
                 if s >= score_map.get(doc_id, 0.0):
                     score_map[doc_id] = s
             if fts_results:
+                fts5_used = True
                 strategy_used = "tfidf+fuzzy+fts5"
             else:
                 strategy_used = "tfidf+fuzzy"
@@ -109,7 +111,7 @@ class QueryEngine:
                     query, top_k=max_results * 3,
                     categories=categories, layers=layers)
                 if vector_results:
-                    strategy_used = "vector+tfidf+fuzzy+fts5"
+                    strategy_used = "vector+tfidf+fuzzy" + ("+fts5" if fts5_used else "")
                     for item in vector_results:
                         entry = item["entry"]
                         s = float(item["score"])
