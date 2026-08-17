@@ -118,11 +118,12 @@ class SkillExtractor:
     def __init__(self,
                  min_cluster_size: int = 2,
                  max_skills: int = 50,
-                 overlap_threshold: float = 0.20,
+                 overlap_threshold: float = 0.35,  # v5.4.8 P3-002: 从 0.20 提高到 0.35
                  min_trigger_hits: int = 1,
                  max_step_per_skill: int = 25):
         self.min_cluster_size = max(1, int(min_cluster_size))
         self.max_skills = max_skills
+        self.base_threshold = overlap_threshold
         self.overlap_threshold = overlap_threshold
         self.min_trigger_hits = min_trigger_hits
         self.max_step = max_step_per_skill
@@ -146,6 +147,15 @@ class SkillExtractor:
     def _cluster(self, memories: List[Dict[str, Any]]) -> List[List[int]]:
         n = len(memories)
         parent = list(range(n))
+
+        # v5.4.8 P3-002 修复：自适应阈值，防止大数据集下的链式合并
+        # 数据集越大，阈值越高，避免不相关的记忆通过中间节点连接
+        import math
+        adaptive_threshold = min(
+            self.base_threshold + 0.05 * math.log(max(n, 1)),
+            0.60  # 上限 0.60
+        )
+        threshold = max(self.base_threshold, adaptive_threshold)
 
         def find(x: int) -> int:
             while parent[x] != x:
@@ -177,7 +187,7 @@ class SkillExtractor:
                 # 若标签完全相同直接合并
                 if ti and tj and ti == tj:
                     score = max(score, 0.85)
-                if score >= self.overlap_threshold:
+                if score >= threshold:
                     union(i, j)
 
         buckets: Dict[int, List[int]] = {}

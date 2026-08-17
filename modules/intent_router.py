@@ -261,21 +261,29 @@ class IntentRouter:
         fallback = False
 
         # LLM 兜底（若配置且置信度低于阈值或与第二名差距小）
+        # v5.4.8 P2-003 修复：添加最低 LLM 置信度阈值，防止低质量 LLM 结果被接受
+        llm_accepted = False
+        min_llm_confidence = 0.5  # LLM 结果必须达到此阈值才被接受
+
         if top_score < self.min_confidence and self.llm_classifier is not None:
             try:
                 llm_scores = self.llm_classifier(src) or []
                 if llm_scores:
                     llm_scores.sort(key=lambda x: x[1], reverse=True)
                     first = llm_scores[0]
-                    if first[0] in self.intents and first[1] > top_score:
+                    # 验证：意图存在 + 分数高于规则 + 分数达到最低阈值
+                    if (first[0] in self.intents and
+                        first[1] > top_score and
+                        first[1] >= min_llm_confidence):
                         top_name, top_score = first[0], first[1]
                         candidates = [(n, round(s, 4)) for n, s in llm_scores[:5]]
                         fallback = True
+                        llm_accepted = True
             except Exception:
                 pass
 
-        # 二次兜底：默认意图
-        if top_score < self.min_confidence:
+        # 二次兜底：默认意图（仅在 LLM 未接受时）
+        if top_score < self.min_confidence and not llm_accepted:
             top_name = DEFAULT_INTENT
             top_score = max(top_score, 0.25)
             fallback = True

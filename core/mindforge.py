@@ -150,9 +150,26 @@ class MindForge:
         if self.config.encrypted:
             self._init_encryption()
 
-        self._init_storage()
-        self._init_index()
-        self._init_query()
+        # v5.4.8 P0-001 修复：encrypted=True 但加密引擎未就绪时，
+        # 不创建未加密数据库，延迟到 init_with_password() 完成
+        self._pending_encryption = (
+            self.config.encrypted and self._encryption is None
+        )
+
+        if not self._pending_encryption:
+            self._init_storage()
+            self._init_index()
+            self._init_query()
+        else:
+            self._storage = None
+            self._index = None
+            self._query = None
+            logger.error(
+                "encrypted=True but no encryption key available. "
+                "Storage initialization deferred. "
+                "Call init_with_password(password) to complete setup. "
+                "DO NOT use add/search/update until encryption is initialized."
+            )
 
     def _init_encryption(self):
         """初始化加密引擎（v5.2.2 修复：补充缺失的初始化逻辑）
@@ -198,19 +215,38 @@ class MindForge:
             self._query = QueryEngine(self._storage, self._index)
 
     def init_with_password(self, password: str):
-        """使用密码初始化加密引擎"""
+        """使用密码初始化加密引擎
+
+        v5.4.8 P0-001 修复：支持延迟初始化场景。
+        如果 __init__ 因缺少密钥而延迟了存储引擎创建，
+        此处完成完整的初始化链。
+        """
         if not self.config.encrypted:
             return
 
+        # 检查是否存在未加密的旧数据库
+        db_path = Path(self.config.db_path)
+        if self._pending_encryption and db_path.exists():
+            logger.warning(
+                "Existing database found at %s before encryption was initialized. "
+                "This database may contain unencrypted data. "
+                "Consider backing up and recreating with encryption.",
+                db_path
+            )
+
         engine = _init_engine(password, self.config.key_file)
         self._encryption = engine
+        self._pending_encryption = False
 
-        self._storage = StorageEngine(
-            db_path=self.config.db_path,
-            encryption=engine,
-            encrypted=True,
-        )
-        self._query = QueryEngine(self._storage, self._index)
+        # 完成延迟的初始化链
+        self._init_storage()
+        if self._index is None:
+            self._init_index()
+        if self._query is None:
+            self._init_query()
+        else:
+            # 更新已有 query engine 的 storage 引用
+            self._query.storage = self._storage
 
     def add(self,
             content: str,
@@ -790,6 +826,19 @@ class MindForge:
     def stats(self) -> dict:
         """获取统计信息"""
         return self._storage.get_stats()
+
+    def count_memories(self, category: Optional[str] = None,
+                       layer: Optional[MemoryLayer] = None) -> int:
+        """统计记忆数量（v5.4.8 P2-004 修复：补充缺失的 facade 方法）
+
+        Args:
+            category: 按分类筛选（可选）
+            layer: 按层级筛选（可选）
+
+        Returns:
+            int: 记忆数量
+        """
+        return self._storage.count_memories(category, layer)
 
     def audit_log(self, memory_id: Optional[str] = None,
                   actor: Optional[str] = None,

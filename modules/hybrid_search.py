@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 
 # ---------------------------------------------------------------------------
@@ -182,27 +182,63 @@ class QueryExpander:
     # -- typo tolerance (edit distance 1) ----------------------------------
 
     @staticmethod
-    def _edits1(word: str) -> Set[str]:
-        letters = "abcdefghijklmnopqrstuvwxyz0123456789_"
-        splits = [(word[:i], word[i:]) for i in range(len(word) + 1)]
-        deletes = [L + R[1:] for L, R in splits if R]
-        transposes = [L + R[1] + R[0] + R[2:] for L, R in splits if len(R) > 1]
-        replaces = [L + c + R[1:] for L, R in splits if R for c in letters]
-        inserts = [L + c + R for L, R in splits for c in letters]
-        return set(deletes + transposes + replaces + inserts)
+    def _edit_dist1(a: str, b: str) -> bool:
+        """Check if two strings have edit distance <= 1. O(min(len(a), len(b)))"""
+        la, lb = len(a), len(b)
+        if abs(la - lb) > 1:
+            return False
+        # Ensure a is the shorter one
+        if la > lb:
+            a, b = b, a
+            la, lb = lb, la
+        # Same length: check for 0 or 1 substitution
+        if la == lb:
+            diff = 0
+            for ca, cb in zip(a, b):
+                if ca != cb:
+                    diff += 1
+                    if diff > 1:
+                        return False
+            return True
+        # Length diff 1: check for 1 insertion/deletion
+        i = j = 0
+        diff = 0
+        while i < la and j < lb:
+            if a[i] == b[j]:
+                i += 1
+                j += 1
+            else:
+                diff += 1
+                if diff > 1:
+                    return False
+                j += 1  # skip one char in longer string
+        return True
 
-    def _typo_candidates(self, tokens: Sequence[str]) -> Dict[str, List[str]]:
-        """把已知同义词/缩写词典作为 vocabulary，寻找编辑距离 1 的替换。"""
+    def _typo_candidates(self, tokens: Sequence[str], max_tokens: int = 5) -> Dict[str, List[str]]:
+        """把已知同义词/缩写词典作为 vocabulary，寻找编辑距离 1 的替换。
+
+        v5.4.8 P1-001 修复：改用反向查找（遍历 vocab 检查编辑距离），
+        而不是生成所有 edits（O(L*A) per word）。
+        添加 max_tokens 限制防止长查询导致性能崩溃。
+        """
         vocab: Set[str] = set(self.synonyms) | set(self.abbr) | set(self.hyponyms)
+        if not vocab:
+            return {}
+
         out: Dict[str, List[str]] = {}
+        checked = 0
         for t in tokens:
+            if checked >= max_tokens:
+                break
             if len(t) < 3 or not re.fullmatch(r"[a-z0-9_]+", t):
                 continue
             if t in vocab:
                 continue
-            candidates = [c for c in self._edits1(t) if c in vocab]
+            # 反向查找：遍历 vocab 检查编辑距离
+            candidates = [v for v in vocab if self._edit_dist1(t, v)]
             if candidates:
                 out[t] = candidates[:3]
+            checked += 1
         return out
 
     # -- main expand -------------------------------------------------------

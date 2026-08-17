@@ -335,25 +335,60 @@ class OllamaBackend(EmbeddingBackend):
         return self._call_api(text)
 
     def encode_batch(self, texts: List[str]) -> Optional[List[List[float]]]:
+        """批量编码文本为向量。
+
+        v5.4.8 P2-001 修复：
+        - 小批量（<4）使用串行，避免线程池开销
+        - 部分失败时返回部分结果而不是整体失败
+        """
         if not self.is_available or not texts:
             return None
-        if len(texts) == 1:
-            vec = self._call_api(texts[0])
-            return [vec] if vec is not None else None
+
+        n = len(texts)
+
+        # 小批量：串行处理，避免线程池开销
+        if n < 4:
+            results = []
+            for text in texts:
+                vec = self._call_api(text)
+                if vec is not None:
+                    results.append(vec)
+            return results if results else None
+
+        # 大批量：并发处理
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        results = [None] * len(texts)
-        with ThreadPoolExecutor(max_workers=min(8, len(texts))) as executor:
+        results = [None] * n
+        failed_count = 0
+
+        with ThreadPoolExecutor(max_workers=min(8, n)) as executor:
             future_to_idx = {
                 executor.submit(self._call_api, text): i
                 for i, text in enumerate(texts)
             }
             for future in as_completed(future_to_idx):
                 idx = future_to_idx[future]
-                vec = future.result()
-                if vec is None:
-                    return None
-                results[idx] = vec
-        return results
+                try:
+                    vec = future.result()
+                    if vec is not None:
+                        results[idx] = vec
+                    else:
+                        failed_count += 1
+                except Exception:
+                    failed_count += 1
+
+        # 全部失败
+        if failed_count == n:
+            return None
+
+        # 部分失败：记录警告但返回成功部分
+        if failed_count > 0:
+            logger.warning(
+                "Ollama batch: %d/%d succeeded, %d failed",
+                n - failed_count, n, failed_count
+            )
+
+        # 过滤掉 None
+        return [r for r in results if r is not None]
 
 
 # ===== 自定义 HTTP 后端 =====
@@ -442,10 +477,25 @@ class HTTPBackend(EmbeddingBackend):
             return result[0]
         return None
 
-    def encode_batch(self, texts: List[str]) -> Optional[List[List[float]]]:
+    def encode_batch(self, texts: List[str], batch_size: int = 100) -> Optional[List[List[float]]]:
+        """批量编码文本为向量。
+
+        v5.4.8 P1-002 修复：添加 batch_size 限制，分批发送请求，
+        防止大量文本导致 413 错误或超时。
+        """
         if not self.is_available or not texts:
             return None
-        return self._call_api(texts)
+
+        # 分批处理
+        all_results = []
+        for i in range(0, len(texts), batch_size):
+            chunk = texts[i:i + batch_size]
+            result = self._call_api(chunk)
+            if result is None:
+                logger.warning("HTTPBackend batch %d-%d failed", i, i + len(chunk))
+                return None
+            all_results.extend(result)
+        return all_results
 
 
 # ===== 后端工厂 =====

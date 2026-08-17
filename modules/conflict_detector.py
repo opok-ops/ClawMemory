@@ -219,8 +219,15 @@ class ConflictDetector:
         for pa in set_a:
             for pb in set_b:
                 if pa != pb:
-                    # 检查是否是同类事物（简单启发式：长度相近且都是技术名词）
-                    if abs(len(pa) - len(pb)) <= 5:
+                    # v5.4.8 P3-001 修复：收紧长度差阈值，添加额外启发式
+                    # 1. 长度差 <= 2（更严格）
+                    # 2. 首字母相同（同类事物的常见模式）
+                    # 3. 一个包含另一个（如 vim/vimrc）
+                    len_diff_ok = abs(len(pa) - len(pb)) <= 2
+                    same_first_letter = pa[0] == pb[0] if pa and pb else False
+                    substring_rel = pa in pb or pb in pa
+
+                    if len_diff_ok or same_first_letter or substring_rel:
                         conflicts.append((pa, pb))
         if not conflicts:
             return None
