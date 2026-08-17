@@ -338,6 +338,37 @@ context = adapter.get_context("database optimization")
 
 ## Changelog（版本记录）
 
+### v5.4.8 (2026-08-16)
+
+**5 个新 API + DSH 插件 v0.1.1 最终版 + 10 项工程修复**
+
+**新 API（Agent 记忆 + AI 短剧）：**
+
+1. **Agent 记忆强化 `agent_memory_reinforce()`** — 基于访问频率自动提升高频记忆重要性（LOW→MEDIUM→HIGH）。支持 dry_run 预览模式。
+2. **跨 Agent 记忆共享 `agent_shared_memories()`** — 将源 Agent 记忆复制给目标 Agent，批量去重（O(1) set 查找），FTS 同步，审计记录。
+3. **Agent 知识领域分析 `agent_knowledge_domains()`** — 基于分类和标签分析 Agent 知识分布，返回 Top-N 领域及热门标签。
+4. **AI 短剧场景生成 `drama_generate_scene()`** — 基于剧本上下文生成新场景，包含情感基调、类型建议、角色关联。
+5. **短剧情感时间线 `drama_emotion_timeline()`** — 分析各场景情感走向，4 维情感词典 + 线性趋势分析 + 自动摘要。
+
+**DSH 插件 v0.1.1（最终版）：**
+
+6. **新增 4 个工具** — `memory_list`、`memory_update`、`memory_tags`、`memory_star`，总计 9 个工具。
+7. **降 token 优化** — 精简工具描述、紧凑输出模式（`compactOutput`）、可配注入格式（`full/compact/ids-only`）。
+8. **健壮性提升** — HTTP 请求重试 + 超时控制、指数退避启动等待（最长 15s）、REST API PUT 支持 importance/starred。
+
+**工程修复（10 项，P0-P3）：**
+
+9. **P0 加密初始化缺陷** — `encrypted=True` 但无密钥时不再创建未加密数据库，延迟存储引擎初始化到 `init_with_password()` 完成。
+10. **P1 Typo 性能崩溃** — `hybrid_search.py` 改用反向查找替代生成所有 edits，添加 `max_tokens=5` 限制。
+11. **P1 HTTP batch 限制** — `HTTPBackend.encode_batch()` 添加 `batch_size=100` 分批处理，防止 413 错误。
+12. **P2 Ollama 并发优化** — 小批量（<4）串行避免线程池开销，部分失败返回成功部分而非整体失败。
+13. **P2 降级日志去重** — 向量引擎降级警告只输出一次（模块级标志位），调用前先检查 engine 可用性。
+14. **P2 LLM 意图误判** — 添加 `min_llm_confidence=0.5` 阈值，LLM 结果被接受后跳过默认意图兜底。
+15. **P2 API 一致性** — 补充缺失的 `count_memories()` facade 方法。
+16. **P2 安全加固** — 5 个新 API 全部添加 Unicode 控制字符过滤 + 长度限制 + 类型检查 + 数值边界校验。
+17. **P3 偏好冲突检测** — 收紧长度差阈值（5→2），添加首字母相同、包含关系等额外启发式。
+18. **P3 聚类阈值** — 默认 0.20→0.35，添加自适应机制 `threshold += 0.05 * log(n)`，上限 0.60。
+
 ### v5.4.7 (2026-08-15)
 
 **关键 Bug 修复 + DSH 插件集成基础**
