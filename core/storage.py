@@ -667,6 +667,7 @@ class StorageEngine:
             if t is None:
                 continue
             s = StorageEngine._strip_control(str(t)).strip()
+            s = _XSS_RE.sub("", s)  # v5.4.8 安全修复：tags HTML 消毒
             if not s:
                 continue
             if len(s) > max_tag_len:
@@ -704,6 +705,7 @@ class StorageEngine:
                 return v
             if isinstance(v, str):
                 s = StorageEngine._strip_control(v)
+                s = _XSS_RE.sub("", s)  # v5.4.8 安全修复：metadata HTML 消毒
                 if len(s) > max_string_len:
                     s = s[:max_string_len]
                 # 全空白字符串返回空串而非 None（用户可能存空格占位）
@@ -1008,6 +1010,7 @@ class StorageEngine:
             if isinstance(content, str) and len(content) > MAX_CONTENT_LEN:
                 raise ValueError(f"content exceeds {MAX_CONTENT_LEN} chars (got {len(content)})")
             content = self._strip_control(content)
+            content = _sanitize_html(content)  # v5.4.8 安全修复：XSS 消毒
         if category is not None:
             if isinstance(category, str) and len(category) > 128:
                 category = category[:128]
@@ -7109,6 +7112,8 @@ class StorageEngine:
             {path, size_mb, timestamp, success}
         """
         import shutil
+        # v5.4.8 安全修复：路径遍历防护
+        backup_dir = _safe_path(backup_dir, allowed_exts=None)
         backup_path = Path(backup_dir)
         backup_path.mkdir(parents=True, exist_ok=True)
 
@@ -7141,6 +7146,8 @@ class StorageEngine:
         Returns:
             备份列表 [{filename, path, size_mb, created_at}]
         """
+        # v5.4.8 安全修复：路径遍历防护
+        backup_dir = _safe_path(backup_dir, allowed_exts=None)
         backup_path = Path(backup_dir)
         if not backup_path.exists():
             return []
@@ -7168,6 +7175,8 @@ class StorageEngine:
             {success, restored_from, backup_created, error}
         """
         import shutil
+        # v5.4.8 安全修复：路径遍历防护
+        backup_path = _safe_path(backup_path, allowed_exts={".db"})
         backup_file = Path(backup_path)
         if not backup_file.exists():
             return {"success": False, "error": "备份文件不存在"}

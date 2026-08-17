@@ -30,6 +30,7 @@ import logging
 import sys
 import os
 import time
+import hmac
 import threading
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -43,6 +44,9 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 logger = logging.getLogger(__name__)
+
+# v5.4.8 安全修复：请求体大小限制（10MB）
+MAX_BODY_SIZE = 10 * 1024 * 1024
 
 
 # v5.4.7 修复 H-7：简单速率限制器
@@ -110,6 +114,10 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
         content_length = int(self.headers.get("Content-Length", 0))
         if content_length == 0:
             return {}
+        # v5.4.8 安全修复：请求体大小限制
+        if content_length > MAX_BODY_SIZE:
+            self._send_json({"error": f"Request body too large (max {MAX_BODY_SIZE // 1024 // 1024}MB)"}, 413)
+            return None
         raw = self.rfile.read(content_length)
         try:
             return json.loads(raw.decode("utf-8"))
@@ -124,7 +132,8 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
         auth_header = self.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
-            if token == api_key:
+            # v5.4.8 安全修复：timing-safe 比较防止时序攻击
+            if hmac.compare_digest(token, api_key):
                 return True
         self._send_json({"error": "Unauthorized — set Authorization: Bearer <MINDFORGE_API_KEY>"}, 401)
         return False
@@ -244,7 +253,7 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
 
         except Exception as e:
             logger.exception("API error")
-            self._send_json({"error": str(e)}, 500)
+            self._send_json({"error": "Internal server error"}, 500)
 
     def do_POST(self):
         parsed = urlparse(self.path)
@@ -276,6 +285,11 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
 
             elif path == "/api/import":
                 memories = body.get("memories", [])
+                # v5.4.8 安全修复：导入批次大小限制
+                MAX_IMPORT_BATCH = 10000
+                if len(memories) > MAX_IMPORT_BATCH:
+                    self._send_json({"error": f"Too many memories (max {MAX_IMPORT_BATCH})"}, 400)
+                    return
                 imported = 0
                 failed = 0
                 for mem in memories:
@@ -298,7 +312,7 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
 
         except Exception as e:
             logger.exception("API error")
-            self._send_json({"error": str(e)}, 500)
+            self._send_json({"error": "Internal server error"}, 500)
 
     def do_PUT(self):
         parsed = urlparse(self.path)
@@ -332,7 +346,7 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
 
         except Exception as e:
             logger.exception("API error")
-            self._send_json({"error": str(e)}, 500)
+            self._send_json({"error": "Internal server error"}, 500)
 
     def do_DELETE(self):
         parsed = urlparse(self.path)
@@ -354,7 +368,7 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
 
         except Exception as e:
             logger.exception("API error")
-            self._send_json({"error": str(e)}, 500)
+            self._send_json({"error": "Internal server error"}, 500)
 
     def log_message(self, format, *args):
         logger.info("%s - %s", self.address_string(), format % args)
