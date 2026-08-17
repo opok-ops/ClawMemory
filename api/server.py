@@ -104,7 +104,10 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # v5.4.8 安全修复：CORS 限制为配置的源（默认仅允许同源）
+        allowed_origin = os.environ.get("MINDFORGE_CORS_ORIGIN", "")
+        if allowed_origin:
+            self.send_header("Access-Control-Allow-Origin", allowed_origin)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
@@ -128,14 +131,20 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
         """验证 Bearer Token（通过 MINDFORGE_API_KEY 环境变量配置）"""
         api_key = os.environ.get("MINDFORGE_API_KEY", "")
         if not api_key:
-            return True  # 未设置 API Key 时跳过认证（本地开发模式）
+            # v5.4.8 安全修复：未设置 API Key 时记录警告
+            if not getattr(self.__class__, '_auth_warned', False):
+                logger.warning(
+                    "MINDFORGE_API_KEY not set — API is open to all requests. "
+                    "Set MINDFORGE_API_KEY environment variable to enable authentication."
+                )
+                self.__class__._auth_warned = True
+            return True
         auth_header = self.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
-            # v5.4.8 安全修复：timing-safe 比较防止时序攻击
             if hmac.compare_digest(token, api_key):
                 return True
-        self._send_json({"error": "Unauthorized — set Authorization: Bearer <MINDFORGE_API_KEY>"}, 401)
+        self._send_json({"error": "Unauthorized"}, 401)
         return False
 
     def do_OPTIONS(self):
@@ -158,6 +167,13 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
         try:
             if path == "/api/health":
                 result = self.mindforge.health_check()
+                # v5.4.8 安全修复：未认证时只返回基本状态
+                api_key = os.environ.get("MINDFORGE_API_KEY", "")
+                if not api_key:
+                    result = {
+                        "status": result.get("status", "unknown"),
+                        "total_memories": result.get("total_memories", 0),
+                    }
                 self._send_json(result)
 
             elif path == "/api/stats":

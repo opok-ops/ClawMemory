@@ -1559,7 +1559,6 @@ class StorageEngine:
         return {
             "total": total,
             "db_size_bytes": db_size,
-            "db_path": str(self.db_path),
             "by_privacy": by_privacy,
             "by_layer": by_layer,
             "by_importance": by_importance,
