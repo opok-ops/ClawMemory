@@ -146,6 +146,7 @@ class MindForge:
         self._federated = None          # v5.4.2 lazy
         self._federated_acl = None      # v5.4.2 lazy
         self._share_conflict = None     # v5.4.2 lazy
+        self._evolution = None          # v5.4.8 lazy (记忆巩固)
 
         if self.config.encrypted:
             self._init_encryption()
@@ -2640,6 +2641,35 @@ class MindForge:
                            if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
         days = max(1, min(365, int(days)))
         return self._storage.agent_sentiment(agent_id, days)
+
+    @property
+    def evolution(self):
+        """记忆演化引擎（v5.4.8 新增 facade）
+
+        提供记忆巩固（短期→长期）、遗忘曲线计算等功能。
+        """
+        if self._evolution is None:
+            try:
+                from ..modules.evolution import MemoryEvolution
+            except (ImportError, ValueError):
+                from modules.evolution import MemoryEvolution
+            self._evolution = MemoryEvolution(self._storage)
+        return self._evolution
+
+    def consolidate(self, agent_id: str = "", session_id: str = "") -> Dict[str, Any]:
+        """记忆巩固：将短期记忆转化为长期记忆（v5.4.8 新增 facade）
+
+        基于艾宾浩斯遗忘曲线，评估短期记忆的强度、访问频率和重要性，
+        将符合条件的记忆提升到长期记忆层。
+
+        Args:
+            agent_id: 操作者 Agent ID（可选，用于审计日志）
+            session_id: 会话 ID（可选）
+
+        Returns:
+            巩固结果：{promoted, demoted, consolidated, details}
+        """
+        return self.evolution.consolidate(agent_id, session_id)
 
     def memory_decay(self,
                      agent_id: str,
