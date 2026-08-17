@@ -788,6 +788,7 @@ class StorageEngine:
 
         # v5.4.0 安全加固：控制字符过滤（所有字符串字段 + tags + metadata 递归）
         content = self._strip_control(content)
+        content = _sanitize_html(content)  # v5.4.8 P0 修复：XSS 消毒
         category = self._strip_control(category)
         source_session = self._strip_control(source_session)
         source_agent = self._strip_control(source_agent)

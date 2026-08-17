@@ -127,9 +127,10 @@ class QueryEngine:
                         for item in vector_results:
                             entry = item["entry"]
                             s = float(item["score"])
-                            # 向量分数加权（向量召回的语义匹配更可靠）
-                            s = min(0.98, s * 0.95 + 0.05)
-                            if s >= score_map.get(entry.id, 0.0):
+                            # v5.4.8 P0 修复：向量分数不做人为提升，取各路最高分
+                            # 避免向量分数覆盖更准确的 TF-IDF 匹配
+                            existing = score_map.get(entry.id, 0.0)
+                            if s > existing:
                                 score_map[entry.id] = s
                 except Exception as e:
                     # 向量搜索异常（非 engine 不可用情况）
