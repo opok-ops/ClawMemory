@@ -109,6 +109,15 @@ class EncryptionEngine:
             ciphertext = self._aesgcm.encrypt(nonce, plaintext_bytes, None)
             return EncryptedBlob(ciphertext=ciphertext, nonce=nonce, salt=salt, algorithm="AES-256-GCM")
         else:
+            # v5.4.8 安全修复：弱加密回退时记录警告
+            if not getattr(self.__class__, '_weak_cipher_warned', False):
+                import logging
+                logging.getLogger(__name__).warning(
+                    "cryptography library not available — using EXPERIMENTAL_HMAC_XOR cipher. "
+                    "This cipher has not undergone peer review. "
+                    "Install cryptography package for AES-256-GCM: pip install cryptography"
+                )
+                self.__class__._weak_cipher_warned = True
             ciphertext = self._simple_encrypt(plaintext_bytes, nonce)
             return EncryptedBlob(ciphertext=ciphertext, nonce=nonce, salt=salt, algorithm="EXPERIMENTAL_HMAC_XOR")
 

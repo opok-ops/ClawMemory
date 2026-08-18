@@ -30,6 +30,7 @@ import logging
 import sys
 import os
 import time
+import hmac
 import threading
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -43,6 +44,9 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 logger = logging.getLogger(__name__)
+
+# v5.4.8 安全修复：请求体大小限制（10MB）
+MAX_BODY_SIZE = 10 * 1024 * 1024
 
 
 # v5.4.7 修复 H-7：简单速率限制器
@@ -100,7 +104,10 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # v5.4.8 安全修复：CORS 限制为配置的源（默认仅允许同源）
+        allowed_origin = os.environ.get("MINDFORGE_CORS_ORIGIN", "")
+        if allowed_origin:
+            self.send_header("Access-Control-Allow-Origin", allowed_origin)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
@@ -110,6 +117,10 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
         content_length = int(self.headers.get("Content-Length", 0))
         if content_length == 0:
             return {}
+        # v5.4.8 安全修复：请求体大小限制
+        if content_length > MAX_BODY_SIZE:
+            self._send_json({"error": f"Request body too large (max {MAX_BODY_SIZE // 1024 // 1024}MB)"}, 413)
+            return None
         raw = self.rfile.read(content_length)
         try:
             return json.loads(raw.decode("utf-8"))
@@ -120,13 +131,20 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
         """验证 Bearer Token（通过 MINDFORGE_API_KEY 环境变量配置）"""
         api_key = os.environ.get("MINDFORGE_API_KEY", "")
         if not api_key:
-            return True  # 未设置 API Key 时跳过认证（本地开发模式）
+            # v5.4.8 安全修复：未设置 API Key 时记录警告
+            if not getattr(self.__class__, '_auth_warned', False):
+                logger.warning(
+                    "MINDFORGE_API_KEY not set — API is open to all requests. "
+                    "Set MINDFORGE_API_KEY environment variable to enable authentication."
+                )
+                self.__class__._auth_warned = True
+            return True
         auth_header = self.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
-            if token == api_key:
+            if hmac.compare_digest(token, api_key):
                 return True
-        self._send_json({"error": "Unauthorized — set Authorization: Bearer <MINDFORGE_API_KEY>"}, 401)
+        self._send_json({"error": "Unauthorized"}, 401)
         return False
 
     def do_OPTIONS(self):
@@ -149,6 +167,13 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
         try:
             if path == "/api/health":
                 result = self.mindforge.health_check()
+                # v5.4.8 安全修复：未认证时只返回基本状态
+                api_key = os.environ.get("MINDFORGE_API_KEY", "")
+                if not api_key:
+                    result = {
+                        "status": result.get("status", "unknown"),
+                        "total_memories": result.get("total_memories", 0),
+                    }
                 self._send_json(result)
 
             elif path == "/api/stats":
@@ -244,7 +269,7 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
 
         except Exception as e:
             logger.exception("API error")
-            self._send_json({"error": str(e)}, 500)
+            self._send_json({"error": "Internal server error"}, 500)
 
     def do_POST(self):
         parsed = urlparse(self.path)
@@ -268,11 +293,19 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                     content=content,
                     category=body.get("category", "general"),
                     tags=body.get("tags", []),
+                    importance=body.get("importance"),
+                    starred=body.get("starred"),
+                    source_agent=body.get("source_agent", ""),
                 )
                 self._send_json(entry.to_dict() if hasattr(entry, "to_dict") else vars(entry), 201)
 
             elif path == "/api/import":
                 memories = body.get("memories", [])
+                # v5.4.8 安全修复：导入批次大小限制
+                MAX_IMPORT_BATCH = 10000
+                if len(memories) > MAX_IMPORT_BATCH:
+                    self._send_json({"error": f"Too many memories (max {MAX_IMPORT_BATCH})"}, 400)
+                    return
                 imported = 0
                 failed = 0
                 for mem in memories:
@@ -281,6 +314,9 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                             content=mem.get("content", ""),
                             category=mem.get("category", "general"),
                             tags=mem.get("tags", []),
+                            importance=mem.get("importance"),
+                            starred=mem.get("starred"),
+                            source_agent=mem.get("source_agent", ""),
                         )
                         imported += 1
                     except Exception:
@@ -292,7 +328,7 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
 
         except Exception as e:
             logger.exception("API error")
-            self._send_json({"error": str(e)}, 500)
+            self._send_json({"error": "Internal server error"}, 500)
 
     def do_PUT(self):
         parsed = urlparse(self.path)
@@ -326,7 +362,7 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
 
         except Exception as e:
             logger.exception("API error")
-            self._send_json({"error": str(e)}, 500)
+            self._send_json({"error": "Internal server error"}, 500)
 
     def do_DELETE(self):
         parsed = urlparse(self.path)
@@ -348,7 +384,7 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
 
         except Exception as e:
             logger.exception("API error")
-            self._send_json({"error": str(e)}, 500)
+            self._send_json({"error": "Internal server error"}, 500)
 
     def log_message(self, format, *args):
         logger.info("%s - %s", self.address_string(), format % args)

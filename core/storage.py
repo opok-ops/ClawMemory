@@ -667,6 +667,7 @@ class StorageEngine:
             if t is None:
                 continue
             s = StorageEngine._strip_control(str(t)).strip()
+            s = _XSS_RE.sub("", s)  # v5.4.8 安全修复：tags HTML 消毒
             if not s:
                 continue
             if len(s) > max_tag_len:
@@ -704,6 +705,7 @@ class StorageEngine:
                 return v
             if isinstance(v, str):
                 s = StorageEngine._strip_control(v)
+                s = _XSS_RE.sub("", s)  # v5.4.8 安全修复：metadata HTML 消毒
                 if len(s) > max_string_len:
                     s = s[:max_string_len]
                 # 全空白字符串返回空串而非 None（用户可能存空格占位）
@@ -788,6 +790,7 @@ class StorageEngine:
 
         # v5.4.0 安全加固：控制字符过滤（所有字符串字段 + tags + metadata 递归）
         content = self._strip_control(content)
+        content = _sanitize_html(content)  # v5.4.8 P0 修复：XSS 消毒
         category = self._strip_control(category)
         source_session = self._strip_control(source_session)
         source_agent = self._strip_control(source_agent)
@@ -1007,6 +1010,7 @@ class StorageEngine:
             if isinstance(content, str) and len(content) > MAX_CONTENT_LEN:
                 raise ValueError(f"content exceeds {MAX_CONTENT_LEN} chars (got {len(content)})")
             content = self._strip_control(content)
+            content = _sanitize_html(content)  # v5.4.8 安全修复：XSS 消毒
         if category is not None:
             if isinstance(category, str) and len(category) > 128:
                 category = category[:128]
@@ -1555,7 +1559,6 @@ class StorageEngine:
         return {
             "total": total,
             "db_size_bytes": db_size,
-            "db_path": str(self.db_path),
             "by_privacy": by_privacy,
             "by_layer": by_layer,
             "by_importance": by_importance,
@@ -7108,6 +7111,8 @@ class StorageEngine:
             {path, size_mb, timestamp, success}
         """
         import shutil
+        # v5.4.8 安全修复：路径遍历防护
+        backup_dir = _safe_path(backup_dir, allowed_exts=None)
         backup_path = Path(backup_dir)
         backup_path.mkdir(parents=True, exist_ok=True)
 
@@ -7140,6 +7145,8 @@ class StorageEngine:
         Returns:
             备份列表 [{filename, path, size_mb, created_at}]
         """
+        # v5.4.8 安全修复：路径遍历防护
+        backup_dir = _safe_path(backup_dir, allowed_exts=None)
         backup_path = Path(backup_dir)
         if not backup_path.exists():
             return []
@@ -7167,6 +7174,8 @@ class StorageEngine:
             {success, restored_from, backup_created, error}
         """
         import shutil
+        # v5.4.8 安全修复：路径遍历防护
+        backup_path = _safe_path(backup_path, allowed_exts={".db"})
         backup_file = Path(backup_path)
         if not backup_file.exists():
             return {"success": False, "error": "备份文件不存在"}
@@ -11989,6 +11998,8 @@ class StorageEngine:
                         "UPDATE memories SET importance = ?, updated_at = ? WHERE id = ?",
                         (new_imp, time.time(), mem_id)
                     )
+                    # 审计记录
+                    self._add_audit("reinforce", mem_id, agent_id, "", "")
                 reinforced += 1
                 details.append({
                     "id": mem_id,
@@ -12056,19 +12067,21 @@ class StorageEngine:
         if not rows:
             return {"from_agent": from_aid, "to_agent": to_aid, "shared_count": 0, "details": []}
 
+        # 批量去重：一次性获取目标 Agent 已有内容（避免 N+1 查询）
+        existing_contents = set(
+            r[0] for r in conn.execute(
+                "SELECT content FROM memories WHERE source_agent = ?", (to_aid,)
+            ).fetchall()
+        )
+
         shared = 0
         details = []
         now = time.time()
 
         for r in rows:
             mem_id, content, category, tags, importance, privacy, layer, encrypted = r
-            # 检查目标 Agent 是否已有相同内容
-            existing = conn.execute(
-                "SELECT id FROM memories WHERE source_agent = ? AND content = ?",
-                (to_aid, content)
-            ).fetchone()
-
-            if existing:
+            # 检查目标 Agent 是否已有相同内容（O(1) 查找）
+            if content in existing_contents:
                 continue
 
             if not dry_run:
@@ -12085,17 +12098,20 @@ class StorageEngine:
                     importance or "MEDIUM", privacy or "INTERNAL", layer or "short_term",
                     to_aid, now, now, now, encrypted
                 ))
-                # 同步 FTS
+                # 同步 FTS（失败时记录日志）
                 try:
                     conn.execute(
                         "INSERT INTO memory_fts (rowid, content, category, tags) "
                         "VALUES ((SELECT rowid FROM memories WHERE id = ?), ?, ?, ?)",
                         (new_id, content, category or "general", tags or "[]")
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("FTS sync failed for shared memory %s: %s", new_id, e)
+                # 审计记录
+                self._add_audit("share", new_id, to_aid, "", "")
 
             shared += 1
+            existing_contents.add(content)  # 更新去重集合
             details.append({
                 "source_id": mem_id,
                 "content_preview": (content or "")[:60],
@@ -12326,10 +12342,10 @@ class StorageEngine:
 
         title = drama[1] or "未知短剧"
 
-        # 获取所有场景
+        # 获取所有场景（按集数和场景号排序）
         scenes = conn.execute(
             "SELECT id, title, content, scene_number FROM drama_scenes "
-            "WHERE drama_id = ? ORDER BY scene_number",
+            "WHERE drama_id = ? ORDER BY episode, scene_number",
             (did,)
         ).fetchall()
 

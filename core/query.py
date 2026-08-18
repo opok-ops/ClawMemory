@@ -3,11 +3,17 @@ MindForge v5.4.8 查询引擎
 语义检索 + 知识图谱查询 + 上下文优化
 """
 
+import logging
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from .storage import StorageEngine, MemoryEntry
 from .indexer import IndexEngine
 from .types import MemoryLayer
+
+logger = logging.getLogger(__name__)
+
+# v5.4.8 P2-002/P3-003 修复：向量降级只警告一次
+_vector_degradation_warned = False
 
 
 @dataclass
@@ -104,29 +110,46 @@ class QueryEngine:
         except Exception:
             strategy_used = "tfidf+fuzzy"
 
-        # 路 4：向量召回（v5.4.5 新增）
+        # 路 4：向量召回（v5.4.5 新增，v5.4.8 P2-002/P3-003 修复）
+        global _vector_degradation_warned
         if use_embedding:
-            try:
-                vector_results = self.storage.vector_search(
-                    query, top_k=max_results * 3,
-                    categories=categories, layers=layers)
-                if vector_results:
-                    strategy_used = "vector+tfidf+fuzzy" + ("+fts5" if fts5_used else "")
-                    for item in vector_results:
-                        entry = item["entry"]
-                        s = float(item["score"])
-                        # 向量分数加权（向量召回的语义匹配更可靠）
-                        s = min(0.98, s * 0.95 + 0.05)
-                        if s >= score_map.get(entry.id, 0.0):
-                            score_map[entry.id] = s
-            except Exception as e:
-                # v5.4.7 修复：向量搜索失败时记录警告而非静默降级
-                import logging
-                logging.getLogger(__name__).warning(
-                    f"向量搜索失败（可能未安装 sentence-transformers）: {e}。"
-                    f"降级为 TF-IDF + FTS5 + Fuzzy 三路搜索。"
-                    f"安装命令: pip install sentence-transformers"
-                )
+            # 先检查 engine 是否可用，避免无谓的异常
+            engine = self.storage.embedding_engine
+            engine_available = engine is not None and getattr(engine, 'is_available', False)
+
+            if engine_available:
+                try:
+                    vector_results = self.storage.vector_search(
+                        query, top_k=max_results * 3,
+                        categories=categories, layers=layers)
+                    if vector_results:
+                        strategy_used = "vector+tfidf+fuzzy" + ("+fts5" if fts5_used else "")
+                        for item in vector_results:
+                            entry = item["entry"]
+                            s = float(item["score"])
+                            # v5.4.8 P0 修复：向量分数不做人为提升，取各路最高分
+                            # 避免向量分数覆盖更准确的 TF-IDF 匹配
+                            existing = score_map.get(entry.id, 0.0)
+                            if s > existing:
+                                score_map[entry.id] = s
+                except Exception as e:
+                    # 向量搜索异常（非 engine 不可用情况）
+                    if not _vector_degradation_warned:
+                        _vector_degradation_warned = True
+                        logger.warning(
+                            "向量搜索异常，降级为纯文本检索: %s。"
+                            "此警告仅显示一次。", e
+                        )
+            else:
+                # engine 不可用，只警告一次
+                if not _vector_degradation_warned:
+                    _vector_degradation_warned = True
+                    logger.warning(
+                        "向量引擎不可用（可能未安装 sentence-transformers），"
+                        "降级为 TF-IDF + FTS5 + Fuzzy 三路检索。"
+                        "语义相似但用词不同的记忆可能无法召回。"
+                        "安装命令: pip install sentence-transformers"
+                    )
 
         # 预过滤：按 categories/layers 筛选 score_map，避免非匹配记忆占据排序位
         if categories or layers:
