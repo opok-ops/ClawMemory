@@ -156,13 +156,16 @@ def _limited_fetch(cursor, limit: int = 10000):
 
 # v5.3.7 安全加固：Unicode 控制字符过滤，防止双向字符（RLO/LRO）显示欺骗
 def _filter_unicode_ctrl(s: str) -> str:
-    """过滤 Unicode Cf/Cc 类控制字符（保留 \\n\\r\\t），防止路径/ID 显示欺骗"""
+    """过滤 Unicode C 类控制字符（保留 \n\r\t），防止路径/ID 显示欺骗
+    
+    v5.4.8 Bug#9 修复：过滤所有 C 类（Cf/Cc/Cs/Co/Cn），与 mindforge.py 保持一致
+    """
     if not isinstance(s, str) or not s:
         return s
     import unicodedata
     return ''.join(
         ch for ch in s
-        if unicodedata.category(ch) not in ('Cf', 'Cc') or ch in '\n\r\t'
+        if unicodedata.category(ch)[0] != 'C' or ch in '\n\r\t'
     )
 
 
@@ -844,7 +847,7 @@ class StorageEngine:
         )
 
         conn = self._get_conn()
-        conn.execute("""
+        cursor = conn.execute("""
             INSERT INTO memories (
                 id, content, ciphertext, nonce, salt, category, tags,
                 privacy, importance, memory_type, layer,
@@ -864,10 +867,11 @@ class StorageEngine:
         ))
 
         if not self.encrypted:
+            # v5.4.8 Bug#8 修复：使用 cursor.lastrowid 替代子查询
             conn.execute("""
                 INSERT INTO memory_fts (rowid, content, category, tags)
-                VALUES ((SELECT rowid FROM memories WHERE id = ?), ?, ?, ?)
-            """, (entry.id, content, category, json.dumps(clean_tags, ensure_ascii=False)))
+                VALUES (?, ?, ?, ?)
+            """, (cursor.lastrowid, content, category, json.dumps(clean_tags, ensure_ascii=False)))
 
         conn.commit()
         self._add_audit("add", entry.id, source_agent, source_session, privacy.value)
@@ -12086,7 +12090,7 @@ class StorageEngine:
 
             if not dry_run:
                 new_id = str(uuid.uuid4())
-                conn.execute("""
+                cursor = conn.execute("""
                     INSERT INTO memories (
                         id, content, category, tags, importance, privacy, memory_type, layer,
                         source_agent, created_at, updated_at, last_accessed_at,
@@ -12100,10 +12104,11 @@ class StorageEngine:
                 ))
                 # 同步 FTS（失败时记录日志）
                 try:
+                    # v5.4.8 Bug#8 修复：使用 cursor.lastrowid 替代子查询
                     conn.execute(
                         "INSERT INTO memory_fts (rowid, content, category, tags) "
-                        "VALUES ((SELECT rowid FROM memories WHERE id = ?), ?, ?, ?)",
-                        (new_id, content, category or "general", tags or "[]")
+                        "VALUES (?, ?, ?, ?)",
+                        (cursor.lastrowid, content, category or "general", tags or "[]")
                     )
                 except Exception as e:
                     logger.warning("FTS sync failed for shared memory %s: %s", new_id, e)
@@ -12370,8 +12375,8 @@ class StorageEngine:
         emotion_values = []
 
         for scene in scenes:
-            scene_id, scene_title, description, order = scene
-            text = ((scene_title or "") + " " + (description or "")).lower()
+            scene_id, scene_title, content, order = scene
+            text = ((scene_title or "") + " " + (content or "")).lower()
 
             # 计算各情感得分
             scores = {}
