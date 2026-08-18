@@ -3852,7 +3852,8 @@ class MindForge:
     def drama_generate_scene(self, drama_id: str, scene_title: str,
                              characters: Optional[List[str]] = None,
                              mood: str = "neutral",
-                             setting: str = "") -> Dict[str, Any]:
+                             setting: str = "",
+                             episode: int = 0) -> Dict[str, Any]:
         """AI 短剧场景生成（v5.4.8）— 基于上下文生成新场景"""
         if not isinstance(drama_id, str) or not isinstance(scene_title, str):
             return {"error": "短剧 ID 和场景标题必须为字符串"}
@@ -3869,8 +3870,9 @@ class MindForge:
                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
         if characters:
             characters = [str(c)[:64] for c in characters[:50] if c]
+        episode = max(0, int(episode))
         return self._storage.drama_generate_scene(
-            drama_id, scene_title, characters, mood, setting)
+            drama_id, scene_title, characters, mood, setting, episode)
 
     def drama_emotion_timeline(self, drama_id: str) -> Dict[str, Any]:
         """短剧情感时间线（v5.4.8）— 分析情感走向和曲线"""

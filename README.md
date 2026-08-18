@@ -338,6 +338,20 @@ context = adapter.get_context("database optimization")
 
 ## Changelog（版本记录）
 
+### v5.4.8 (2026-08-18)
+
+**5 个新 API + 安全加固 + 接口层全面集成**
+
+1. **Agent 记忆强化** (`agent_memory_reinforce`) — 基于访问频率自动提升高频记忆的重要性，支持 dry-run 预览模式。
+2. **跨 Agent 共享记忆** (`agent_shared_memories`) — 将一个 Agent 的记忆复制到另一个 Agent，支持分类过滤和数量限制。共享操作保留源记忆的加密状态。
+3. **Agent 知识领域分析** (`agent_knowledge_domains`) — 按分类和标签分析 Agent 的知识分布，返回 Top-N 领域及常用标签。
+4. **AI 短剧场景生成** (`drama_generate_scene`) — 基于剧本上下文生成新场景框架，包含场景描述、角色对话提示、情感基调建议。支持 episode 参数指定集数。
+5. **情感时间线** (`drama_emotion_timeline`) — 分析短剧全场景的情感走向，生成情感轨迹数据。
+6. **安全加固** — 5 个新 API 全部添加 Unicode 控制字符过滤、输入长度截断、类型检查、数值边界校验。
+7. **接口层集成** — CLI（5 个子命令）、MCP（5 个工具定义）均已集成新 API。REST API 端点已准备。
+8. **drama_generate_scene 修复** — content 列存储纯文本描述而非 JSON，metadata 列存储完整 JSON。修复 episode 硬编码为 0 的问题。
+9. **agent_shared_memories 修复** — encrypted 从硬编码 0 改为从源记忆读取，categories 截断时添加 `categories_truncated` 提示。
+
 ### v5.4.7 (2026-08-15)
 
 **关键 Bug 修复 + DSH 插件集成基础**

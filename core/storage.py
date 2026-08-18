@@ -12040,7 +12040,7 @@ class StorageEngine:
             return {"error": "不能共享给自身"}
 
         # 查询源 Agent 的记忆
-        query = "SELECT id, content, category, tags, importance, privacy, layer FROM memories WHERE source_agent = ? AND category != 'trash'"
+        query = "SELECT id, content, category, tags, importance, privacy, layer, encrypted FROM memories WHERE source_agent = ? AND category != 'trash'"
         params: list = [from_aid]
 
         if categories:
@@ -12061,7 +12061,7 @@ class StorageEngine:
         now = time.time()
 
         for r in rows:
-            mem_id, content, category, tags, importance, privacy, layer = r
+            mem_id, content, category, tags, importance, privacy, layer, encrypted = r
             # 检查目标 Agent 是否已有相同内容
             existing = conn.execute(
                 "SELECT id FROM memories WHERE source_agent = ? AND content = ?",
@@ -12079,11 +12079,11 @@ class StorageEngine:
                         source_agent, created_at, updated_at, last_accessed_at,
                         access_count, consolidation_count, forgetting_score, strength,
                         starred, pinned, metadata, encrypted
-                    ) VALUES (?, ?, ?, ?, ?, ?, 'text', ?, ?, ?, ?, ?, 0, 0, 0, 1.0, 0, 0, '{}', 0)
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'text', ?, ?, ?, ?, ?, 0, 0, 0, 1.0, 0, 0, '{}', ?)
                 """, (
                     new_id, content, category or "general", tags or "[]",
                     importance or "MEDIUM", privacy or "INTERNAL", layer or "short_term",
-                    to_aid, now, now, now
+                    to_aid, now, now, now, encrypted
                 ))
                 # 同步 FTS
                 try:
@@ -12111,6 +12111,7 @@ class StorageEngine:
             "shared_count": shared,
             "dry_run": dry_run,
             "details": details[:50],
+            "categories_truncated": len(categories) > 10 if categories else False,
         }
 
     def agent_knowledge_domains(self,
@@ -12182,7 +12183,8 @@ class StorageEngine:
                              scene_title: str,
                              characters: Optional[List[str]] = None,
                              mood: str = "neutral",
-                             setting: str = "") -> Dict[str, Any]:
+                             setting: str = "",
+                             episode: int = 0) -> Dict[str, Any]:
         """AI 短剧场景生成（v5.4.8 新增）
 
         基于剧本上下文生成新场景的框架结构。
@@ -12277,10 +12279,10 @@ class StorageEngine:
             INSERT INTO drama_scenes (
                 id, drama_id, episode, scene_number, title, content,
                 tags, metadata, created_at
-            ) VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            scene_id, did, scene_count + 1, scene_title[:256],
-            json.dumps(scene_data, ensure_ascii=False),
+            scene_id, did, episode, scene_count + 1, scene_title[:256],
+            scene_data.get("description", scene_title[:256]),
             json.dumps([mood], ensure_ascii=False),
             json.dumps(scene_data, ensure_ascii=False), now
         ))
