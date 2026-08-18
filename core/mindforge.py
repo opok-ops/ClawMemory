@@ -332,6 +332,11 @@ class MindForge:
         - True（默认）：启用向量召回 + TF-IDF + Fuzzy 多路融合搜索
         - False：降级为 TF-IDF + Fuzzy 两路搜索（资源受限时使用）
         """
+        # v5.4.8 P1 修复：query 类型检查，防止非字符串输入崩溃
+        if query is None:
+            query = ""
+        elif not isinstance(query, str):
+            query = str(query)
         return self._query.search(
             query=query,
             max_results=max_results,
