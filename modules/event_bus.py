@@ -146,7 +146,15 @@ class EventBus:
 
         Returns:
             WebhookConfig 实例
+
+        Raises:
+            ValueError: URL 为空或格式无效
         """
+        if not url or not isinstance(url, str):
+            raise ValueError("Webhook URL 不能为空")
+        url = url.strip()
+        if not url.startswith(("http://", "https://")):
+            raise ValueError(f"Webhook URL 必须以 http:// 或 https:// 开头: {url!r}")
         config = WebhookConfig(
             url=url,
             events=set(events) if events else set(ALL_EVENTS),

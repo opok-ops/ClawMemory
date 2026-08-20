@@ -594,6 +594,8 @@ class EmbeddingEngine:
             if fallback_chain is not None:
                 self._fallback_chain = fallback_chain
                 self._backends: List[EmbeddingBackend] = []
+                self._backend_names: List[str] = []
+                self._active_backend_idx = 0
                 self._load_attempted = False
                 self._available = False
             return
@@ -630,6 +632,7 @@ class EmbeddingEngine:
                 seen.add(b)
                 self._fallback_chain.append(b)
         self._backends: List[EmbeddingBackend] = []
+        self._backend_names: List[str] = []
         self._active_backend_idx = 0
 
     @property
@@ -651,8 +654,8 @@ class EmbeddingEngine:
     @property
     def backend_name(self) -> str:
         """当前活跃后端名称"""
-        if self._backends and self._active_backend_idx < len(self._backends):
-            return self._fallback_chain[self._active_backend_idx]
+        if self._backend_names and self._active_backend_idx < len(self._backend_names):
+            return self._backend_names[self._active_backend_idx]
         return self._backend_name
 
     @property
@@ -669,6 +672,7 @@ class EmbeddingEngine:
         """懒加载嵌入后端（v5.4.9：按 fallback chain 逐个尝试）"""
         self._load_attempted = True
         self._backends = []
+        self._backend_names = []
         for idx, backend_name in enumerate(self._fallback_chain):
             try:
                 bk = create_backend(
@@ -677,6 +681,7 @@ class EmbeddingEngine:
                 )
                 if bk.is_available:
                     self._backends.append(bk)
+                    self._backend_names.append(backend_name)
                     if not self._available:
                         # 第一个可用的后端设为活跃
                         self._available = True
@@ -725,11 +730,11 @@ class EmbeddingEngine:
                         self._dimension = self._backends[idx].dimension
                         logger.info(
                             "EmbeddingEngine 降级到后端: %s",
-                            self._fallback_chain[idx])
+                            self._backend_names[idx])
                     return result
             except Exception as e:
                 logger.warning("后端 %s encode 失败: %s",
-                               self._fallback_chain[idx], e)
+                               self._backend_names[idx], e)
         return None
 
     def encode_batch(self, texts: List[str]) -> Optional[List[List[float]]]:
@@ -752,11 +757,11 @@ class EmbeddingEngine:
                         self._dimension = self._backends[idx].dimension
                         logger.info(
                             "EmbeddingEngine 降级到后端: %s",
-                            self._fallback_chain[idx])
+                            self._backend_names[idx])
                     return result
             except Exception as e:
                 logger.warning("后端 %s encode_batch 失败: %s",
-                               self._fallback_chain[idx], e)
+                               self._backend_names[idx], e)
         return None
 
     @staticmethod

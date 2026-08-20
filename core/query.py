@@ -179,11 +179,13 @@ class QueryEngine:
                     query_tags_lower = set(t.lower() for t in tags if t)
                     if not (entry_tags_lower & query_tags_lower):
                         continue
-                # v5.4.9：时间范围过滤
-                if created_after is not None and entry.created_at < created_after:
-                    continue
-                if created_before is not None and entry.created_at > created_before:
-                    continue
+                # v5.4.9：时间范围过滤（防御 None created_at）
+                if created_after is not None:
+                    if entry.created_at is None or entry.created_at < created_after:
+                        continue
+                if created_before is not None:
+                    if entry.created_at is None or entry.created_at > created_before:
+                        continue
                 filtered_map[doc_id] = score
             score_map = filtered_map
 
@@ -210,11 +212,13 @@ class QueryEngine:
                 query_tags_lower = set(t.lower() for t in tags if t)
                 if not (entry_tags_lower & query_tags_lower):
                     continue
-            # v5.4.9：时间范围二次过滤
-            if created_after is not None and entry.created_at < created_after:
-                continue
-            if created_before is not None and entry.created_at > created_before:
-                continue
+            # v5.4.9：时间范围二次过滤（防御 None created_at）
+            if created_after is not None:
+                if entry.created_at is None or entry.created_at < created_after:
+                    continue
+            if created_before is not None:
+                if entry.created_at is None or entry.created_at > created_before:
+                    continue
 
             content_text = entry.content
             if entry.encrypted:
