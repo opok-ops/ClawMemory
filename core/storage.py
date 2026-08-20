@@ -1924,6 +1924,7 @@ class StorageEngine:
 
         # 分组统计
         grouped = {}
+        # 安全注意：group_by 已通过白名单校验（仅允许 category/layer/importance/privacy）
         rows = conn.execute(
             f"SELECT {group_by}, COUNT(*), MAX(created_at), MIN(created_at) "
             f"FROM memories{where} GROUP BY {group_by} ORDER BY COUNT(*) DESC",
@@ -3581,6 +3582,7 @@ class StorageEngine:
         placeholders = ",".join(["?"] * len(ids))
 
         # 清理关联表：memory_versions、memory_links、memory_notes（以记忆 id 为外键）
+        # 安全注意：table/col 为硬编码内部值，非用户输入
         for table, col in [("memory_versions", "memory_id"),
                            ("memory_links", "source_id"),
                            ("memory_links", "target_id"),

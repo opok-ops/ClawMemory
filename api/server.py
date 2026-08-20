@@ -72,7 +72,10 @@ class _RateLimiter:
             return True
 
 
-_rate_limiter = _RateLimiter(max_requests=100, window_seconds=60)
+# v5.4.8 安全修复：分端点速率限制
+_rate_limiter = _RateLimiter(max_requests=100, window_seconds=60)      # 通用：100次/分钟
+_rate_limiter_import = _RateLimiter(max_requests=10, window_seconds=60) # 导入：10次/分钟
+_rate_limiter_search = _RateLimiter(max_requests=60, window_seconds=60) # 搜索：60次/分钟
 
 
 def _safe_int(value, default=10, min_val=1, max_val=10000):
@@ -128,17 +131,42 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
             return None
 
     def _check_auth(self):
-        """验证 Bearer Token（通过 MINDFORGE_API_KEY 环境变量配置）"""
+        """验证 Bearer Token（通过 MINDFORGE_API_KEY 环境变量配置）
+        
+        v5.4.8 安全策略：
+        - 设置了 MINDFORGE_API_KEY：正常验证 Bearer Token
+        - 未设置时：
+          - 绑定 localhost (127.0.0.1/::1)：允许访问（开发模式）
+          - 绑定其他地址：拒绝所有请求，除非显式设置 MINDFORGE_ALLOW_NO_AUTH=1
+        """
         api_key = os.environ.get("MINDFORGE_API_KEY", "")
         if not api_key:
-            # v5.4.8 安全修复：未设置 API Key 时记录警告
-            if not getattr(self.__class__, '_auth_warned', False):
-                logger.warning(
-                    "MINDFORGE_API_KEY not set — API is open to all requests. "
-                    "Set MINDFORGE_API_KEY environment variable to enable authentication."
-                )
-                self.__class__._auth_warned = True
-            return True
+            # 检查是否绑定到非本地地址
+            server_addr = self.server.server_address[0] if self.server else "127.0.0.1"
+            is_local = server_addr in ("127.0.0.1", "::1", "localhost")
+            allow_no_auth = os.environ.get("MINDFORGE_ALLOW_NO_AUTH", "") == "1"
+            
+            if is_local or allow_no_auth:
+                # 本地开发模式：记录一次性警告
+                if not getattr(self.__class__, '_auth_warned', False):
+                    logger.warning(
+                        "MINDFORGE_API_KEY not set — running in development mode (localhost only). "
+                        "Set MINDFORGE_API_KEY for production use."
+                    )
+                    self.__class__._auth_warned = True
+                return True
+            else:
+                # 非本地绑定且未设 API Key：拒绝
+                if not getattr(self.__class__, '_no_key_rejected_warned', False):
+                    logger.error(
+                        "Rejecting request: MINDFORGE_API_KEY not set and server bound to %s. "
+                        "Set MINDFORGE_API_KEY or MINDFORGE_ALLOW_NO_AUTH=1 to allow unauthenticated access.",
+                        server_addr
+                    )
+                    self.__class__._no_key_rejected_warned = True
+                self._send_json({"error": "Authentication required — set MINDFORGE_API_KEY"}, 401)
+                return False
+        
         auth_header = self.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
@@ -155,11 +183,16 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
         path = parsed.path.rstrip("/") or "/"
         qs = parse_qs(parsed.query)
 
-        # v5.4.7 修复 H-7：速率限制
+        # v5.4.8 安全修复：分端点速率限制
         client_ip = self.client_address[0]
-        if not _rate_limiter.check(client_ip):
-            self._send_json({"error": "Rate limit exceeded. Try again later."}, 429)
-            return
+        if path == "/api/search":
+            if not _rate_limiter_search.check(client_ip):
+                self._send_json({"error": "Search rate limit exceeded (60/min). Try again later."}, 429)
+                return
+        else:
+            if not _rate_limiter.check(client_ip):
+                self._send_json({"error": "Rate limit exceeded. Try again later."}, 429)
+                return
 
         if path != "/api/health" and not self._check_auth():
             return
@@ -268,12 +301,23 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "Not found", "path": path}, 404)
 
         except Exception as e:
-            logger.exception("API error")
+            logger.error("API error: %s", type(e).__name__)
             self._send_json({"error": "Internal server error"}, 500)
 
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
+
+        # v5.4.8 安全修复：导入端点单独限流
+        client_ip = self.client_address[0]
+        if path == "/api/import":
+            if not _rate_limiter_import.check(client_ip):
+                self._send_json({"error": "Import rate limit exceeded (10/min). Try again later."}, 429)
+                return
+        else:
+            if not _rate_limiter.check(client_ip):
+                self._send_json({"error": "Rate limit exceeded. Try again later."}, 429)
+                return
 
         if not self._check_auth():
             return
@@ -327,7 +371,7 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "Not found", "path": path}, 404)
 
         except Exception as e:
-            logger.exception("API error")
+            logger.error("API error: %s", type(e).__name__)
             self._send_json({"error": "Internal server error"}, 500)
 
     def do_PUT(self):
@@ -361,7 +405,7 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "Not found", "path": path}, 404)
 
         except Exception as e:
-            logger.exception("API error")
+            logger.error("API error: %s", type(e).__name__)
             self._send_json({"error": "Internal server error"}, 500)
 
     def do_DELETE(self):
@@ -383,7 +427,7 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "Not found", "path": path}, 404)
 
         except Exception as e:
-            logger.exception("API error")
+            logger.error("API error: %s", type(e).__name__)
             self._send_json({"error": "Internal server error"}, 500)
 
     def log_message(self, format, *args):
