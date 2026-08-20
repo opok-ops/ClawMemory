@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.4.8 CLI - 命令行工具
+MindForge v5.4.9 CLI - 命令行工具
 =================================
 
 Usage:
@@ -91,7 +91,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.4.8"
+    __version__ = "5.4.9"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
