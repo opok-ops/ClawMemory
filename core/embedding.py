@@ -548,7 +548,7 @@ def create_backend(backend_name: str = "", model_name: str = "",
 # ===== 嵌入引擎（统一接口，兼容旧 API） =====
 
 class EmbeddingEngine:
-    """语义嵌入引擎（多后端适配器，v5.4.6 增强）
+    """语义嵌入引擎（多后端适配器，v5.4.6 增强，v5.4.9 fallback chain）
 
     封装多种嵌入后端，提供：
     - 文本 → 向量编码（encode / encode_batch）
@@ -556,11 +556,19 @@ class EmbeddingEngine:
     - 余弦相似度计算
     - 懒加载：首次 encode 时才加载模型/连接后端
     - 多后端支持：sentence-transformers / OpenAI / Ollama / 自定义 HTTP
+    - v5.4.9 fallback chain：本地模型 → 远程 HTTP API → 下一个后端，
+      逐个尝试直到成功，全部失败才返回 None（调用方降级为 TF-IDF）
 
     后端选择优先级：
     1. 构造参数 backend=
     2. 环境变量 MINDFORGE_EMBEDDING_BACKEND
     3. 默认 sentence_transformers
+
+    fallback chain 配置（v5.4.9）：
+      # 构造参数
+      engine = EmbeddingEngine(fallback_chain=["sentence_transformers", "openai", "http"])
+      # 环境变量（逗号分隔）
+      MINDFORGE_EMBEDDING_FALLBACK=sentence_transformers,openai,http
 
     使用方式：
         engine = EmbeddingEngine()  # 自动选择后端
@@ -579,8 +587,15 @@ class EmbeddingEngine:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self, model_name: str = "", backend: str = ""):
+    def __init__(self, model_name: str = "", backend: str = "",
+                 fallback_chain: Optional[List[str]] = None):
         if hasattr(self, "_initialized"):
+            # v5.4.9：允许重新配置 fallback_chain
+            if fallback_chain is not None:
+                self._fallback_chain = fallback_chain
+                self._backends: List[EmbeddingBackend] = []
+                self._load_attempted = False
+                self._available = False
             return
         self._initialized = True
         self._backend_name = backend or os.environ.get(
@@ -599,16 +614,34 @@ class EmbeddingEngine:
         self._load_attempted = False
         self._available = False
 
+        # v5.4.9 fallback chain：解析降级链
+        if fallback_chain is None:
+            env_chain = os.environ.get("MINDFORGE_EMBEDDING_FALLBACK", "")
+            if env_chain:
+                fallback_chain = [b.strip() for b in env_chain.split(",") if b.strip()]
+            else:
+                # 默认链：主后端优先，然后尝试常见远程后端
+                fallback_chain = [self._backend_name]
+        # 去重并确保主后端在第一位
+        seen = set()
+        self._fallback_chain: List[str] = []
+        for b in [self._backend_name] + fallback_chain:
+            if b not in seen and b in _BACKEND_REGISTRY:
+                seen.add(b)
+                self._fallback_chain.append(b)
+        self._backends: List[EmbeddingBackend] = []
+        self._active_backend_idx = 0
+
     @property
     def is_available(self) -> bool:
-        """嵌入后端是否可用"""
+        """嵌入后端是否可用（fallback chain 中任意一个可用即返回 True）"""
         if not self._load_attempted:
             self._try_load()
         return self._available
 
     @property
     def dimension(self) -> int:
-        """嵌入向量维度"""
+        """嵌入向量维度（当前活跃后端的维度）"""
         return self._dimension
 
     @property
@@ -617,53 +650,114 @@ class EmbeddingEngine:
 
     @property
     def backend_name(self) -> str:
-        """当前后端名称"""
+        """当前活跃后端名称"""
+        if self._backends and self._active_backend_idx < len(self._backends):
+            return self._fallback_chain[self._active_backend_idx]
         return self._backend_name
 
+    @property
+    def fallback_chain(self) -> List[str]:
+        """v5.4.9：返回配置的降级链"""
+        return list(self._fallback_chain)
+
+    @property
+    def active_backend(self) -> str:
+        """v5.4.9：返回当前实际使用的后端名称"""
+        return self.backend_name
+
     def _try_load(self):
-        """懒加载嵌入后端"""
+        """懒加载嵌入后端（v5.4.9：按 fallback chain 逐个尝试）"""
         self._load_attempted = True
-        try:
-            self._backend = create_backend(
-                backend_name=self._backend_name,
-                model_name=self._model_name,
-            )
-            if self._backend.is_available:
-                self._dimension = self._backend.dimension
-                self._available = True
-                logger.info("EmbeddingEngine 加载成功 [%s]: %s (dim=%d)",
-                            self._backend_name, self._model_name, self._dimension)
-            else:
-                self._available = False
-        except Exception as e:
-            logger.warning("EmbeddingEngine 加载失败: %s", e)
-            self._available = False
+        self._backends = []
+        for idx, backend_name in enumerate(self._fallback_chain):
+            try:
+                bk = create_backend(
+                    backend_name=backend_name,
+                    model_name=self._model_name if idx == 0 else "",
+                )
+                if bk.is_available:
+                    self._backends.append(bk)
+                    if not self._available:
+                        # 第一个可用的后端设为活跃
+                        self._available = True
+                        self._active_backend_idx = len(self._backends) - 1
+                        self._dimension = bk.dimension
+                        logger.info(
+                            "EmbeddingEngine fallback chain [%d/%d]: %s 可用 (dim=%d)",
+                            len(self._backends), len(self._fallback_chain),
+                            backend_name, bk.dimension)
+                    else:
+                        logger.info(
+                            "EmbeddingEngine fallback chain [%d/%d]: %s 可用（备用）",
+                            len(self._backends), len(self._fallback_chain),
+                            backend_name)
+                else:
+                    logger.info(
+                        "EmbeddingEngine fallback chain: %s 不可用，尝试下一个",
+                        backend_name)
+            except Exception as e:
+                logger.warning("EmbeddingEngine 加载 %s 失败: %s", backend_name, e)
+
+        if not self._available:
+            logger.warning(
+                "EmbeddingEngine: fallback chain 中所有后端均不可用 (%s)。"
+                "向量检索将降级为 TF-IDF + FTS5 + Fuzzy。",
+                ", ".join(self._fallback_chain))
 
     def encode(self, text: str) -> Optional[List[float]]:
-        """编码单条文本为向量
+        """编码单条文本为向量（v5.4.9：fallback chain 逐个尝试）
 
         Args:
             text: 输入文本
 
         Returns:
-            嵌入向量 (List[float])，或 None（模型不可用时）
+            嵌入向量 (List[float])，或 None（所有后端均失败时）
         """
         if not self.is_available or not text:
             return None
-        return self._backend.encode(text)
+        # 从当前活跃后端开始尝试，失败则降级到链中下一个
+        for idx in range(self._active_backend_idx, len(self._backends)):
+            try:
+                result = self._backends[idx].encode(text)
+                if result is not None:
+                    if idx != self._active_backend_idx:
+                        self._active_backend_idx = idx
+                        self._dimension = self._backends[idx].dimension
+                        logger.info(
+                            "EmbeddingEngine 降级到后端: %s",
+                            self._fallback_chain[idx])
+                    return result
+            except Exception as e:
+                logger.warning("后端 %s encode 失败: %s",
+                               self._fallback_chain[idx], e)
+        return None
 
     def encode_batch(self, texts: List[str]) -> Optional[List[List[float]]]:
-        """批量编码文本为向量
+        """批量编码文本为向量（v5.4.9：fallback chain 逐个尝试）
 
         Args:
             texts: 输入文本列表
 
         Returns:
-            嵌入向量列表，或 None（模型不可用时）
+            嵌入向量列表，或 None（所有后端均失败时）
         """
         if not self.is_available or not texts:
             return None
-        return self._backend.encode_batch(texts)
+        for idx in range(self._active_backend_idx, len(self._backends)):
+            try:
+                result = self._backends[idx].encode_batch(texts)
+                if result is not None:
+                    if idx != self._active_backend_idx:
+                        self._active_backend_idx = idx
+                        self._dimension = self._backends[idx].dimension
+                        logger.info(
+                            "EmbeddingEngine 降级到后端: %s",
+                            self._fallback_chain[idx])
+                    return result
+            except Exception as e:
+                logger.warning("后端 %s encode_batch 失败: %s",
+                               self._fallback_chain[idx], e)
+        return None
 
     @staticmethod
     def serialize(vec: List[float]) -> bytes:

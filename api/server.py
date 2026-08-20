@@ -237,23 +237,55 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                 limit = _safe_int(qs.get("limit", ["10"])[0], default=10, min_val=1, max_val=1000)
                 min_relevance = _safe_float(qs.get("min_relevance", ["0.3"])[0], default=0.3, min_val=0.0, max_val=1.0)
                 categories = qs.get("categories", None)
-                result = self.mindforge.search(
-                    query=q,
-                    max_results=limit,
-                    min_relevance=min_relevance,
-                    categories=categories,
-                )
+                # v5.4.9 新增：标签、时间范围、高亮参数
+                tags = qs.get("tags", None)
+                if tags and isinstance(tags, list) and len(tags) == 1:
+                    tags = [t.strip() for t in tags[0].split(",") if t.strip()]
+                created_after = qs.get("created_after", [None])[0]
+                created_before = qs.get("created_before", [None])[0]
+                highlight = qs.get("highlight", ["0"])[0] in ("1", "true", "True")
+
+                search_kwargs = {
+                    "query": q,
+                    "max_results": limit,
+                    "min_relevance": min_relevance,
+                    "categories": categories,
+                    "tags": tags,
+                    "highlight": highlight,
+                }
+                if created_after:
+                    try:
+                        search_kwargs["created_after"] = float(created_after)
+                    except (ValueError, TypeError):
+                        pass
+                if created_before:
+                    try:
+                        search_kwargs["created_before"] = float(created_before)
+                    except (ValueError, TypeError):
+                        pass
+
+                result = self.mindforge.search(**search_kwargs)
                 chunks = []
                 if hasattr(result, "chunks"):
                     for chunk in result.chunks:
-                        chunks.append({
+                        item = {
                             "id": chunk.memory_id,
                             "content": chunk.content,
                             "category": chunk.category,
                             "relevance_score": chunk.relevance_score,
                             "tags": chunk.tags if hasattr(chunk, "tags") else [],
-                        })
-                self._send_json({"query": q, "results": chunks, "total": len(chunks)})
+                        }
+                        # v5.4.9：返回高亮内容
+                        if highlight and hasattr(chunk, "highlighted_content") and chunk.highlighted_content:
+                            item["highlighted_content"] = chunk.highlighted_content
+                        chunks.append(item)
+                self._send_json({
+                    "query": q,
+                    "results": chunks,
+                    "total": len(chunks),
+                    "strategy": getattr(result, "strategy_used", ""),
+                    "query_time_ms": getattr(result, "query_time_ms", 0),
+                })
 
             elif path == "/api/memories":
                 # v5.4.7 修复 H-1：安全解析参数
@@ -272,6 +304,23 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
 
             elif path.startswith("/api/memories/"):
                 mem_id = path.split("/api/memories/")[1]
+                # v5.4.9：子端点路由
+                if "/" in mem_id:
+                    parts = mem_id.split("/", 1)
+                    mem_id = parts[0]
+                    sub = parts[1]
+                    if sub == "versions":
+                        # GET /api/memories/{id}/versions
+                        versions = self.mindforge.list_versions(mem_id)
+                        self._send_json({"memory_id": mem_id, "versions": versions, "total": len(versions)})
+                        return
+                    elif sub == "diff":
+                        # GET /api/memories/{id}/diff?version_a=...&version_b=...
+                        version_a = qs.get("version_a", [None])[0]
+                        version_b = qs.get("version_b", [None])[0]
+                        diff = self.mindforge.diff_versions(mem_id, version_a, version_b)
+                        self._send_json(diff)
+                        return
                 entry = self.mindforge.get(mem_id)
                 if entry:
                     self._send_json(entry.to_dict() if hasattr(entry, "to_dict") else vars(entry))
@@ -283,6 +332,16 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                 memories = [e.to_dict() if hasattr(e, "to_dict") else vars(e) for e in entries]
                 self._send_json({"version": MF_VERSION, "total": len(memories), "memories": memories})
 
+            # v5.4.9 新增：Webhook 管理端点
+            elif path == "/api/webhooks":
+                webhooks = self.mindforge.event_bus.list_webhooks()
+                self._send_json({"webhooks": webhooks, "total": len(webhooks)})
+
+            elif path == "/api/events/stats":
+                stats = self.mindforge.event_bus.stats()
+                history = self.mindforge.event_bus.delivery_history(limit=20)
+                self._send_json({"stats": stats, "recent_deliveries": history})
+
             elif path == "/":
                 self._send_json({
                     "name": "MindForge REST API",
@@ -291,9 +350,14 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                         "GET /api/memories", "POST /api/memories",
                         "GET /api/memories/{id}", "PUT /api/memories/{id}",
                         "DELETE /api/memories/{id}",
+                        "GET /api/memories/{id}/versions",
+                        "GET /api/memories/{id}/diff",
                         "GET /api/search", "GET /api/stats",
                         "GET /api/health", "GET /api/tags",
                         "POST /api/import", "GET /api/export",
+                        "GET /api/webhooks", "POST /api/webhooks",
+                        "DELETE /api/webhooks?url=...",
+                        "GET /api/events/stats",
                     ],
                 })
 
@@ -367,6 +431,22 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                         failed += 1
                 self._send_json({"imported": imported, "failed": failed})
 
+            # v5.4.9 新增：注册 Webhook
+            elif path == "/api/webhooks":
+                url = body.get("url", "")
+                if not url:
+                    self._send_json({"error": "Missing 'url' field"}, 400)
+                    return
+                events = body.get("events")
+                secret = body.get("secret", "")
+                timeout = body.get("timeout", 10.0)
+                max_retries = body.get("max_retries", 3)
+                config = self.mindforge.event_bus.register_webhook(
+                    url=url, events=events, secret=secret,
+                    timeout=timeout, max_retries=max_retries,
+                )
+                self._send_json({"success": True, "webhook": config.to_dict()}, 201)
+
             else:
                 self._send_json({"error": "Not found", "path": path}, 404)
 
@@ -423,6 +503,19 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                     self._send_json({"status": "deleted", "id": mem_id})
                 else:
                     self._send_json({"error": "Delete failed or memory not found"}, 404)
+            # v5.4.9 新增：注销 Webhook
+            elif path == "/api/webhooks":
+                parsed = urlparse(self.path)
+                qs = parse_qs(parsed.query)
+                url = qs.get("url", [""])[0]
+                if not url:
+                    self._send_json({"error": "Missing 'url' query parameter"}, 400)
+                    return
+                removed = self.mindforge.event_bus.unregister_webhook(url)
+                if removed:
+                    self._send_json({"success": True, "removed": url})
+                else:
+                    self._send_json({"error": "Webhook not found"}, 404)
             else:
                 self._send_json({"error": "Not found", "path": path}, 404)
 

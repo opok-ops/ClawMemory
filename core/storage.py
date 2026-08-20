@@ -1097,8 +1097,9 @@ class StorageEngine:
                     pass
 
         # v5.2.7: 更新前读取旧内容，用于保存历史版本
+        # v5.4.9: 当 content/category/tags/importance 任意变更时都保存版本
         old_entry = None
-        if content is not None:
+        if content is not None or category is not None or clean_tags is not None or importance_v is not None:
             old_row = conn.execute(
                 "SELECT content, category, tags, importance FROM memories WHERE id = ?",
                 (entry_id,)
@@ -1134,8 +1135,8 @@ class StorageEngine:
                 except sqlite3.OperationalError:
                     pass
 
-        # v5.2.7: 保存历史版本（仅当 content 变更时）
-        if content is not None and old_entry:
+        # v5.2.7: 保存历史版本（v5.4.9：content/category/tags/importance 任意变更时都保存）
+        if old_entry:
             try:
                 old_tags = old_entry.get("tags", "")
                 if isinstance(old_tags, str) and old_tags.startswith("["):
@@ -5953,14 +5954,22 @@ class StorageEngine:
                         output_path: str,
                         category: Optional[str] = None,
                         layer: Optional[MemoryLayer] = None,
-                        starred_only: bool = False) -> Path:
-        """导出记忆为 Excel 格式（v5.1.9 新增，v5.2.9 安全加固：路径校验 + CSV 公式注入防护）
+                        starred_only: bool = False,
+                        tags: Optional[List[str]] = None,
+                        created_after: Optional[float] = None,
+                        created_before: Optional[float] = None) -> Path:
+        """导出记忆为 Excel 格式（v5.1.9 新增，v5.2.9 安全加固，v5.4.9 增强选择性导出）
+
+        v5.4.9 新增：支持按标签、时间范围筛选导出。
 
         Args:
             output_path: 输出文件路径
             category: 限定分类
             layer: 限定层级
             starred_only: 仅导出收藏的记忆
+            tags: 限定标签列表（v5.4.9 新增）
+            created_after: 创建时间下限（v5.4.9 新增）
+            created_before: 创建时间上限（v5.4.9 新增）
 
         Returns:
             导出文件的 Path 对象
@@ -5969,8 +5978,19 @@ class StorageEngine:
             category=category,
             layer=layer,
             starred=starred_only if starred_only else None,
+            created_after=created_after,
+            created_before=created_before,
             limit=100000,
         )
+
+        # v5.4.9：标签过滤
+        if tags:
+            tag_set = set(t.lower() for t in tags if t)
+            if tag_set:
+                entries = [
+                    e for e in entries
+                    if any(t.lower() in tag_set for t in (e.tags or []))
+                ]
 
         # v5.2.9 安全加固：路径校验
         out = _safe_path(output_path, allowed_exts={".xlsx", ".csv"})
@@ -8617,6 +8637,189 @@ class StorageEngine:
         except Exception as e:
             conn.rollback()
             return {"success": False, "error": str(e)}
+
+    def diff_versions(self, memory_id: str,
+                      version_a: Optional[str] = None,
+                      version_b: Optional[str] = None) -> Dict[str, Any]:
+        """对比两个历史版本的差异（v5.4.9 新增）
+
+        对比 content、category、tags、importance 四个字段的变更，
+        返回结构化 diff 和文本级 unified diff。
+
+        Args:
+            memory_id: 记忆 ID
+            version_a: 起始版本 ID（None 表示最早版本）
+            version_b: 目标版本 ID（None 表示最新版本）
+
+        Returns:
+            {
+                "memory_id": ...,
+                "version_a": {version_id, version_number, ...},
+                "version_b": {version_id, version_number, ...},
+                "field_changes": {
+                    "content": {"changed": bool, "old": ..., "new": ...},
+                    "category": {"changed": bool, "old": ..., "new": ...},
+                    "tags": {"changed": bool, "added": [...], "removed": [...], "old": [...], "new": [...]},
+                    "importance": {"changed": bool, "old": ..., "new": ...},
+                },
+                "content_diff": "--- old\n+++ new\n@@ ...\n...",  # unified diff
+                "summary": "X fields changed",
+            }
+        """
+        if not memory_id or len(memory_id) > 128:
+            return {"error": "记忆 ID 无效"}
+
+        conn = self._get_conn()
+
+        # 获取该记忆的所有版本（按版本号升序）
+        rows = conn.execute(
+            """SELECT id, version_number, content, category, tags, importance, actor, changed_at
+               FROM memory_versions WHERE memory_id = ?
+               ORDER BY version_number ASC""",
+            (memory_id,)
+        ).fetchall()
+
+        # v5.4.9：当版本记录不足时，将当前记忆状态作为最新版本
+        # （add 不创建版本，update 创建旧状态快照，因此 1 条版本记录 + 当前状态 = 2 个可对比版本）
+        current_row = conn.execute(
+            "SELECT content, category, tags, importance, updated_at FROM memories WHERE id = ?",
+            (memory_id,)
+        ).fetchone()
+
+        if not current_row and len(rows) < 2:
+            return {
+                "memory_id": memory_id,
+                "error": "记忆不存在或版本不足，无法对比",
+                "version_count": len(rows),
+            }
+
+        def _row_to_version(r):
+            return {
+                "version_id": r[0],
+                "version_number": r[1],
+                "content": r[2] or "",
+                "category": r[3] or "",
+                "tags": json.loads(r[4]) if r[4] and isinstance(r[4], str) and r[4].startswith("[") else (r[4] or []),
+                "importance": r[5] or "",
+                "actor": r[6] or "",
+                "changed_at": r[7],
+            }
+
+        def _current_to_version():
+            """将当前记忆状态转为版本对象（虚拟最新版本）"""
+            max_ver = max((r[1] for r in rows), default=0)
+            return {
+                "version_id": "current",
+                "version_number": max_ver + 1,
+                "content": current_row[0] or "",
+                "category": current_row[1] or "",
+                "tags": json.loads(current_row[2]) if current_row[2] and isinstance(current_row[2], str) and current_row[2].startswith("[") else (current_row[2] or []),
+                "importance": current_row[3] or "",
+                "actor": "current",
+                "changed_at": current_row[4],
+            }
+
+        # 构建可对比版本列表：历史版本 + 当前状态
+        all_versions = [_row_to_version(r) for r in rows]
+        if current_row:
+            all_versions.append(_current_to_version())
+
+        if len(all_versions) < 2:
+            return {
+                "memory_id": memory_id,
+                "error": "该记忆版本不足 2 个，无法对比",
+                "version_count": len(all_versions),
+            }
+
+        # 解析版本参数
+        if version_a is None:
+            va = all_versions[0]
+        else:
+            va = None
+            for v in all_versions:
+                if v["version_id"] == version_a:
+                    va = v
+                    break
+            if va is None:
+                return {"error": f"版本 A 不存在: {version_a}"}
+
+        if version_b is None:
+            vb = all_versions[-1]
+        else:
+            vb = None
+            for v in all_versions:
+                if v["version_id"] == version_b:
+                    vb = v
+                    break
+            if vb is None:
+                return {"error": f"版本 B 不存在: {version_b}"}
+
+        # 字段级变更
+        field_changes = {}
+
+        # content
+        content_changed = va["content"] != vb["content"]
+        field_changes["content"] = {
+            "changed": content_changed,
+            "old": va["content"],
+            "new": vb["content"],
+        }
+
+        # category
+        cat_changed = va["category"] != vb["category"]
+        field_changes["category"] = {
+            "changed": cat_changed,
+            "old": va["category"],
+            "new": vb["category"],
+        }
+
+        # tags
+        old_tags = set(va["tags"]) if isinstance(va["tags"], list) else set()
+        new_tags = set(vb["tags"]) if isinstance(vb["tags"], list) else set()
+        tags_changed = old_tags != new_tags
+        field_changes["tags"] = {
+            "changed": tags_changed,
+            "added": sorted(new_tags - old_tags),
+            "removed": sorted(old_tags - new_tags),
+            "old": sorted(old_tags),
+            "new": sorted(new_tags),
+        }
+
+        # importance
+        imp_changed = va["importance"] != vb["importance"]
+        field_changes["importance"] = {
+            "changed": imp_changed,
+            "old": va["importance"],
+            "new": vb["importance"],
+        }
+
+        # 文本级 unified diff（仅 content）
+        content_diff = ""
+        if content_changed:
+            try:
+                import difflib
+                old_lines = va["content"].splitlines(keepends=True)
+                new_lines = vb["content"].splitlines(keepends=True)
+                diff = difflib.unified_diff(
+                    old_lines, new_lines,
+                    fromfile=f"v{va['version_number']}",
+                    tofile=f"v{vb['version_number']}",
+                )
+                content_diff = "".join(diff)
+            except Exception:
+                content_diff = ""
+
+        changed_count = sum(1 for f in field_changes.values() if f["changed"])
+
+        return {
+            "memory_id": memory_id,
+            "version_a": {k: v for k, v in va.items() if k != "content"},
+            "version_b": {k: v for k, v in vb.items() if k != "content"},
+            "field_changes": field_changes,
+            "content_diff": content_diff,
+            "changed_fields": [k for k, v in field_changes.items() if v["changed"]],
+            "summary": f"{changed_count} field(s) changed",
+        }
 
     # ===== 置顶功能（v5.2.5 新增）=====
 

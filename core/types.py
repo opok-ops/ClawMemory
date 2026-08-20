@@ -98,6 +98,10 @@ class MemoryConfig:
     max_short_term_items: int = 100
     sensory_buffer_size: int = 50
     sensory_retention_seconds: int = 30
+    # v5.4.9 新增：Webhook / 事件通知配置
+    webhooks: Optional[List[Dict[str, Any]]] = None
+    webhook_secret: str = ""
+    event_bus_enabled: bool = True
 
 
 class DramaGenre(Enum):

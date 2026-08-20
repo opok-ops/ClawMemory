@@ -147,6 +147,7 @@ class MindForge:
         self._federated_acl = None      # v5.4.2 lazy
         self._share_conflict = None     # v5.4.2 lazy
         self._evolution = None          # v5.4.8 lazy (记忆巩固)
+        self._event_bus = None          # v5.4.9 lazy (事件总线/Webhook)
 
         if self.config.encrypted:
             self._init_encryption()
@@ -311,6 +312,15 @@ class MindForge:
             metadata={"category": category, "tags": tags or [], "importance": importance.value if isinstance(importance, Importance) else str(importance)},
         )
 
+        # v5.4.9：发射 memory_created 事件
+        self._emit_event("memory_created", {
+            "id": entry.id,
+            "category": entry.category,
+            "tags": entry.tags,
+            "importance": entry.importance.value if hasattr(entry.importance, "value") else str(entry.importance),
+            "content_preview": content[:200],
+        })
+
         return entry
 
     def get(self, memory_id: str, actor: str = "", session_id: str = "") -> Optional[MemoryEntry]:
@@ -323,6 +333,10 @@ class MindForge:
                min_relevance: float = 0.3,
                categories: Optional[List[str]] = None,
                layers: Optional[List[MemoryLayer]] = None,
+               tags: Optional[List[str]] = None,
+               created_after: Optional[float] = None,
+               created_before: Optional[float] = None,
+               highlight: bool = False,
                agent_id: str = "",
                session_id: str = "",
                use_embedding: bool = True):
@@ -331,6 +345,11 @@ class MindForge:
         v5.4.5 新增 use_embedding 参数：
         - True（默认）：启用向量召回 + TF-IDF + Fuzzy 多路融合搜索
         - False：降级为 TF-IDF + Fuzzy 两路搜索（资源受限时使用）
+
+        v5.4.9 新增：
+        - tags: 按标签过滤（记忆需包含任意一个指定标签）
+        - created_after / created_before: 按创建时间范围过滤（Unix 时间戳）
+        - highlight: True 时返回 highlighted_content 字段（<mark> 高亮匹配词）
         """
         # v5.4.8 P1 修复：query 类型检查，防止非字符串输入崩溃
         if query is None:
@@ -343,6 +362,10 @@ class MindForge:
             min_relevance=min_relevance,
             categories=categories,
             layers=layers,
+            tags=tags,
+            created_after=created_after,
+            created_before=created_before,
+            highlight=highlight,
             agent_id=agent_id,
             session_id=session_id,
             use_embedding=use_embedding,
@@ -468,6 +491,15 @@ class MindForge:
         if success and content:
             self._index.index_memory(memory_id, content, metadata={})
 
+        # v5.4.9：发射 memory_updated 事件
+        if success:
+            self._emit_event("memory_updated", {
+                "id": memory_id,
+                "content_changed": content is not None,
+                "category_changed": category is not None,
+                "tags_changed": tags is not None,
+            })
+
         return success
 
     def delete(self, memory_id: str, actor: str = "",
@@ -478,6 +510,14 @@ class MindForge:
         )
         if success and hard_delete:
             self._index.remove_memory(memory_id)
+
+        # v5.4.9：发射 memory_deleted 事件
+        if success:
+            self._emit_event("memory_deleted", {
+                "id": memory_id,
+                "hard_delete": hard_delete,
+            })
+
         return success
 
     def restore(self, memory_id: str, actor: str = "",
@@ -859,14 +899,31 @@ class MindForge:
     def export_json(self, output_path: str,
                     category: Optional[str] = None,
                     layer: Optional[MemoryLayer] = None,
+                    tags: Optional[List[str]] = None,
+                    created_after: Optional[float] = None,
+                    created_before: Optional[float] = None,
                     include_private: bool = False) -> int:
-        """导出记忆为 JSON 文件（v5.2.9 安全加固：路径校验 + 权限收紧）"""
+        """导出记忆为 JSON 文件（v5.2.9 安全加固，v5.4.9 增强选择性导出）
+
+        v5.4.9 新增：支持按标签、时间范围筛选导出。
+        """
         entries = self._storage.list_memories(
             category=category,
             layer=layer,
+            created_after=created_after,
+            created_before=created_before,
             limit=100000,
             offset=0,
         )
+
+        # v5.4.9：标签过滤
+        if tags:
+            tag_set = set(t.lower() for t in tags if t)
+            if tag_set:
+                entries = [
+                    e for e in entries
+                    if any(t.lower() in tag_set for t in (e.tags or []))
+                ]
 
         if not include_private:
             entries = [
@@ -1220,13 +1277,41 @@ class MindForge:
 
     def export_csv(self, output_path: str,
                    category: Optional[str] = None,
+                   layer: Optional[MemoryLayer] = None,
+                   tags: Optional[List[str]] = None,
+                   created_after: Optional[float] = None,
+                   created_before: Optional[float] = None,
                    include_private: bool = False) -> int:
-        """导出记忆为 CSV 文件（v5.2.9 安全加固：路径校验 + CSV 公式注入防护）"""
+        """导出记忆为 CSV 文件（v5.2.9 安全加固，v5.4.9 增强选择性导出）
+
+        v5.4.9 新增：支持按标签、时间范围、层级筛选导出。
+
+        Args:
+            output_path: 输出 .csv 文件路径
+            category: 限定分类
+            layer: 限定层级
+            tags: 限定标签列表（记忆需包含任意一个指定标签）
+            created_after: 创建时间下限（Unix 时间戳）
+            created_before: 创建时间上限（Unix 时间戳）
+            include_private: 是否包含 PRIVATE/STRICT 记忆
+        """
         entries = self._storage.list_memories(
             category=category,
+            layer=layer,
+            created_after=created_after,
+            created_before=created_before,
             limit=100000,
             offset=0,
         )
+
+        # v5.4.9：标签过滤
+        if tags:
+            tag_set = set(t.lower() for t in tags if t)
+            if tag_set:
+                entries = [
+                    e for e in entries
+                    if any(t.lower() in tag_set for t in (e.tags or []))
+                ]
 
         if not include_private:
             entries = [
@@ -1269,6 +1354,20 @@ class MindForge:
                     _csv_safe(e.created_at),
                     _csv_safe(e.updated_at),
                 ])
+
+        # v5.4.9：发射 export_completed 事件
+        self._emit_event("export_completed", {
+            "format": "csv",
+            "path": str(path),
+            "count": len(entries),
+            "filters": {
+                "category": category,
+                "layer": layer.value if layer else None,
+                "tags": tags,
+                "created_after": created_after,
+                "created_before": created_before,
+            },
+        })
 
         return len(entries)
 
@@ -1442,14 +1541,35 @@ class MindForge:
                      output_path: str,
                      category: Optional[str] = None,
                      layer: Optional[MemoryLayer] = None,
-                     starred_only: bool = False):
-        """导出记忆为 Excel 格式（v5.1.9 新增）"""
-        return self._storage.export_as_excel(
+                     starred_only: bool = False,
+                     tags: Optional[List[str]] = None,
+                     created_after: Optional[float] = None,
+                     created_before: Optional[float] = None):
+        """导出记忆为 Excel 格式（v5.1.9 新增，v5.4.9 增强选择性导出）
+
+        v5.4.9 新增：支持按标签、时间范围筛选导出。
+        """
+        result = self._storage.export_as_excel(
             output_path=output_path,
             category=category,
             layer=layer,
             starred_only=starred_only,
+            tags=tags,
+            created_after=created_after,
+            created_before=created_before,
         )
+        # v5.4.9：发射 export_completed 事件
+        self._emit_event("export_completed", {
+            "format": "excel",
+            "path": str(result),
+            "filters": {
+                "category": category,
+                "layer": layer.value if layer else None,
+                "tags": tags,
+                "starred_only": starred_only,
+            },
+        })
+        return result
 
     def import_excel(self,
                      input_path: str,
@@ -3493,7 +3613,30 @@ class MindForge:
 
     def rollback_to_version(self, version_id: str, actor: str = "") -> Dict[str, Any]:
         """回滚记忆到指定历史版本（v5.2.7 新增）"""
-        return self._storage.rollback_to_version(version_id, actor)
+        result = self._storage.rollback_to_version(version_id, actor)
+        # v5.4.9：发射 version_rolled_back 事件
+        if result.get("success"):
+            self._emit_event("version_rolled_back", {
+                "version_id": version_id,
+                "memory_id": result.get("memory_id"),
+            })
+        return result
+
+    def diff_versions(self, memory_id: str,
+                      version_a: Optional[str] = None,
+                      version_b: Optional[str] = None) -> Dict[str, Any]:
+        """对比两个历史版本的差异（v5.4.9 新增）
+
+        Args:
+            memory_id: 记忆 ID
+            version_a: 起始版本 ID（None 表示最早版本）
+            version_b: 目标版本 ID（None 表示最新版本）
+
+        Returns:
+            含 field_changes（content/category/tags/importance 变更）、
+            content_diff（unified diff 文本）、changed_fields 列表的字典。
+        """
+        return self._storage.diff_versions(memory_id, version_a, version_b)
 
     # ===== 多 Agent 记忆空间（v5.2.8 实验性 — v6.0.0 全量推送预览）=====
 
@@ -3544,6 +3687,44 @@ class MindForge:
                 from modules.share_conflict import SharedConflictResolver
             self._share_conflict = SharedConflictResolver(self._storage)
         return self._share_conflict
+
+    # ===== v5.4.9 事件总线 / Webhook 通知 =====
+
+    @property
+    def event_bus(self):
+        """事件总线（v5.4.9 新增）
+
+        支持内存订阅和 Webhook HTTP 回调。
+        事件类型：memory_created / memory_updated / memory_deleted /
+                  memory_expired / conflict_detected / version_rolled_back /
+                  export_completed / import_completed
+        """
+        if self._event_bus is None:
+            try:
+                from ..modules.event_bus import create_event_bus_from_config
+            except (ImportError, ValueError):
+                from modules.event_bus import create_event_bus_from_config
+            config = {
+                "webhooks": getattr(self.config, "webhooks", None),
+                "webhook_secret": getattr(self.config, "webhook_secret", ""),
+                "enabled": getattr(self.config, "event_bus_enabled", True),
+            }
+            self._event_bus = create_event_bus_from_config(config)
+        return self._event_bus
+
+    def _emit_event(self, event: str, data: Optional[Dict[str, Any]] = None,
+                    sync: bool = False) -> Dict[str, Any]:
+        """发射事件（内部方法，v5.4.9）
+
+        事件总线未启用或未初始化时静默跳过，不影响主流程。
+        """
+        try:
+            if not getattr(self.config, "event_bus_enabled", True):
+                return {"skipped": True, "reason": "disabled"}
+            return self.event_bus.publish(event, data, sync=sync)
+        except Exception as e:
+            logger.debug("事件发射失败 [%s]: %s", event, e)
+            return {"error": str(e)}
 
     @property
     def federated(self):
