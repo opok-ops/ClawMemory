@@ -35,6 +35,7 @@ MindForge-mcp = "mcp.server:main"
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov"]
 embedding = ["sentence-transformers>=2.2.0"]
+excel = ["openpyxl>=3.0.0"]
 
 [tool.setuptools]
 py-modules = ["MindForge"]

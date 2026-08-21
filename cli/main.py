@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.4.8 CLI - 命令行工具
+MindForge v5.4.9 CLI - 命令行工具
 =================================
 
 Usage:

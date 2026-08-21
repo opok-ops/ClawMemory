@@ -8593,17 +8593,19 @@ class StorageEngine:
         try:
             # 获取目标版本
             target = conn.execute(
-                "SELECT memory_id, content, category, tags, importance FROM memory_versions WHERE id = ?",
+                "SELECT id, memory_id, version_number, content, category, tags, importance FROM memory_versions WHERE id = ?",
                 (version_id,)
             ).fetchone()
             if not target:
                 return {"success": False, "error": "版本不存在"}
 
-            memory_id = target[0]
-            content = target[1]
-            category = target[2]
-            tags_json = target[3]
-            importance = target[4]
+            target_version_id = target[0]
+            memory_id = target[1]
+            version_number = target[2]
+            content = target[3]
+            category = target[4]
+            tags_json = target[5]
+            importance = target[6]
 
             # 获取当前记忆内容（保存为新版本）
             current = conn.execute(
@@ -8631,7 +8633,8 @@ class StorageEngine:
             return {
                 "success": True,
                 "memory_id": memory_id,
-                "rolled_back_to_version": target[1] if len(target) > 1 else None,
+                "rolled_back_to_version": target_version_id,
+                "rolled_back_to_version_number": version_number,
                 "saved_current_as_version": save_result.get("version_number"),
             }
         except Exception as e:
