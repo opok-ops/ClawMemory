@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.4.9 CLI - 命令行工具
+MindForge v5.5.0 CLI - 命令行工具
 =================================
 
 Usage:
@@ -91,7 +91,7 @@ from core import (
 try:
     from __init__ import __version__
 except ImportError:
-    __version__ = "5.4.9"
+    __version__ = "5.5.0"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -3590,49 +3590,6 @@ def main():
     p_emb_status = sub.add_parser("embedding-status",
                                   help="查看嵌入向量状态（v5.4.5 新增）")
 
-    # v5.4.8 新增5个API
-    p_agent_reinforce = sub.add_parser("agent-reinforce",
-        help="Agent 记忆强化（v5.4.8 新增）")
-    p_agent_reinforce.add_argument("agent_id", help="Agent ID")
-    p_agent_reinforce.add_argument("--min-access", type=int, default=3,
-        help="最小访问次数阈值（默认3）")
-    p_agent_reinforce.add_argument("--dry-run", action="store_true",
-        help="仅预览，不实际执行")
-
-    p_agent_shared = sub.add_parser("agent-shared",
-        help="跨 Agent 共享记忆（v5.4.8 新增）")
-    p_agent_shared.add_argument("from_agent", help="源 Agent ID")
-    p_agent_shared.add_argument("to_agent", help="目标 Agent ID")
-    p_agent_shared.add_argument("--categories", default=None,
-        help="按分类过滤（逗号分隔）")
-    p_agent_shared.add_argument("--max-count", type=int, default=100,
-        help="最大共享条数（默认100）")
-    p_agent_shared.add_argument("--dry-run", action="store_true",
-        help="仅预览，不实际执行")
-
-    p_agent_domains = sub.add_parser("agent-domains",
-        help="Agent 知识领域分析（v5.4.8 新增）")
-    p_agent_domains.add_argument("agent_id", help="Agent ID")
-    p_agent_domains.add_argument("--top-n", type=int, default=10,
-        help="返回前N个领域（默认10）")
-
-    p_drama_scene = sub.add_parser("drama-scene",
-        help="AI 短剧场景生成（v5.4.8 新增）")
-    p_drama_scene.add_argument("drama_id", help="短剧 ID")
-    p_drama_scene.add_argument("scene_title", help="场景标题")
-    p_drama_scene.add_argument("--characters", default=None,
-        help="参与角色（逗号分隔）")
-    p_drama_scene.add_argument("--mood", default="neutral",
-        help="情感基调 (neutral/happy/sad/tense/romantic)")
-    p_drama_scene.add_argument("--setting", default="",
-        help="场景设置描述")
-    p_drama_scene.add_argument("--episode", type=int, default=0,
-        help="集数（默认0）")
-
-    p_drama_emotion = sub.add_parser("drama-emotion",
-        help="情感时间线分析（v5.4.8 新增）")
-    p_drama_emotion.add_argument("drama_id", help="短剧 ID")
-
     args = parser.parse_args()
 
     # v5.4.6 Shell 自动补全安装
@@ -4696,73 +4653,6 @@ def cmd_session_focus(args):
     return 0
 
 
-def cmd_agent_reinforce(args):
-    """Agent 记忆强化（v5.4.8）"""
-    config = MemoryConfig(db_path=args.db_path, key_file=args.key_file)
-    cm = MindForge(config=config)
-    if cm.need_password():
-        cm.init_with_password(_get_password())
-    else:
-        cm.init_with_password("")
-    result = cm.agent_memory_reinforce(args.agent_id, args.min_access, dry_run=args.dry_run)
-    _print_result(result, args)
-    return 0
-
-def cmd_agent_shared(args):
-    """跨 Agent 共享记忆（v5.4.8）"""
-    config = MemoryConfig(db_path=args.db_path, key_file=args.key_file)
-    cm = MindForge(config=config)
-    if cm.need_password():
-        cm.init_with_password(_get_password())
-    else:
-        cm.init_with_password("")
-    categories = args.categories.split(",") if args.categories else None
-    result = cm.agent_shared_memories(args.from_agent, args.to_agent,
-                                       categories=categories,
-                                       max_count=args.max_count,
-                                       dry_run=args.dry_run)
-    _print_result(result, args)
-    return 0
-
-def cmd_agent_domains(args):
-    """Agent 知识领域分析（v5.4.8）"""
-    config = MemoryConfig(db_path=args.db_path, key_file=args.key_file)
-    cm = MindForge(config=config)
-    if cm.need_password():
-        cm.init_with_password(_get_password())
-    else:
-        cm.init_with_password("")
-    result = cm.agent_knowledge_domains(args.agent_id, args.top_n)
-    _print_result(result, args)
-    return 0
-
-def cmd_drama_scene(args):
-    """AI 短剧场景生成（v5.4.8）"""
-    config = MemoryConfig(db_path=args.db_path, key_file=args.key_file)
-    cm = MindForge(config=config)
-    if cm.need_password():
-        cm.init_with_password(_get_password())
-    else:
-        cm.init_with_password("")
-    characters = args.characters.split(",") if args.characters else None
-    result = cm.drama_generate_scene(args.drama_id, args.scene_title,
-                                      characters=characters, mood=args.mood,
-                                      setting=args.setting, episode=args.episode)
-    _print_result(result, args)
-    return 0
-
-def cmd_drama_emotion(args):
-    """情感时间线分析（v5.4.8）"""
-    config = MemoryConfig(db_path=args.db_path, key_file=args.key_file)
-    cm = MindForge(config=config)
-    if cm.need_password():
-        cm.init_with_password(_get_password())
-    else:
-        cm.init_with_password("")
-    result = cm.drama_emotion_timeline(args.drama_id)
-    _print_result(result, args)
-    return 0
-
 def _main_dispatch(args):
     """命令分发（v5.3.7 重构：将 commands dict 和 dispatch 逻辑独立）"""
     commands = {
@@ -4979,12 +4869,6 @@ def _main_dispatch(args):
         # v5.4.5 新增向量检索
         "rebuild-embeddings": cmd_rebuild_embeddings,
         "embedding-status": cmd_embedding_status,
-        # v5.4.8 新增5个API
-        "agent-reinforce": cmd_agent_reinforce,
-        "agent-shared": cmd_agent_shared,
-        "agent-domains": cmd_agent_domains,
-        "drama-scene": cmd_drama_scene,
-        "drama-emotion": cmd_drama_emotion,
     }
 
     cmd = commands.get(args.command)

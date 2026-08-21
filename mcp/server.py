@@ -493,73 +493,6 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "properties": {},
         },
     },
-    {
-        "name": "agent_reinforce",
-        "description": "Agent 记忆强化（v5.4.8）— 基于访问频率自动提升高频记忆重要性",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "agent_id": {"type": "string", "description": "Agent ID"},
-                "min_access_count": {"type": "integer", "description": "最小访问次数阈值", "default": 3},
-                "dry_run": {"type": "boolean", "description": "仅预览不执行", "default": False},
-            },
-            "required": ["agent_id"],
-        },
-    },
-    {
-        "name": "agent_shared",
-        "description": "跨 Agent 共享记忆（v5.4.8）— 将一个 Agent 的记忆复制到另一个",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "from_agent": {"type": "string", "description": "源 Agent ID"},
-                "to_agent": {"type": "string", "description": "目标 Agent ID"},
-                "categories": {"type": "array", "items": {"type": "string"}, "description": "按分类过滤"},
-                "max_count": {"type": "integer", "description": "最大共享条数", "default": 100},
-                "dry_run": {"type": "boolean", "description": "仅预览不执行", "default": False},
-            },
-            "required": ["from_agent", "to_agent"],
-        },
-    },
-    {
-        "name": "agent_domains",
-        "description": "Agent 知识领域分析（v5.4.8）— 分析 Agent 的知识分布",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "agent_id": {"type": "string", "description": "Agent ID"},
-                "top_n": {"type": "integer", "description": "返回前N个领域", "default": 10},
-            },
-            "required": ["agent_id"],
-        },
-    },
-    {
-        "name": "drama_scene",
-        "description": "AI 短剧场景生成（v5.4.8）— 基于上下文生成新场景",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "drama_id": {"type": "string", "description": "短剧 ID"},
-                "scene_title": {"type": "string", "description": "场景标题"},
-                "characters": {"type": "array", "items": {"type": "string"}, "description": "参与角色"},
-                "mood": {"type": "string", "description": "情感基调", "default": "neutral"},
-                "setting": {"type": "string", "description": "场景设置"},
-                "episode": {"type": "integer", "description": "集数", "default": 0},
-            },
-            "required": ["drama_id", "scene_title"],
-        },
-    },
-    {
-        "name": "drama_emotion",
-        "description": "情感时间线分析（v5.4.8）— 分析短剧情感走向",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "drama_id": {"type": "string", "description": "短剧 ID"},
-            },
-            "required": ["drama_id"],
-        },
-    },
 ]
 
 
@@ -941,43 +874,6 @@ def h_embedding_status(mf, _args: Dict[str, Any]) -> Dict[str, Any]:
     return _clean(mf.get_embedding_status())
 
 
-def h_agent_reinforce(mf, args: Dict[str, Any]) -> Dict[str, Any]:
-    return _clean(mf.agent_memory_reinforce(
-        args.get("agent_id", ""),
-        args.get("min_access_count", 3),
-        dry_run=args.get("dry_run", False),
-    ))
-
-def h_agent_shared(mf, args: Dict[str, Any]) -> Dict[str, Any]:
-    return _clean(mf.agent_shared_memories(
-        args.get("from_agent", ""),
-        args.get("to_agent", ""),
-        categories=args.get("categories"),
-        max_count=args.get("max_count", 100),
-        dry_run=args.get("dry_run", False),
-    ))
-
-def h_agent_domains(mf, args: Dict[str, Any]) -> Dict[str, Any]:
-    return _clean(mf.agent_knowledge_domains(
-        args.get("agent_id", ""),
-        args.get("top_n", 10),
-    ))
-
-def h_drama_scene(mf, args: Dict[str, Any]) -> Dict[str, Any]:
-    return _clean(mf.drama_generate_scene(
-        args.get("drama_id", ""),
-        args.get("scene_title", ""),
-        characters=args.get("characters"),
-        mood=args.get("mood", "neutral"),
-        setting=args.get("setting", ""),
-        episode=args.get("episode", 0),
-    ))
-
-def h_drama_emotion(mf, args: Dict[str, Any]) -> Dict[str, Any]:
-    return _clean(mf.drama_emotion_timeline(
-        args.get("drama_id", ""),
-    ))
-
 HANDLERS: Dict[str, Any] = {
     "memory_add": h_memory_add,
     "memory_search": h_memory_search,
@@ -1015,12 +911,6 @@ HANDLERS: Dict[str, Any] = {
     # v5.4.5 新增向量检索
     "rebuild_embeddings": h_rebuild_embeddings,
     "embedding_status": h_embedding_status,
-    # v5.4.8 新增5个API
-    "agent_reinforce": h_agent_reinforce,
-    "agent_shared": h_agent_shared,
-    "agent_domains": h_agent_domains,
-    "drama_scene": h_drama_scene,
-    "drama_emotion": h_drama_emotion,
 }
 
 
@@ -1033,7 +923,7 @@ def _handle_initialize(request: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "protocolVersion": "2024-11-05",
         "capabilities": {"tools": {}, "logging": {}},
-        "serverInfo": {"name": "mindforge", "version": "5.4.9"},
+        "serverInfo": {"name": "mindforge", "version": "5.5.0"},
     }
 
 

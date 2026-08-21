@@ -1,5 +1,5 @@
 """
-MindForge v5.4.9 REST API Server
+MindForge v5.5.0 REST API Server
 ================================
 
 标准 REST API，让非 Python 应用（JS、Go、移动端）也能直接调用 MindForge。
@@ -72,10 +72,7 @@ class _RateLimiter:
             return True
 
 
-# v5.4.8 安全修复：分端点速率限制
-_rate_limiter = _RateLimiter(max_requests=100, window_seconds=60)      # 通用：100次/分钟
-_rate_limiter_import = _RateLimiter(max_requests=10, window_seconds=60) # 导入：10次/分钟
-_rate_limiter_search = _RateLimiter(max_requests=60, window_seconds=60) # 搜索：60次/分钟
+_rate_limiter = _RateLimiter(max_requests=100, window_seconds=60)
 
 
 def _safe_int(value, default=10, min_val=1, max_val=10000):
@@ -131,42 +128,17 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
             return None
 
     def _check_auth(self):
-        """验证 Bearer Token（通过 MINDFORGE_API_KEY 环境变量配置）
-        
-        v5.4.8 安全策略：
-        - 设置了 MINDFORGE_API_KEY：正常验证 Bearer Token
-        - 未设置时：
-          - 绑定 localhost (127.0.0.1/::1)：允许访问（开发模式）
-          - 绑定其他地址：拒绝所有请求，除非显式设置 MINDFORGE_ALLOW_NO_AUTH=1
-        """
+        """验证 Bearer Token（通过 MINDFORGE_API_KEY 环境变量配置）"""
         api_key = os.environ.get("MINDFORGE_API_KEY", "")
         if not api_key:
-            # 检查是否绑定到非本地地址
-            server_addr = self.server.server_address[0] if self.server else "127.0.0.1"
-            is_local = server_addr in ("127.0.0.1", "::1", "localhost")
-            allow_no_auth = os.environ.get("MINDFORGE_ALLOW_NO_AUTH", "") == "1"
-            
-            if is_local or allow_no_auth:
-                # 本地开发模式：记录一次性警告
-                if not getattr(self.__class__, '_auth_warned', False):
-                    logger.warning(
-                        "MINDFORGE_API_KEY not set — running in development mode (localhost only). "
-                        "Set MINDFORGE_API_KEY for production use."
-                    )
-                    self.__class__._auth_warned = True
-                return True
-            else:
-                # 非本地绑定且未设 API Key：拒绝
-                if not getattr(self.__class__, '_no_key_rejected_warned', False):
-                    logger.error(
-                        "Rejecting request: MINDFORGE_API_KEY not set and server bound to %s. "
-                        "Set MINDFORGE_API_KEY or MINDFORGE_ALLOW_NO_AUTH=1 to allow unauthenticated access.",
-                        server_addr
-                    )
-                    self.__class__._no_key_rejected_warned = True
-                self._send_json({"error": "Authentication required — set MINDFORGE_API_KEY"}, 401)
-                return False
-        
+            # v5.4.8 安全修复：未设置 API Key 时记录警告
+            if not getattr(self.__class__, '_auth_warned', False):
+                logger.warning(
+                    "MINDFORGE_API_KEY not set — API is open to all requests. "
+                    "Set MINDFORGE_API_KEY environment variable to enable authentication."
+                )
+                self.__class__._auth_warned = True
+            return True
         auth_header = self.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
@@ -183,16 +155,11 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
         path = parsed.path.rstrip("/") or "/"
         qs = parse_qs(parsed.query)
 
-        # v5.4.8 安全修复：分端点速率限制
+        # v5.4.7 修复 H-7：速率限制
         client_ip = self.client_address[0]
-        if path == "/api/search":
-            if not _rate_limiter_search.check(client_ip):
-                self._send_json({"error": "Search rate limit exceeded (60/min). Try again later."}, 429)
-                return
-        else:
-            if not _rate_limiter.check(client_ip):
-                self._send_json({"error": "Rate limit exceeded. Try again later."}, 429)
-                return
+        if not _rate_limiter.check(client_ip):
+            self._send_json({"error": "Rate limit exceeded. Try again later."}, 429)
+            return
 
         if path != "/api/health" and not self._check_auth():
             return
@@ -237,55 +204,23 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                 limit = _safe_int(qs.get("limit", ["10"])[0], default=10, min_val=1, max_val=1000)
                 min_relevance = _safe_float(qs.get("min_relevance", ["0.3"])[0], default=0.3, min_val=0.0, max_val=1.0)
                 categories = qs.get("categories", None)
-                # v5.4.9 新增：标签、时间范围、高亮参数
-                tags = qs.get("tags", None)
-                if tags and isinstance(tags, list) and len(tags) == 1:
-                    tags = [t.strip() for t in tags[0].split(",") if t.strip()]
-                created_after = qs.get("created_after", [None])[0]
-                created_before = qs.get("created_before", [None])[0]
-                highlight = qs.get("highlight", ["0"])[0] in ("1", "true", "True")
-
-                search_kwargs = {
-                    "query": q,
-                    "max_results": limit,
-                    "min_relevance": min_relevance,
-                    "categories": categories,
-                    "tags": tags,
-                    "highlight": highlight,
-                }
-                if created_after:
-                    try:
-                        search_kwargs["created_after"] = float(created_after)
-                    except (ValueError, TypeError):
-                        pass
-                if created_before:
-                    try:
-                        search_kwargs["created_before"] = float(created_before)
-                    except (ValueError, TypeError):
-                        pass
-
-                result = self.mindforge.search(**search_kwargs)
+                result = self.mindforge.search(
+                    query=q,
+                    max_results=limit,
+                    min_relevance=min_relevance,
+                    categories=categories,
+                )
                 chunks = []
                 if hasattr(result, "chunks"):
                     for chunk in result.chunks:
-                        item = {
+                        chunks.append({
                             "id": chunk.memory_id,
                             "content": chunk.content,
                             "category": chunk.category,
                             "relevance_score": chunk.relevance_score,
                             "tags": chunk.tags if hasattr(chunk, "tags") else [],
-                        }
-                        # v5.4.9：返回高亮内容
-                        if highlight and hasattr(chunk, "highlighted_content") and chunk.highlighted_content:
-                            item["highlighted_content"] = chunk.highlighted_content
-                        chunks.append(item)
-                self._send_json({
-                    "query": q,
-                    "results": chunks,
-                    "total": len(chunks),
-                    "strategy": getattr(result, "strategy_used", ""),
-                    "query_time_ms": getattr(result, "query_time_ms", 0),
-                })
+                        })
+                self._send_json({"query": q, "results": chunks, "total": len(chunks)})
 
             elif path == "/api/memories":
                 # v5.4.7 修复 H-1：安全解析参数
@@ -304,23 +239,6 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
 
             elif path.startswith("/api/memories/"):
                 mem_id = path.split("/api/memories/")[1]
-                # v5.4.9：子端点路由
-                if "/" in mem_id:
-                    parts = mem_id.split("/", 1)
-                    mem_id = parts[0]
-                    sub = parts[1]
-                    if sub == "versions":
-                        # GET /api/memories/{id}/versions
-                        versions = self.mindforge.list_versions(mem_id)
-                        self._send_json({"memory_id": mem_id, "versions": versions, "total": len(versions)})
-                        return
-                    elif sub == "diff":
-                        # GET /api/memories/{id}/diff?version_a=...&version_b=...
-                        version_a = qs.get("version_a", [None])[0]
-                        version_b = qs.get("version_b", [None])[0]
-                        diff = self.mindforge.diff_versions(mem_id, version_a, version_b)
-                        self._send_json(diff)
-                        return
                 entry = self.mindforge.get(mem_id)
                 if entry:
                     self._send_json(entry.to_dict() if hasattr(entry, "to_dict") else vars(entry))
@@ -332,16 +250,6 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                 memories = [e.to_dict() if hasattr(e, "to_dict") else vars(e) for e in entries]
                 self._send_json({"version": MF_VERSION, "total": len(memories), "memories": memories})
 
-            # v5.4.9 新增：Webhook 管理端点
-            elif path == "/api/webhooks":
-                webhooks = self.mindforge.event_bus.list_webhooks()
-                self._send_json({"webhooks": webhooks, "total": len(webhooks)})
-
-            elif path == "/api/events/stats":
-                stats = self.mindforge.event_bus.stats()
-                history = self.mindforge.event_bus.delivery_history(limit=20)
-                self._send_json({"stats": stats, "recent_deliveries": history})
-
             elif path == "/":
                 self._send_json({
                     "name": "MindForge REST API",
@@ -350,14 +258,9 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                         "GET /api/memories", "POST /api/memories",
                         "GET /api/memories/{id}", "PUT /api/memories/{id}",
                         "DELETE /api/memories/{id}",
-                        "GET /api/memories/{id}/versions",
-                        "GET /api/memories/{id}/diff",
                         "GET /api/search", "GET /api/stats",
                         "GET /api/health", "GET /api/tags",
                         "POST /api/import", "GET /api/export",
-                        "GET /api/webhooks", "POST /api/webhooks",
-                        "DELETE /api/webhooks?url=...",
-                        "GET /api/events/stats",
                     ],
                 })
 
@@ -365,23 +268,12 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "Not found", "path": path}, 404)
 
         except Exception as e:
-            logger.error("API error: %s", type(e).__name__)
+            logger.exception("API error")
             self._send_json({"error": "Internal server error"}, 500)
 
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
-
-        # v5.4.8 安全修复：导入端点单独限流
-        client_ip = self.client_address[0]
-        if path == "/api/import":
-            if not _rate_limiter_import.check(client_ip):
-                self._send_json({"error": "Import rate limit exceeded (10/min). Try again later."}, 429)
-                return
-        else:
-            if not _rate_limiter.check(client_ip):
-                self._send_json({"error": "Rate limit exceeded. Try again later."}, 429)
-                return
 
         if not self._check_auth():
             return
@@ -431,27 +323,11 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                         failed += 1
                 self._send_json({"imported": imported, "failed": failed})
 
-            # v5.4.9 新增：注册 Webhook
-            elif path == "/api/webhooks":
-                url = body.get("url", "")
-                if not url:
-                    self._send_json({"error": "Missing 'url' field"}, 400)
-                    return
-                events = body.get("events")
-                secret = body.get("secret", "")
-                timeout = body.get("timeout", 10.0)
-                max_retries = body.get("max_retries", 3)
-                config = self.mindforge.event_bus.register_webhook(
-                    url=url, events=events, secret=secret,
-                    timeout=timeout, max_retries=max_retries,
-                )
-                self._send_json({"success": True, "webhook": config.to_dict()}, 201)
-
             else:
                 self._send_json({"error": "Not found", "path": path}, 404)
 
         except Exception as e:
-            logger.error("API error: %s", type(e).__name__)
+            logger.exception("API error")
             self._send_json({"error": "Internal server error"}, 500)
 
     def do_PUT(self):
@@ -485,7 +361,7 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "Not found", "path": path}, 404)
 
         except Exception as e:
-            logger.error("API error: %s", type(e).__name__)
+            logger.exception("API error")
             self._send_json({"error": "Internal server error"}, 500)
 
     def do_DELETE(self):
@@ -503,24 +379,11 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                     self._send_json({"status": "deleted", "id": mem_id})
                 else:
                     self._send_json({"error": "Delete failed or memory not found"}, 404)
-            # v5.4.9 新增：注销 Webhook
-            elif path == "/api/webhooks":
-                parsed = urlparse(self.path)
-                qs = parse_qs(parsed.query)
-                url = qs.get("url", [""])[0]
-                if not url:
-                    self._send_json({"error": "Missing 'url' query parameter"}, 400)
-                    return
-                removed = self.mindforge.event_bus.unregister_webhook(url)
-                if removed:
-                    self._send_json({"success": True, "removed": url})
-                else:
-                    self._send_json({"error": "Webhook not found"}, 404)
             else:
                 self._send_json({"error": "Not found", "path": path}, 404)
 
         except Exception as e:
-            logger.error("API error: %s", type(e).__name__)
+            logger.exception("API error")
             self._send_json({"error": "Internal server error"}, 500)
 
     def log_message(self, format, *args):
