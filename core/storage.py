@@ -5506,7 +5506,9 @@ class StorageEngine:
                           "acl_deny", "acl_add_rule", "acl_remove_rule",
                           "conflict_detected", "conflict_resolved", "conflict_dismiss",
                           # v5.4.2 agent 高敏操作变体
-                          "agent_purge", "agent_forget", "agent_merge", "agent_clean"}
+                          "agent_purge", "agent_forget", "agent_merge", "agent_clean",
+                          # v5.5.0 新增审计动作
+                          "deduplicate_merge", "recalibrate", "reinforce"}
         # v5.4.2：高敏感操作，审计失败时 fail-closed
         HIGH_SENSITIVE_ACTIONS = {"delete", "purge", "grant", "revoke", "forget",
                                   "agent_purge", "agent_forget"}
@@ -11998,8 +12000,8 @@ class StorageEngine:
                         "UPDATE memories SET importance = ?, updated_at = ? WHERE id = ?",
                         (new_imp, time.time(), mem_id)
                     )
-                    # 审计记录
-                    self._add_audit("reinforce", mem_id, agent_id, "", "")
+                    self._add_audit("reinforce", mem_id, agent_id, "", "",
+                                    details={"from": cur_imp, "to": new_imp})
                 reinforced += 1
                 details.append({
                     "id": mem_id,
@@ -12577,39 +12579,57 @@ class StorageEngine:
         groups = []
         duplicates_found = 0
         merged = 0
+        pending_audits = []
 
-        for i, r1 in enumerate(rows):
-            if r1[0] in merged_ids:
-                continue
-            group = {"keep": r1[0], "keep_preview": (r1[1] or "")[:60], "duplicates": []}
-            for j, r2 in enumerate(rows):
-                if i >= j or r2[0] in merged_ids:
+        try:
+            for i, r1 in enumerate(rows):
+                if r1[0] in merged_ids:
                     continue
-                # 同分类才考虑去重
-                if (r1[2] or "") != (r2[2] or ""):
-                    continue
-                sim = content_similarity(r1[1] or "", r2[1] or "")
-                if sim >= similarity_threshold:
-                    group["duplicates"].append({
-                        "id": r2[0],
-                        "preview": (r2[1] or "")[:60],
-                        "similarity": round(sim, 3),
-                    })
-                    duplicates_found += 1
-                    if not dry_run:
-                        # 将重复记忆标记为已合并（移入 trash 分类）
-                        conn.execute(
-                            "UPDATE memories SET category = 'trash', updated_at = ?, metadata = ? WHERE id = ?",
-                            (time.time(), json.dumps({"merged_into": r1[0], "dedup_similarity": sim}), r2[0])
-                        )
-                        self._add_audit("deduplicate_merge", r2[0], aid, "", f"merged into {r1[0]}")
-                        merged += 1
-                    merged_ids.add(r2[0])
-            if group["duplicates"]:
-                groups.append(group)
+                group = {"keep": r1[0], "keep_preview": (r1[1] or "")[:60], "duplicates": []}
+                for j, r2 in enumerate(rows):
+                    if i >= j or r2[0] in merged_ids:
+                        continue
+                    # 同分类才考虑去重
+                    if (r1[2] or "") != (r2[2] or ""):
+                        continue
+                    sim = content_similarity(r1[1] or "", r2[1] or "")
+                    if sim >= similarity_threshold:
+                        group["duplicates"].append({
+                            "id": r2[0],
+                            "preview": (r2[1] or "")[:60],
+                            "similarity": round(sim, 3),
+                        })
+                        duplicates_found += 1
+                        if not dry_run:
+                            existing_meta = conn.execute(
+                                "SELECT metadata FROM memories WHERE id = ?", (r2[0],)
+                            ).fetchone()
+                            try:
+                                meta = json.loads(existing_meta["metadata"]) if existing_meta and existing_meta["metadata"] else {}
+                            except (json.JSONDecodeError, TypeError, KeyError):
+                                meta = {}
+                            meta["merged_into"] = r1[0]
+                            meta["dedup_similarity"] = sim
+                            meta["_original_category"] = r2[2]
+                            conn.execute(
+                                "UPDATE memories SET category = 'trash', updated_at = ?, metadata = ? WHERE id = ?",
+                                (time.time(), json.dumps(meta, ensure_ascii=False), r2[0])
+                            )
+                            pending_audits.append(("deduplicate_merge", r2[0], aid, "", "",
+                                {"merged_into": r1[0], "dedup_similarity": round(sim, 3)}))
+                            merged += 1
+                        merged_ids.add(r2[0])
+                if group["duplicates"]:
+                    groups.append(group)
 
-        if not dry_run and merged > 0:
-            conn.commit()
+            if not dry_run and merged > 0:
+                conn.commit()
+                for audit_args in pending_audits:
+                    self._add_audit(*audit_args)
+        except sqlite3.Error as e:
+            conn.rollback()
+            logger.error("agent_memory_deduplicate failed: %s", e)
+            return {"error": f"数据库操作失败: {e}", "agent_id": aid}
 
         return {
             "agent_id": aid,
@@ -12765,66 +12785,74 @@ class StorageEngine:
         downgraded = 0
         unchanged = 0
         details = []
+        pending_audits = []
 
-        for r in rows:
-            mem_id, content, cur_imp, access_cnt, created, updated, last_acc, layer = r
-            cur_imp = (cur_imp or "MEDIUM").upper()
-            access_cnt = access_cnt or 0
-            last_acc = last_acc or updated or created or now
+        try:
+            for r in rows:
+                mem_id, content, cur_imp, access_cnt, created, updated, last_acc, layer = r
+                cur_imp = (cur_imp or "MEDIUM").upper()
+                access_cnt = access_cnt or 0
+                last_acc = last_acc or updated or created or now
 
-            # 计算综合使用分（0-100）
-            recency_days = (now - last_acc) / 86400
-            recency_score = max(0, 100 - recency_days * 2)  # 每天扣2分
-            frequency_score = min(100, access_cnt * 10)  # 每次访问10分，上限100
-            age_days = (now - (created or now)) / 86400
-            age_score = max(0, 100 - age_days * 0.5)  # 越新分越高
+                # 计算综合使用分（0-100）
+                recency_days = (now - last_acc) / 86400
+                recency_score = max(0, 100 - recency_days * 2)  # 每天扣2分
+                frequency_score = min(100, access_cnt * 10)  # 每次访问10分，上限100
+                age_days = (now - (created or now)) / 86400
+                age_score = max(0, 100 - age_days * 0.5)  # 越新分越高
 
-            usage_score = (recency_score * 0.4 + frequency_score * 0.4 + age_score * 0.2)
+                usage_score = (recency_score * 0.4 + frequency_score * 0.4 + age_score * 0.2)
 
-            # 确定目标重要性
-            if usage_score >= 80:
-                target_imp = "CRITICAL"
-            elif usage_score >= 55:
-                target_imp = "HIGH"
-            elif usage_score >= 25:
-                target_imp = "MEDIUM"
-            else:
-                target_imp = "LOW"
+                # 确定目标重要性
+                if usage_score >= 80:
+                    target_imp = "CRITICAL"
+                elif usage_score >= 55:
+                    target_imp = "HIGH"
+                elif usage_score >= 25:
+                    target_imp = "MEDIUM"
+                else:
+                    target_imp = "LOW"
 
-            cur_idx = imp_levels.index(cur_imp) if cur_imp in imp_levels else 1
-            tgt_idx = imp_levels.index(target_imp)
+                cur_idx = imp_levels.index(cur_imp) if cur_imp in imp_levels else 1
+                tgt_idx = imp_levels.index(target_imp)
 
-            if tgt_idx > cur_idx:
-                upgraded += 1
-                action = "upgrade"
-            elif tgt_idx < cur_idx:
-                downgraded += 1
-                action = "downgrade"
-            else:
-                unchanged += 1
-                action = "unchanged"
-                continue  # 不变的不记录详情
+                if tgt_idx > cur_idx:
+                    upgraded += 1
+                    action = "upgrade"
+                elif tgt_idx < cur_idx:
+                    downgraded += 1
+                    action = "downgrade"
+                else:
+                    unchanged += 1
+                    action = "unchanged"
+                    continue  # 不变的不记录详情
 
-            if not dry_run and action != "unchanged":
-                conn.execute(
-                    "UPDATE memories SET importance = ?, updated_at = ? WHERE id = ?",
-                    (target_imp, now, mem_id)
-                )
-                self._add_audit("recalibrate", mem_id, aid, "",
-                               f"{cur_imp} -> {target_imp} (score={usage_score:.1f})")
+                if not dry_run and action != "unchanged":
+                    conn.execute(
+                        "UPDATE memories SET importance = ?, updated_at = ? WHERE id = ?",
+                        (target_imp, now, mem_id)
+                    )
+                    pending_audits.append(("recalibrate", mem_id, aid, "", "",
+                        {"from": cur_imp, "to": target_imp, "usage_score": round(usage_score, 1)}))
 
-            details.append({
-                "id": mem_id,
-                "content_preview": (content or "")[:60],
-                "from": cur_imp,
-                "to": target_imp,
-                "usage_score": round(usage_score, 1),
-                "access_count": access_cnt,
-                "action": action,
-            })
+                details.append({
+                    "id": mem_id,
+                    "content_preview": (content or "")[:60],
+                    "from": cur_imp,
+                    "to": target_imp,
+                    "usage_score": round(usage_score, 1),
+                    "access_count": access_cnt,
+                    "action": action,
+                })
 
-        if not dry_run and (upgraded + downgraded) > 0:
-            conn.commit()
+            if not dry_run and (upgraded + downgraded) > 0:
+                conn.commit()
+                for audit_args in pending_audits:
+                    self._add_audit(*audit_args)
+        except sqlite3.Error as e:
+            conn.rollback()
+            logger.error("agent_memory_importance_recalibrate failed: %s", e)
+            return {"error": f"数据库操作失败: {e}", "agent_id": aid}
 
         return {
             "agent_id": aid,
@@ -13288,6 +13316,6 @@ class StorageEngine:
             "script_content": script_content,
             "total_scenes": total_scenes,
             "total_lines": total_lines,
-            "total_episodes": current_episode if current_episode > 0 else 0,
+            "total_episodes": len(set(sc[1] for sc in scenes)),
         }
 

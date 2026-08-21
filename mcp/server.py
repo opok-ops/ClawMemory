@@ -659,7 +659,7 @@ def h_memory_importance(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 def h_memory_context(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     agent_id = str(args["agent_id"])
     query = str(args["query"])
-    token_budget = _safe_int(args.get("token_budget", 4000), 4000, 256, 65536)
+    token_budget = _safe_int(args.get("token_budget", 4000), 4000, 256, 128000)
     return {
         "agent_id": agent_id,
         "query": query,

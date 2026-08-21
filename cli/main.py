@@ -4719,7 +4719,7 @@ def _main_dispatch(args):
         "char-ranking": cmd_char_ranking,
         "agent-diff": cmd_agent_diff,
         "agent-purge": cmd_agent_purge,
-        "drama-progress-update": cmd_drama_progress,
+        "drama-progress-update": cmd_drama_progress_update,
         "drama-rec2": cmd_drama_rec2,
         "agent-timeline": cmd_agent_timeline,
         "agent-heatmap": cmd_agent_heatmap,
@@ -5169,31 +5169,6 @@ def cmd_import_url(args):
         print(c(f"\n❌ 导入失败: {e}", "red"))
         cm.close()
         return 1
-
-    cm.close()
-    return 0
-
-
-def cmd_similar(args):
-    """查找相似记忆（v5.1.3 新增）"""
-    cm = _get_memory(args)
-
-    results = cm.find_similar(
-        content=args.content,
-        limit=args.limit,
-        threshold=args.threshold,
-    )
-
-    if not results:
-        print(c("\n⚠️  未找到相似记忆", "yellow"))
-        cm.close()
-        return 0
-
-    print(c(f"\n找到 {len(results)} 条相似记忆:", "cyan"))
-    for i, entry in enumerate(results, 1):
-        print(f"\n{i}. ID: {entry.id[:16]}...")
-        print(f"   分类: {entry.category}")
-        print(f"   内容: {entry.content[:150]}...")
 
     cm.close()
     return 0
@@ -7950,7 +7925,7 @@ def cmd_agent_purge(args):
     return 0
 
 
-def cmd_drama_progress(args):
+def cmd_drama_progress_update(args):
     """更新短剧观看进度（v5.3.2 新增）"""
     cm = _get_memory(args)
     print(c(f"\n🎬 短剧观看进度更新（v5.3.2）", "bold"))
