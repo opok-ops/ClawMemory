@@ -1,12 +1,11 @@
 """
-MindForge v5.4.9 - AI Agent 终身记忆系统
+MindForge v5.5.0 - AI Agent 终身记忆系统
 =======================================
 四层记忆架构 · 知识图谱引擎 · 多模态支持 · 人格化记忆 · 联邦网络 · AI短剧记忆
-v5.4.2 新增：联邦记忆细粒度 ACL（默认拒绝/优先级/信任阈值）+ 共享记忆冲突解决（lww/keep_both）
-v5.4.9 新增：向量搜索 fallback chain · 事件总线/Webhook · 版本对比 diff · 增强导出 · 搜索过滤高亮
+v5.5.0 新增：Agent 记忆快照/去重/健康检查/重要度重校准 + AI短剧分集生成/角色台词/剧情反转/剧本导出 + 终极Bug修复
 """
 
-__version__ = "5.4.9"
+__version__ = "5.5.0"
 __author__ = "MindForge Project"
 __license__ = "MIT + Privacy Addendum"
 

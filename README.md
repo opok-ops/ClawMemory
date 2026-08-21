@@ -6,7 +6,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.4.9-green.svg)](https://github.com/opok-ops/MindForge)
+[![Version](https://img.shields.io/badge/version-5.5.0-green.svg)](https://github.com/opok-ops/MindForge)
 [![CI](https://github.com/opok-ops/MindForge/actions/workflows/ci.yml/badge.svg)](https://github.com/opok-ops/MindForge/actions/workflows/ci.yml)
 
 ---
@@ -56,7 +56,7 @@ for chunk in results.chunks:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      MindForge v5.4.9                          │
+│                      MindForge v5.5.0                          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  ┌─────────────────────────────────────────────────────────┐ │
@@ -338,16 +338,40 @@ context = adapter.get_context("database optimization")
 
 ## Changelog（版本记录）
 
-### v5.4.8 (2026-08-18)
+### v5.5.0 (2026-08-21)
 
-**5 个新 API + DSH 插件 v0.1.1 + 安全加固 + 接口层全面集成 + 10 项工程修复**
+**8 个新 API + 终极 Bug 修复 + Agent 记忆/AI 短剧全面增强**
+
+**新 API（Agent 记忆终极增强）：**
+
+1. **Agent 记忆快照 `agent_memory_snapshot()`** — 创建指定时间点的记忆全量快照，支持标签标识，用于备份/版本对比/回滚参考。
+2. **Agent 记忆去重 `agent_memory_deduplicate()`** — 基于内容相似度（Jaccard）+ 分类匹配检测重复记忆，保留高频/高重要性版本，支持 dry_run。
+3. **Agent 记忆健康检查 `agent_memory_health_check()`** — 8 维度全面评估：层级分布、访问活跃度、遗忘风险、分类均衡度、加密状态等，输出 0-100 健康分和改进建议。
+4. **Agent 记忆重要度重校准 `agent_memory_importance_recalibrate()`** — 基于访问频率+最近访问时间+记忆年龄综合评分，自动修正重要性等级偏差。
+
+**新 API（AI 短剧终极增强）：**
+
+5. **AI 短剧分集生成 `drama_generate_episode()`** — 生成完整一集的多场景结构大纲，自动识别剧情阶段（开场/发展/高潮/结局），每场景含标题/目的/情感基调。
+6. **AI 角色台词生成 `drama_character_dialogue()`** — 基于角色性格+历史台词风格+当前情境，生成符合人设的台词建议，支持 6 种情感基调。
+7. **AI 剧情反转建议 `drama_plot_twist_suggest()`** — 6 种反转类型库（身份/背叛/时间线/死亡/动机/关系），结合当前类型和角色个性化推荐。
+8. **短剧剧本导出 `drama_script_export()`** — 整合场次/角色/台词，生成标准格式剧本，支持 standard/condensed/detailed 三种格式。
+
+**终极 Bug 修复：**
+
+9. **修复 `drama_search()` 类型枚举不匹配** — 白名单中 THRILLER/HISTORICAL/URBAN/MYSTERY 与 DramaGenre 枚举不一致，导致 SUSPENSE/HORROR/FANTASY 等合法类型被拒绝。
+10. **修复 `drama_recommend_v2()` 同上类型枚举不匹配问题。**
+11. **修复 `drama_progress()` 状态枚举不匹配** — PLANNING 与 DramaStatus.PLANNED 不一致，导致状态更新失效。
+
+### v5.4.8 (2026-08-16)
+
+**5 个新 API + DSH 插件 v0.1.1 最终版 + 10 项工程修复**
 
 **新 API（Agent 记忆 + AI 短剧）：**
 
 1. **Agent 记忆强化 `agent_memory_reinforce()`** — 基于访问频率自动提升高频记忆重要性（LOW→MEDIUM→HIGH）。支持 dry_run 预览模式。
-2. **跨 Agent 记忆共享 `agent_shared_memories()`** — 将源 Agent 记忆复制给目标 Agent，批量去重（O(1) set 查找），FTS 同步，审计记录。共享操作保留源记忆的加密状态。
+2. **跨 Agent 记忆共享 `agent_shared_memories()`** — 将源 Agent 记忆复制给目标 Agent，批量去重（O(1) set 查找），FTS 同步，审计记录。
 3. **Agent 知识领域分析 `agent_knowledge_domains()`** — 基于分类和标签分析 Agent 知识分布，返回 Top-N 领域及热门标签。
-4. **AI 短剧场景生成 `drama_generate_scene()`** — 基于剧本上下文生成新场景，包含情感基调、类型建议、角色关联。支持 episode 参数指定集数。
+4. **AI 短剧场景生成 `drama_generate_scene()`** — 基于剧本上下文生成新场景，包含情感基调、类型建议、角色关联。
 5. **短剧情感时间线 `drama_emotion_timeline()`** — 分析各场景情感走向，4 维情感词典 + 线性趋势分析 + 自动摘要。
 
 **DSH 插件 v0.1.1（最终版）：**
@@ -356,28 +380,18 @@ context = adapter.get_context("database optimization")
 7. **降 token 优化** — 精简工具描述、紧凑输出模式（`compactOutput`）、可配注入格式（`full/compact/ids-only`）。
 8. **健壮性提升** — HTTP 请求重试 + 超时控制、指数退避启动等待（最长 15s）、REST API PUT 支持 importance/starred。
 
-**接口层集成（P0 修复）：**
-
-9. **CLI 集成** — 5 个新子命令（agent-reinforce、agent-shared、agent-domains、drama-scene、drama-emotion）+ 处理函数 + 命令映射。
-10. **MCP 集成** — 5 个工具定义 + 处理函数 + HANDLERS 映射。
-11. **REST API 端点** — 5 个新端点已准备。
-
 **工程修复（10 项，P0-P3）：**
 
-12. **P0 加密初始化缺陷** — `encrypted=True` 但无密钥时不再创建未加密数据库，延迟存储引擎初始化到 `init_with_password()` 完成。
-13. **P0 content/metadata 混乱** — `drama_generate_scene` content 列存储纯文本描述而非 JSON，metadata 列存储完整 JSON。
-14. **P1 Typo 性能崩溃** — `hybrid_search.py` 改用反向查找替代生成所有 edits，添加 `max_tokens=5` 限制。
-15. **P1 HTTP batch 限制** — `HTTPBackend.encode_batch()` 添加 `batch_size=100` 分批处理，防止 413 错误。
-16. **P1 encrypted 硬编码** — `agent_shared_memories` encrypted 从硬编码 0 改为从源记忆动态读取。
-17. **P1 episode 硬编码** — `drama_generate_scene` episode 从硬编码 0 改为参数化（`episode: int = 0`）。
-18. **P1 categories 截断** — `agent_shared_memories` categories 超过 10 个时添加 `categories_truncated` 提示。
-19. **P2 Ollama 并发优化** — 小批量（<4）串行避免线程池开销，部分失败返回成功部分而非整体失败。
-20. **P2 降级日志去重** — 向量引擎降级警告只输出一次（模块级标志位），调用前先检查 engine 可用性。
-21. **P2 LLM 意图误判** — 添加 `min_llm_confidence=0.5` 阈值，LLM 结果被接受后跳过默认意图兜底。
-22. **P2 API 一致性** — 补充缺失的 `count_memories()` facade 方法。
-23. **P2 安全加固** — 5 个新 API 全部添加 Unicode 控制字符过滤 + 长度限制 + 类型检查 + 数值边界校验。
-24. **P3 偏好冲突检测** — 收紧长度差阈值（5→2），添加首字母相同、包含关系等额外启发式。
-25. **P3 聚类阈值** — 默认 0.20→0.35，添加自适应机制 `threshold += 0.05 * log(n)`，上限 0.60。
+9. **P0 加密初始化缺陷** — `encrypted=True` 但无密钥时不再创建未加密数据库，延迟存储引擎初始化到 `init_with_password()` 完成。
+10. **P1 Typo 性能崩溃** — `hybrid_search.py` 改用反向查找替代生成所有 edits，添加 `max_tokens=5` 限制。
+11. **P1 HTTP batch 限制** — `HTTPBackend.encode_batch()` 添加 `batch_size=100` 分批处理，防止 413 错误。
+12. **P2 Ollama 并发优化** — 小批量（<4）串行避免线程池开销，部分失败返回成功部分而非整体失败。
+13. **P2 降级日志去重** — 向量引擎降级警告只输出一次（模块级标志位），调用前先检查 engine 可用性。
+14. **P2 LLM 意图误判** — 添加 `min_llm_confidence=0.5` 阈值，LLM 结果被接受后跳过默认意图兜底。
+15. **P2 API 一致性** — 补充缺失的 `count_memories()` facade 方法。
+16. **P2 安全加固** — 5 个新 API 全部添加 Unicode 控制字符过滤 + 长度限制 + 类型检查 + 数值边界校验。
+17. **P3 偏好冲突检测** — 收紧长度差阈值（5→2），添加首字母相同、包含关系等额外启发式。
+18. **P3 聚类阈值** — 默认 0.20→0.35，添加自适应机制 `threshold += 0.05 * log(n)`，上限 0.60。
 
 ### v5.4.7 (2026-08-15)
 

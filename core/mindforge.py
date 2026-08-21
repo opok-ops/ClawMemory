@@ -1,5 +1,5 @@
 """
-MindForge v5.4.9 主入口类
+MindForge v5.5.0 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -36,7 +36,7 @@ from .embedding import EmbeddingEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.4.9"
+    __version__ = "5.5.0"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -147,7 +147,6 @@ class MindForge:
         self._federated_acl = None      # v5.4.2 lazy
         self._share_conflict = None     # v5.4.2 lazy
         self._evolution = None          # v5.4.8 lazy (记忆巩固)
-        self._event_bus = None          # v5.4.9 lazy (事件总线/Webhook)
 
         if self.config.encrypted:
             self._init_encryption()
@@ -312,15 +311,6 @@ class MindForge:
             metadata={"category": category, "tags": tags or [], "importance": importance.value if isinstance(importance, Importance) else str(importance)},
         )
 
-        # v5.4.9：发射 memory_created 事件
-        self._emit_event("memory_created", {
-            "id": entry.id,
-            "category": entry.category,
-            "tags": entry.tags,
-            "importance": entry.importance.value if hasattr(entry.importance, "value") else str(entry.importance),
-            "content_preview": content[:200],
-        })
-
         return entry
 
     def get(self, memory_id: str, actor: str = "", session_id: str = "") -> Optional[MemoryEntry]:
@@ -333,10 +323,6 @@ class MindForge:
                min_relevance: float = 0.3,
                categories: Optional[List[str]] = None,
                layers: Optional[List[MemoryLayer]] = None,
-               tags: Optional[List[str]] = None,
-               created_after: Optional[float] = None,
-               created_before: Optional[float] = None,
-               highlight: bool = False,
                agent_id: str = "",
                session_id: str = "",
                use_embedding: bool = True):
@@ -345,11 +331,6 @@ class MindForge:
         v5.4.5 新增 use_embedding 参数：
         - True（默认）：启用向量召回 + TF-IDF + Fuzzy 多路融合搜索
         - False：降级为 TF-IDF + Fuzzy 两路搜索（资源受限时使用）
-
-        v5.4.9 新增：
-        - tags: 按标签过滤（记忆需包含任意一个指定标签）
-        - created_after / created_before: 按创建时间范围过滤（Unix 时间戳）
-        - highlight: True 时返回 highlighted_content 字段（<mark> 高亮匹配词）
         """
         # v5.4.8 P1 修复：query 类型检查，防止非字符串输入崩溃
         if query is None:
@@ -362,10 +343,6 @@ class MindForge:
             min_relevance=min_relevance,
             categories=categories,
             layers=layers,
-            tags=tags,
-            created_after=created_after,
-            created_before=created_before,
-            highlight=highlight,
             agent_id=agent_id,
             session_id=session_id,
             use_embedding=use_embedding,
@@ -491,15 +468,6 @@ class MindForge:
         if success and content:
             self._index.index_memory(memory_id, content, metadata={})
 
-        # v5.4.9：发射 memory_updated 事件
-        if success:
-            self._emit_event("memory_updated", {
-                "id": memory_id,
-                "content_changed": content is not None,
-                "category_changed": category is not None,
-                "tags_changed": tags is not None,
-            })
-
         return success
 
     def delete(self, memory_id: str, actor: str = "",
@@ -510,14 +478,6 @@ class MindForge:
         )
         if success and hard_delete:
             self._index.remove_memory(memory_id)
-
-        # v5.4.9：发射 memory_deleted 事件
-        if success:
-            self._emit_event("memory_deleted", {
-                "id": memory_id,
-                "hard_delete": hard_delete,
-            })
-
         return success
 
     def restore(self, memory_id: str, actor: str = "",
@@ -899,31 +859,14 @@ class MindForge:
     def export_json(self, output_path: str,
                     category: Optional[str] = None,
                     layer: Optional[MemoryLayer] = None,
-                    tags: Optional[List[str]] = None,
-                    created_after: Optional[float] = None,
-                    created_before: Optional[float] = None,
                     include_private: bool = False) -> int:
-        """导出记忆为 JSON 文件（v5.2.9 安全加固，v5.4.9 增强选择性导出）
-
-        v5.4.9 新增：支持按标签、时间范围筛选导出。
-        """
+        """导出记忆为 JSON 文件（v5.2.9 安全加固：路径校验 + 权限收紧）"""
         entries = self._storage.list_memories(
             category=category,
             layer=layer,
-            created_after=created_after,
-            created_before=created_before,
             limit=100000,
             offset=0,
         )
-
-        # v5.4.9：标签过滤
-        if tags:
-            tag_set = set(t.lower() for t in tags if t)
-            if tag_set:
-                entries = [
-                    e for e in entries
-                    if any(t.lower() in tag_set for t in (e.tags or []))
-                ]
 
         if not include_private:
             entries = [
@@ -1277,41 +1220,13 @@ class MindForge:
 
     def export_csv(self, output_path: str,
                    category: Optional[str] = None,
-                   layer: Optional[MemoryLayer] = None,
-                   tags: Optional[List[str]] = None,
-                   created_after: Optional[float] = None,
-                   created_before: Optional[float] = None,
                    include_private: bool = False) -> int:
-        """导出记忆为 CSV 文件（v5.2.9 安全加固，v5.4.9 增强选择性导出）
-
-        v5.4.9 新增：支持按标签、时间范围、层级筛选导出。
-
-        Args:
-            output_path: 输出 .csv 文件路径
-            category: 限定分类
-            layer: 限定层级
-            tags: 限定标签列表（记忆需包含任意一个指定标签）
-            created_after: 创建时间下限（Unix 时间戳）
-            created_before: 创建时间上限（Unix 时间戳）
-            include_private: 是否包含 PRIVATE/STRICT 记忆
-        """
+        """导出记忆为 CSV 文件（v5.2.9 安全加固：路径校验 + CSV 公式注入防护）"""
         entries = self._storage.list_memories(
             category=category,
-            layer=layer,
-            created_after=created_after,
-            created_before=created_before,
             limit=100000,
             offset=0,
         )
-
-        # v5.4.9：标签过滤
-        if tags:
-            tag_set = set(t.lower() for t in tags if t)
-            if tag_set:
-                entries = [
-                    e for e in entries
-                    if any(t.lower() in tag_set for t in (e.tags or []))
-                ]
 
         if not include_private:
             entries = [
@@ -1354,20 +1269,6 @@ class MindForge:
                     _csv_safe(e.created_at),
                     _csv_safe(e.updated_at),
                 ])
-
-        # v5.4.9：发射 export_completed 事件
-        self._emit_event("export_completed", {
-            "format": "csv",
-            "path": str(path),
-            "count": len(entries),
-            "filters": {
-                "category": category,
-                "layer": layer.value if layer else None,
-                "tags": tags,
-                "created_after": created_after,
-                "created_before": created_before,
-            },
-        })
 
         return len(entries)
 
@@ -1541,35 +1442,14 @@ class MindForge:
                      output_path: str,
                      category: Optional[str] = None,
                      layer: Optional[MemoryLayer] = None,
-                     starred_only: bool = False,
-                     tags: Optional[List[str]] = None,
-                     created_after: Optional[float] = None,
-                     created_before: Optional[float] = None):
-        """导出记忆为 Excel 格式（v5.1.9 新增，v5.4.9 增强选择性导出）
-
-        v5.4.9 新增：支持按标签、时间范围筛选导出。
-        """
-        result = self._storage.export_as_excel(
+                     starred_only: bool = False):
+        """导出记忆为 Excel 格式（v5.1.9 新增）"""
+        return self._storage.export_as_excel(
             output_path=output_path,
             category=category,
             layer=layer,
             starred_only=starred_only,
-            tags=tags,
-            created_after=created_after,
-            created_before=created_before,
         )
-        # v5.4.9：发射 export_completed 事件
-        self._emit_event("export_completed", {
-            "format": "excel",
-            "path": str(result),
-            "filters": {
-                "category": category,
-                "layer": layer.value if layer else None,
-                "tags": tags,
-                "starred_only": starred_only,
-            },
-        })
-        return result
 
     def import_excel(self,
                      input_path: str,
@@ -2517,9 +2397,9 @@ class MindForge:
         offset = max(0, int(offset))
         min_rating = max(0.0, min(10.0, float(min_rating)))
 
-        # v5.3.1 安全加固：genre 枚举白名单
-        valid_genres = {"ROMANCE", "ACTION", "COMEDY", "THRILLER", "SCIFI",
-                        "HISTORICAL", "URBAN", "FANTASY", "MYSTERY", "DRAMA"}
+        # v5.5.0 修复：genre 枚举白名单与 DramaGenre 枚举对齐
+        valid_genres = {"ROMANCE", "SUSPENSE", "COMEDY", "ACTION", "HORROR",
+                        "SCIFI", "FANTASY", "DRAMA", "OTHER"}
         if genre and genre.upper() not in valid_genres:
             genre = None
 
@@ -2621,8 +2501,8 @@ class MindForge:
         current_episode = max(1, min(10000, int(current_episode)))
         if user_rating is not None:
             user_rating = max(0.0, min(10.0, float(user_rating)))
-        # v5.3.2 安全：枚举白名单
-        valid_status = {"WATCHING", "COMPLETED", "DROPPED", "PLANNING"}
+        # v5.5.0 修复：status 枚举白名单与 DramaStatus 枚举对齐
+        valid_status = {"WATCHING", "COMPLETED", "DROPPED", "PLANNED"}
         if status:
             status = status.upper()
             if status not in valid_status:
@@ -2649,9 +2529,9 @@ class MindForge:
         """
         limit = max(1, min(200, int(limit)))
         min_rating = max(0.0, min(10.0, float(min_rating)))
-        # v5.3.2 安全：双枚举白名单
-        valid_genres = {"ROMANCE", "ACTION", "COMEDY", "THRILLER", "SCIFI",
-                        "HISTORICAL", "URBAN", "FANTASY", "MYSTERY", "DRAMA"}
+        # v5.5.0 修复：genre 枚举白名单与 DramaGenre 枚举对齐
+        valid_genres = {"ROMANCE", "SUSPENSE", "COMEDY", "ACTION", "HORROR",
+                        "SCIFI", "FANTASY", "DRAMA", "OTHER"}
         if genre:
             genre = genre.upper()
             if genre not in valid_genres:
@@ -3613,30 +3493,7 @@ class MindForge:
 
     def rollback_to_version(self, version_id: str, actor: str = "") -> Dict[str, Any]:
         """回滚记忆到指定历史版本（v5.2.7 新增）"""
-        result = self._storage.rollback_to_version(version_id, actor)
-        # v5.4.9：发射 version_rolled_back 事件
-        if result.get("success"):
-            self._emit_event("version_rolled_back", {
-                "version_id": version_id,
-                "memory_id": result.get("memory_id"),
-            })
-        return result
-
-    def diff_versions(self, memory_id: str,
-                      version_a: Optional[str] = None,
-                      version_b: Optional[str] = None) -> Dict[str, Any]:
-        """对比两个历史版本的差异（v5.4.9 新增）
-
-        Args:
-            memory_id: 记忆 ID
-            version_a: 起始版本 ID（None 表示最早版本）
-            version_b: 目标版本 ID（None 表示最新版本）
-
-        Returns:
-            含 field_changes（content/category/tags/importance 变更）、
-            content_diff（unified diff 文本）、changed_fields 列表的字典。
-        """
-        return self._storage.diff_versions(memory_id, version_a, version_b)
+        return self._storage.rollback_to_version(version_id, actor)
 
     # ===== 多 Agent 记忆空间（v5.2.8 实验性 — v6.0.0 全量推送预览）=====
 
@@ -3687,44 +3544,6 @@ class MindForge:
                 from modules.share_conflict import SharedConflictResolver
             self._share_conflict = SharedConflictResolver(self._storage)
         return self._share_conflict
-
-    # ===== v5.4.9 事件总线 / Webhook 通知 =====
-
-    @property
-    def event_bus(self):
-        """事件总线（v5.4.9 新增）
-
-        支持内存订阅和 Webhook HTTP 回调。
-        事件类型：memory_created / memory_updated / memory_deleted /
-                  memory_expired / conflict_detected / version_rolled_back /
-                  export_completed / import_completed
-        """
-        if self._event_bus is None:
-            try:
-                from ..modules.event_bus import create_event_bus_from_config
-            except (ImportError, ValueError):
-                from modules.event_bus import create_event_bus_from_config
-            config = {
-                "webhooks": getattr(self.config, "webhooks", None),
-                "webhook_secret": getattr(self.config, "webhook_secret", ""),
-                "enabled": getattr(self.config, "event_bus_enabled", True),
-            }
-            self._event_bus = create_event_bus_from_config(config)
-        return self._event_bus
-
-    def _emit_event(self, event: str, data: Optional[Dict[str, Any]] = None,
-                    sync: bool = False) -> Dict[str, Any]:
-        """发射事件（内部方法，v5.4.9）
-
-        事件总线未启用或未初始化时静默跳过，不影响主流程。
-        """
-        try:
-            if not getattr(self.config, "event_bus_enabled", True):
-                return {"skipped": True, "reason": "disabled"}
-            return self.event_bus.publish(event, data, sync=sync)
-        except Exception as e:
-            logger.debug("事件发射失败 [%s]: %s", event, e)
-            return {"error": str(e)}
 
     @property
     def federated(self):
@@ -4117,8 +3936,7 @@ class MindForge:
     def drama_generate_scene(self, drama_id: str, scene_title: str,
                              characters: Optional[List[str]] = None,
                              mood: str = "neutral",
-                             setting: str = "",
-                             episode: int = 0) -> Dict[str, Any]:
+                             setting: str = "") -> Dict[str, Any]:
         """AI 短剧场景生成（v5.4.8）— 基于上下文生成新场景"""
         if not isinstance(drama_id, str) or not isinstance(scene_title, str):
             return {"error": "短剧 ID 和场景标题必须为字符串"}
@@ -4135,9 +3953,8 @@ class MindForge:
                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
         if characters:
             characters = [str(c)[:64] for c in characters[:50] if c]
-        episode = max(0, int(episode))
         return self._storage.drama_generate_scene(
-            drama_id, scene_title, characters, mood, setting, episode)
+            drama_id, scene_title, characters, mood, setting)
 
     def drama_emotion_timeline(self, drama_id: str) -> Dict[str, Any]:
         """短剧情感时间线（v5.4.8）— 分析情感走向和曲线"""
@@ -4147,4 +3964,213 @@ class MindForge:
         drama_id = "".join(c for c in drama_id[:64]
                            if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
         return self._storage.drama_emotion_timeline(drama_id)
+
+    # ===== v5.5.0 新增：Agent 记忆终极增强 =====
+
+    def agent_memory_snapshot(self, agent_id: str,
+                               label: str = "") -> Dict[str, Any]:
+        """Agent 记忆快照（v5.5.0）— 创建指定时间点的记忆全量快照
+
+        快照包含该 Agent 的所有记忆元数据与内容摘要，可用于备份、
+        版本对比和回滚参考。快照本身为只读，不影响原记忆。
+
+        Args:
+            agent_id: Agent ID
+            label: 快照标签（可选，用于标识快照用途）
+
+        Returns:
+            {snapshot_id, agent_id, label, memory_count, created_at, categories}
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        label = "".join(c for c in (label or "")[:128]
+                        if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        return self._storage.agent_memory_snapshot(agent_id, label)
+
+    def agent_memory_deduplicate(self, agent_id: str,
+                                   similarity_threshold: float = 0.85,
+                                   dry_run: bool = False) -> Dict[str, Any]:
+        """Agent 记忆去重（v5.5.0）— 识别并合并高度相似的重复记忆
+
+        基于内容相似度、标签重叠和分类匹配检测重复记忆，
+        保留访问次数最多/重要性最高的版本，将低版本标记为合并。
+
+        Args:
+            agent_id: Agent ID
+            similarity_threshold: 相似度阈值（0.5-1.0），高于此值视为重复
+            dry_run: 仅预览不执行合并
+
+        Returns:
+            {evaluated, duplicates_found, merged, groups, dry_run}
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        similarity_threshold = max(0.5, min(1.0, float(similarity_threshold)))
+        return self._storage.agent_memory_deduplicate(
+            agent_id, similarity_threshold, dry_run)
+
+    def agent_memory_health_check(self, agent_id: str) -> Dict[str, Any]:
+        """Agent 记忆健康检查（v5.5.0）— 全面评估记忆系统健康状态
+
+        评估维度：记忆总量、层级分布、重复率、遗忘风险、质量分布、
+        访问活跃度、分类均衡度、加密状态、索引完整性。
+
+        Args:
+            agent_id: Agent ID
+
+        Returns:
+            {agent_id, overall_score, dimensions, issues, recommendations}
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        return self._storage.agent_memory_health_check(agent_id)
+
+    def agent_memory_importance_recalibrate(self, agent_id: str,
+                                              dry_run: bool = False) -> Dict[str, Any]:
+        """Agent 记忆重要度重校准（v5.5.0）— 基于实际使用模式重新评估重要性
+
+        综合访问频率、最近访问时间、关联记忆数量、质量评分等因子，
+        重新评估每条记忆的重要性等级，修正主观标注的偏差。
+
+        Args:
+            agent_id: Agent ID
+            dry_run: 仅预览不执行更新
+
+        Returns:
+            {evaluated, upgraded, downgraded, unchanged, details, dry_run}
+        """
+        if not agent_id or not isinstance(agent_id, str):
+            return {"error": "Agent ID 不能为空"}
+        import unicodedata
+        agent_id = "".join(c for c in agent_id[:128]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        return self._storage.agent_memory_importance_recalibrate(agent_id, dry_run)
+
+    # ===== v5.5.0 新增：AI 短剧终极增强 =====
+
+    def drama_generate_episode(self, drama_id: str,
+                                episode_number: int,
+                                theme: str = "",
+                                num_scenes: int = 3,
+                                mood: str = "neutral") -> Dict[str, Any]:
+        """AI 短剧分集生成（v5.5.0）— 生成完整一集的多场景结构大纲
+
+        基于短剧类型、已有剧情和角色设定，生成包含多个场景的
+        分集大纲，每场景含标题、目的、情感基调和关键事件建议。
+
+        Args:
+            drama_id: 短剧 ID
+            episode_number: 集数（≥1）
+            theme: 本集主题（可选）
+            num_scenes: 场景数量（1-10）
+            mood: 整体情感基调
+
+        Returns:
+            {episode_id, drama_id, episode_number, theme, scenes, suggestions}
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        episode_number = max(1, min(10000, int(episode_number)))
+        num_scenes = max(1, min(10, int(num_scenes)))
+        theme = "".join(c for c in (theme or "")[:256]
+                        if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        mood = "".join(c for c in (mood or "")[:32]
+                       if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        return self._storage.drama_generate_episode(
+            drama_id, episode_number, theme, num_scenes, mood)
+
+    def drama_character_dialogue(self, drama_id: str,
+                                   character_name: str,
+                                   context: str = "",
+                                   emotion: str = "neutral",
+                                   num_lines: int = 3) -> Dict[str, Any]:
+        """AI 短剧角色台词生成（v5.5.0）— 基于角色性格和情境生成台词建议
+
+        分析角色的历史台词、性格设定和当前情境，生成符合角色人设的
+        台词建议，支持指定情感倾向和台词数量。
+
+        Args:
+            drama_id: 短剧 ID
+            character_name: 角色名称
+            context: 当前情境/上下文描述
+            emotion: 期望情感（neutral/happy/sad/angry/surprised/tense）
+            num_lines: 生成台词数量（1-10）
+
+        Returns:
+            {character, drama_id, emotion, lines, context_analysis}
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        if not character_name or not isinstance(character_name, str):
+            return {"error": "角色名称不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        character_name = "".join(c for c in character_name[:64]
+                                 if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        context = "".join(c for c in (context or "")[:512]
+                         if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        emotion = "".join(c for c in (emotion or "")[:32]
+                         if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        num_lines = max(1, min(10, int(num_lines)))
+        return self._storage.drama_character_dialogue(
+            drama_id, character_name, context, emotion, num_lines)
+
+    def drama_plot_twist_suggest(self, drama_id: str,
+                                   num_suggestions: int = 3) -> Dict[str, Any]:
+        """AI 短剧剧情反转建议（v5.5.0）— 基于已有剧情生成反转创意
+
+        分析当前剧情走向、角色关系和伏笔设置，生成可能的剧情反转
+        建议，包括反转类型、铺垫方式和对后续剧情的影响评估。
+
+        Args:
+            drama_id: 短剧 ID
+            num_suggestions: 建议数量（1-10）
+
+        Returns:
+            {drama_id, current_analysis, twists, recommendations}
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        num_suggestions = max(1, min(10, int(num_suggestions)))
+        return self._storage.drama_plot_twist_suggest(drama_id, num_suggestions)
+
+    def drama_script_export(self, drama_id: str,
+                             format: str = "standard") -> Dict[str, Any]:
+        """AI 短剧剧本导出（v5.5.0）— 将短剧数据导出为格式化剧本
+
+        整合场次、角色、台词信息，生成标准格式的剧本内容，
+        支持按集导出和全剧导出。
+
+        Args:
+            drama_id: 短剧 ID
+            format: 导出格式（standard/condensed/detailed）
+
+        Returns:
+            {drama_id, title, format, script_content, total_scenes, total_lines}
+        """
+        if not drama_id or not isinstance(drama_id, str):
+            return {"error": "短剧 ID 不能为空"}
+        import unicodedata
+        drama_id = "".join(c for c in drama_id[:64]
+                           if unicodedata.category(c)[0] != "C" or c in "\n\r\t")
+        valid_formats = {"standard", "condensed", "detailed"}
+        if format not in valid_formats:
+            format = "standard"
+        return self._storage.drama_script_export(drama_id, format)
 

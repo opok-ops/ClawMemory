@@ -1,5 +1,5 @@
 """
-MindForge v5.4.8 存储引擎
+MindForge v5.5.0 存储引擎
 支持四层记忆架构：感官记忆 → 短期记忆 → 长期记忆 → 永久记忆
 """
 
@@ -156,16 +156,13 @@ def _limited_fetch(cursor, limit: int = 10000):
 
 # v5.3.7 安全加固：Unicode 控制字符过滤，防止双向字符（RLO/LRO）显示欺骗
 def _filter_unicode_ctrl(s: str) -> str:
-    """过滤 Unicode C 类控制字符（保留 \n\r\t），防止路径/ID 显示欺骗
-    
-    v5.4.8 Bug#9 修复：过滤所有 C 类（Cf/Cc/Cs/Co/Cn），与 mindforge.py 保持一致
-    """
+    """过滤 Unicode Cf/Cc 类控制字符（保留 \\n\\r\\t），防止路径/ID 显示欺骗"""
     if not isinstance(s, str) or not s:
         return s
     import unicodedata
     return ''.join(
         ch for ch in s
-        if unicodedata.category(ch)[0] != 'C' or ch in '\n\r\t'
+        if unicodedata.category(ch) not in ('Cf', 'Cc') or ch in '\n\r\t'
     )
 
 
@@ -847,7 +844,7 @@ class StorageEngine:
         )
 
         conn = self._get_conn()
-        cursor = conn.execute("""
+        conn.execute("""
             INSERT INTO memories (
                 id, content, ciphertext, nonce, salt, category, tags,
                 privacy, importance, memory_type, layer,
@@ -867,11 +864,10 @@ class StorageEngine:
         ))
 
         if not self.encrypted:
-            # v5.4.8 Bug#8 修复：使用 cursor.lastrowid 替代子查询
             conn.execute("""
                 INSERT INTO memory_fts (rowid, content, category, tags)
-                VALUES (?, ?, ?, ?)
-            """, (cursor.lastrowid, content, category, json.dumps(clean_tags, ensure_ascii=False)))
+                VALUES ((SELECT rowid FROM memories WHERE id = ?), ?, ?, ?)
+            """, (entry.id, content, category, json.dumps(clean_tags, ensure_ascii=False)))
 
         conn.commit()
         self._add_audit("add", entry.id, source_agent, source_session, privacy.value)
@@ -1097,9 +1093,8 @@ class StorageEngine:
                     pass
 
         # v5.2.7: 更新前读取旧内容，用于保存历史版本
-        # v5.4.9: 当 content/category/tags/importance 任意变更时都保存版本
         old_entry = None
-        if content is not None or category is not None or clean_tags is not None or importance_v is not None:
+        if content is not None:
             old_row = conn.execute(
                 "SELECT content, category, tags, importance FROM memories WHERE id = ?",
                 (entry_id,)
@@ -1135,8 +1130,8 @@ class StorageEngine:
                 except sqlite3.OperationalError:
                     pass
 
-        # v5.2.7: 保存历史版本（v5.4.9：content/category/tags/importance 任意变更时都保存）
-        if old_entry:
+        # v5.2.7: 保存历史版本（仅当 content 变更时）
+        if content is not None and old_entry:
             try:
                 old_tags = old_entry.get("tags", "")
                 if isinstance(old_tags, str) and old_tags.startswith("["):
@@ -1925,7 +1920,6 @@ class StorageEngine:
 
         # 分组统计
         grouped = {}
-        # 安全注意：group_by 已通过白名单校验（仅允许 category/layer/importance/privacy）
         rows = conn.execute(
             f"SELECT {group_by}, COUNT(*), MAX(created_at), MIN(created_at) "
             f"FROM memories{where} GROUP BY {group_by} ORDER BY COUNT(*) DESC",
@@ -3583,7 +3577,6 @@ class StorageEngine:
         placeholders = ",".join(["?"] * len(ids))
 
         # 清理关联表：memory_versions、memory_links、memory_notes（以记忆 id 为外键）
-        # 安全注意：table/col 为硬编码内部值，非用户输入
         for table, col in [("memory_versions", "memory_id"),
                            ("memory_links", "source_id"),
                            ("memory_links", "target_id"),
@@ -5954,22 +5947,14 @@ class StorageEngine:
                         output_path: str,
                         category: Optional[str] = None,
                         layer: Optional[MemoryLayer] = None,
-                        starred_only: bool = False,
-                        tags: Optional[List[str]] = None,
-                        created_after: Optional[float] = None,
-                        created_before: Optional[float] = None) -> Path:
-        """导出记忆为 Excel 格式（v5.1.9 新增，v5.2.9 安全加固，v5.4.9 增强选择性导出）
-
-        v5.4.9 新增：支持按标签、时间范围筛选导出。
+                        starred_only: bool = False) -> Path:
+        """导出记忆为 Excel 格式（v5.1.9 新增，v5.2.9 安全加固：路径校验 + CSV 公式注入防护）
 
         Args:
             output_path: 输出文件路径
             category: 限定分类
             layer: 限定层级
             starred_only: 仅导出收藏的记忆
-            tags: 限定标签列表（v5.4.9 新增）
-            created_after: 创建时间下限（v5.4.9 新增）
-            created_before: 创建时间上限（v5.4.9 新增）
 
         Returns:
             导出文件的 Path 对象
@@ -5978,19 +5963,8 @@ class StorageEngine:
             category=category,
             layer=layer,
             starred=starred_only if starred_only else None,
-            created_after=created_after,
-            created_before=created_before,
             limit=100000,
         )
-
-        # v5.4.9：标签过滤
-        if tags:
-            tag_set = set(t.lower() for t in tags if t)
-            if tag_set:
-                entries = [
-                    e for e in entries
-                    if any(t.lower() in tag_set for t in (e.tags or []))
-                ]
 
         # v5.2.9 安全加固：路径校验
         out = _safe_path(output_path, allowed_exts={".xlsx", ".csv"})
@@ -8593,19 +8567,17 @@ class StorageEngine:
         try:
             # 获取目标版本
             target = conn.execute(
-                "SELECT id, memory_id, version_number, content, category, tags, importance FROM memory_versions WHERE id = ?",
+                "SELECT memory_id, content, category, tags, importance FROM memory_versions WHERE id = ?",
                 (version_id,)
             ).fetchone()
             if not target:
                 return {"success": False, "error": "版本不存在"}
 
-            target_version_id = target[0]
-            memory_id = target[1]
-            version_number = target[2]
-            content = target[3]
-            category = target[4]
-            tags_json = target[5]
-            importance = target[6]
+            memory_id = target[0]
+            content = target[1]
+            category = target[2]
+            tags_json = target[3]
+            importance = target[4]
 
             # 获取当前记忆内容（保存为新版本）
             current = conn.execute(
@@ -8633,196 +8605,12 @@ class StorageEngine:
             return {
                 "success": True,
                 "memory_id": memory_id,
-                "rolled_back_to_version": target_version_id,
-                "rolled_back_to_version_number": version_number,
+                "rolled_back_to_version": target[1] if len(target) > 1 else None,
                 "saved_current_as_version": save_result.get("version_number"),
             }
         except Exception as e:
             conn.rollback()
             return {"success": False, "error": str(e)}
-
-    def diff_versions(self, memory_id: str,
-                      version_a: Optional[str] = None,
-                      version_b: Optional[str] = None) -> Dict[str, Any]:
-        """对比两个历史版本的差异（v5.4.9 新增）
-
-        对比 content、category、tags、importance 四个字段的变更，
-        返回结构化 diff 和文本级 unified diff。
-
-        Args:
-            memory_id: 记忆 ID
-            version_a: 起始版本 ID（None 表示最早版本）
-            version_b: 目标版本 ID（None 表示最新版本）
-
-        Returns:
-            {
-                "memory_id": ...,
-                "version_a": {version_id, version_number, ...},
-                "version_b": {version_id, version_number, ...},
-                "field_changes": {
-                    "content": {"changed": bool, "old": ..., "new": ...},
-                    "category": {"changed": bool, "old": ..., "new": ...},
-                    "tags": {"changed": bool, "added": [...], "removed": [...], "old": [...], "new": [...]},
-                    "importance": {"changed": bool, "old": ..., "new": ...},
-                },
-                "content_diff": "--- old\n+++ new\n@@ ...\n...",  # unified diff
-                "summary": "X fields changed",
-            }
-        """
-        if not memory_id or len(memory_id) > 128:
-            return {"error": "记忆 ID 无效"}
-
-        conn = self._get_conn()
-
-        # 获取该记忆的所有版本（按版本号升序）
-        rows = conn.execute(
-            """SELECT id, version_number, content, category, tags, importance, actor, changed_at
-               FROM memory_versions WHERE memory_id = ?
-               ORDER BY version_number ASC""",
-            (memory_id,)
-        ).fetchall()
-
-        # v5.4.9：当版本记录不足时，将当前记忆状态作为最新版本
-        # （add 不创建版本，update 创建旧状态快照，因此 1 条版本记录 + 当前状态 = 2 个可对比版本）
-        current_row = conn.execute(
-            "SELECT content, category, tags, importance, updated_at FROM memories WHERE id = ?",
-            (memory_id,)
-        ).fetchone()
-
-        if not current_row and len(rows) < 2:
-            return {
-                "memory_id": memory_id,
-                "error": "记忆不存在或版本不足，无法对比",
-                "version_count": len(rows),
-            }
-
-        def _row_to_version(r):
-            return {
-                "version_id": r[0],
-                "version_number": r[1],
-                "content": r[2] or "",
-                "category": r[3] or "",
-                "tags": json.loads(r[4]) if r[4] and isinstance(r[4], str) and r[4].startswith("[") else (r[4] or []),
-                "importance": r[5] or "",
-                "actor": r[6] or "",
-                "changed_at": r[7],
-            }
-
-        def _current_to_version():
-            """将当前记忆状态转为版本对象（虚拟最新版本）"""
-            max_ver = max((r[1] for r in rows), default=0)
-            return {
-                "version_id": "current",
-                "version_number": max_ver + 1,
-                "content": current_row[0] or "",
-                "category": current_row[1] or "",
-                "tags": json.loads(current_row[2]) if current_row[2] and isinstance(current_row[2], str) and current_row[2].startswith("[") else (current_row[2] or []),
-                "importance": current_row[3] or "",
-                "actor": "current",
-                "changed_at": current_row[4],
-            }
-
-        # 构建可对比版本列表：历史版本 + 当前状态
-        all_versions = [_row_to_version(r) for r in rows]
-        if current_row:
-            all_versions.append(_current_to_version())
-
-        if len(all_versions) < 2:
-            return {
-                "memory_id": memory_id,
-                "error": "该记忆版本不足 2 个，无法对比",
-                "version_count": len(all_versions),
-            }
-
-        # 解析版本参数
-        if version_a is None:
-            va = all_versions[0]
-        else:
-            va = None
-            for v in all_versions:
-                if v["version_id"] == version_a:
-                    va = v
-                    break
-            if va is None:
-                return {"error": f"版本 A 不存在: {version_a}"}
-
-        if version_b is None:
-            vb = all_versions[-1]
-        else:
-            vb = None
-            for v in all_versions:
-                if v["version_id"] == version_b:
-                    vb = v
-                    break
-            if vb is None:
-                return {"error": f"版本 B 不存在: {version_b}"}
-
-        # 字段级变更
-        field_changes = {}
-
-        # content
-        content_changed = va["content"] != vb["content"]
-        field_changes["content"] = {
-            "changed": content_changed,
-            "old": va["content"],
-            "new": vb["content"],
-        }
-
-        # category
-        cat_changed = va["category"] != vb["category"]
-        field_changes["category"] = {
-            "changed": cat_changed,
-            "old": va["category"],
-            "new": vb["category"],
-        }
-
-        # tags
-        old_tags = set(va["tags"]) if isinstance(va["tags"], list) else set()
-        new_tags = set(vb["tags"]) if isinstance(vb["tags"], list) else set()
-        tags_changed = old_tags != new_tags
-        field_changes["tags"] = {
-            "changed": tags_changed,
-            "added": sorted(new_tags - old_tags),
-            "removed": sorted(old_tags - new_tags),
-            "old": sorted(old_tags),
-            "new": sorted(new_tags),
-        }
-
-        # importance
-        imp_changed = va["importance"] != vb["importance"]
-        field_changes["importance"] = {
-            "changed": imp_changed,
-            "old": va["importance"],
-            "new": vb["importance"],
-        }
-
-        # 文本级 unified diff（仅 content）
-        content_diff = ""
-        if content_changed:
-            try:
-                import difflib
-                old_lines = va["content"].splitlines(keepends=True)
-                new_lines = vb["content"].splitlines(keepends=True)
-                diff = difflib.unified_diff(
-                    old_lines, new_lines,
-                    fromfile=f"v{va['version_number']}",
-                    tofile=f"v{vb['version_number']}",
-                )
-                content_diff = "".join(diff)
-            except Exception:
-                content_diff = ""
-
-        changed_count = sum(1 for f in field_changes.values() if f["changed"])
-
-        return {
-            "memory_id": memory_id,
-            "version_a": {k: v for k, v in va.items() if k != "content"},
-            "version_b": {k: v for k, v in vb.items() if k != "content"},
-            "field_changes": field_changes,
-            "content_diff": content_diff,
-            "changed_fields": [k for k, v in field_changes.items() if v["changed"]],
-            "summary": f"{changed_count} field(s) changed",
-        }
 
     # ===== 置顶功能（v5.2.5 新增）=====
 
@@ -12263,7 +12051,7 @@ class StorageEngine:
             return {"error": "不能共享给自身"}
 
         # 查询源 Agent 的记忆
-        query = "SELECT id, content, category, tags, importance, privacy, layer, encrypted FROM memories WHERE source_agent = ? AND category != 'trash'"
+        query = "SELECT id, content, category, tags, importance, privacy, layer FROM memories WHERE source_agent = ? AND category != 'trash'"
         params: list = [from_aid]
 
         if categories:
@@ -12291,32 +12079,31 @@ class StorageEngine:
         now = time.time()
 
         for r in rows:
-            mem_id, content, category, tags, importance, privacy, layer, encrypted = r
+            mem_id, content, category, tags, importance, privacy, layer = r
             # 检查目标 Agent 是否已有相同内容（O(1) 查找）
             if content in existing_contents:
                 continue
 
             if not dry_run:
                 new_id = str(uuid.uuid4())
-                cursor = conn.execute("""
+                conn.execute("""
                     INSERT INTO memories (
                         id, content, category, tags, importance, privacy, memory_type, layer,
                         source_agent, created_at, updated_at, last_accessed_at,
                         access_count, consolidation_count, forgetting_score, strength,
                         starred, pinned, metadata, encrypted
-                    ) VALUES (?, ?, ?, ?, ?, ?, 'text', ?, ?, ?, ?, ?, 0, 0, 0, 1.0, 0, 0, '{}', ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'text', ?, ?, ?, ?, ?, 0, 0, 0, 1.0, 0, 0, '{}', 0)
                 """, (
                     new_id, content, category or "general", tags or "[]",
                     importance or "MEDIUM", privacy or "INTERNAL", layer or "short_term",
-                    to_aid, now, now, now, encrypted
+                    to_aid, now, now, now
                 ))
                 # 同步 FTS（失败时记录日志）
                 try:
-                    # v5.4.8 Bug#8 修复：使用 cursor.lastrowid 替代子查询
                     conn.execute(
                         "INSERT INTO memory_fts (rowid, content, category, tags) "
-                        "VALUES (?, ?, ?, ?)",
-                        (cursor.lastrowid, content, category or "general", tags or "[]")
+                        "VALUES ((SELECT rowid FROM memories WHERE id = ?), ?, ?, ?)",
+                        (new_id, content, category or "general", tags or "[]")
                     )
                 except Exception as e:
                     logger.warning("FTS sync failed for shared memory %s: %s", new_id, e)
@@ -12340,7 +12127,6 @@ class StorageEngine:
             "shared_count": shared,
             "dry_run": dry_run,
             "details": details[:50],
-            "categories_truncated": len(categories) > 10 if categories else False,
         }
 
     def agent_knowledge_domains(self,
@@ -12412,8 +12198,7 @@ class StorageEngine:
                              scene_title: str,
                              characters: Optional[List[str]] = None,
                              mood: str = "neutral",
-                             setting: str = "",
-                             episode: int = 0) -> Dict[str, Any]:
+                             setting: str = "") -> Dict[str, Any]:
         """AI 短剧场景生成（v5.4.8 新增）
 
         基于剧本上下文生成新场景的框架结构。
@@ -12508,10 +12293,10 @@ class StorageEngine:
             INSERT INTO drama_scenes (
                 id, drama_id, episode, scene_number, title, content,
                 tags, metadata, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?)
         """, (
-            scene_id, did, episode, scene_count + 1, scene_title[:256],
-            scene_data.get("description", scene_title[:256]),
+            scene_id, did, scene_count + 1, scene_title[:256],
+            scene_data["description"],
             json.dumps([mood], ensure_ascii=False),
             json.dumps(scene_data, ensure_ascii=False), now
         ))
@@ -12583,8 +12368,8 @@ class StorageEngine:
         emotion_values = []
 
         for scene in scenes:
-            scene_id, scene_title, content, order = scene
-            text = ((scene_title or "") + " " + (content or "")).lower()
+            scene_id, scene_title, description, order = scene
+            text = ((scene_title or "") + " " + (description or "")).lower()
 
             # 计算各情感得分
             scores = {}
@@ -12676,5 +12461,833 @@ class StorageEngine:
             "emotion_points": emotion_points,
             "trend": trend,
             "summary": "。".join(summary_parts),
+        }
+
+    # ===== v5.5.0 新增：Agent 记忆终极增强实现 =====
+
+    def _ensure_snapshots_table(self):
+        """确保记忆快照表存在（v5.5.0 新增）"""
+        conn = self._get_conn()
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS memory_snapshots (
+                id TEXT PRIMARY KEY,
+                agent_id TEXT NOT NULL,
+                label TEXT DEFAULT '',
+                memory_count INTEGER DEFAULT 0,
+                snapshot_data TEXT DEFAULT '{}',
+                categories TEXT DEFAULT '{}',
+                created_at REAL NOT NULL
+            )
+        """)
+        conn.commit()
+
+    def agent_memory_snapshot(self, agent_id: str, label: str = "") -> Dict[str, Any]:
+        """Agent 记忆快照（v5.5.0 新增）"""
+        conn = self._get_conn()
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+
+        self._ensure_snapshots_table()
+
+        # 获取该 Agent 的所有记忆
+        rows = conn.execute(
+            "SELECT id, content, category, tags, importance, privacy, layer, "
+            "access_count, created_at, updated_at FROM memories "
+            "WHERE source_agent = ? AND category != 'trash'",
+            (aid,)
+        ).fetchall()
+
+        # 按分类统计
+        categories: Dict[str, int] = {}
+        snapshot_entries = []
+        for r in rows:
+            cat = r[2] or "general"
+            categories[cat] = categories.get(cat, 0) + 1
+            snapshot_entries.append({
+                "id": r[0],
+                "content_preview": (r[1] or "")[:100],
+                "category": cat,
+                "importance": r[4] or "MEDIUM",
+                "layer": r[6] or "short_term",
+                "access_count": r[7] or 0,
+            })
+
+        snapshot_id = str(uuid.uuid4())
+        now = time.time()
+
+        conn.execute(
+            "INSERT INTO memory_snapshots (id, agent_id, label, memory_count, snapshot_data, categories, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (snapshot_id, aid, label or "", len(rows),
+             json.dumps(snapshot_entries[:500], ensure_ascii=False),
+             json.dumps(categories, ensure_ascii=False), now)
+        )
+        conn.commit()
+
+        return {
+            "snapshot_id": snapshot_id,
+            "agent_id": aid,
+            "label": label or "",
+            "memory_count": len(rows),
+            "created_at": now,
+            "categories": categories,
+            "sample_entries": snapshot_entries[:10],
+        }
+
+    def agent_memory_deduplicate(self, agent_id: str,
+                                   similarity_threshold: float = 0.85,
+                                   dry_run: bool = False) -> Dict[str, Any]:
+        """Agent 记忆去重（v5.5.0 新增）"""
+        conn = self._get_conn()
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+
+        rows = conn.execute(
+            "SELECT id, content, category, tags, importance, access_count FROM memories "
+            "WHERE source_agent = ? AND category != 'trash' ORDER BY access_count DESC",
+            (aid,)
+        ).fetchall()
+
+        if len(rows) < 2:
+            return {
+                "agent_id": aid,
+                "evaluated": len(rows),
+                "duplicates_found": 0,
+                "merged": 0,
+                "groups": [],
+                "dry_run": dry_run,
+            }
+
+        # 基于内容相似度检测重复（使用简单的字符级 Jaccard + 标签匹配）
+        def content_similarity(a: str, b: str) -> float:
+            if not a or not b:
+                return 0.0
+            # 简单的字符集合 Jaccard 相似度
+            set_a = set(a.lower())
+            set_b = set(b.lower())
+            if not set_a or not set_b:
+                return 0.0
+            intersection = len(set_a & set_b)
+            union = len(set_a | set_b)
+            return intersection / union if union > 0 else 0.0
+
+        merged_ids = set()
+        groups = []
+        duplicates_found = 0
+        merged = 0
+
+        for i, r1 in enumerate(rows):
+            if r1[0] in merged_ids:
+                continue
+            group = {"keep": r1[0], "keep_preview": (r1[1] or "")[:60], "duplicates": []}
+            for j, r2 in enumerate(rows):
+                if i >= j or r2[0] in merged_ids:
+                    continue
+                # 同分类才考虑去重
+                if (r1[2] or "") != (r2[2] or ""):
+                    continue
+                sim = content_similarity(r1[1] or "", r2[1] or "")
+                if sim >= similarity_threshold:
+                    group["duplicates"].append({
+                        "id": r2[0],
+                        "preview": (r2[1] or "")[:60],
+                        "similarity": round(sim, 3),
+                    })
+                    duplicates_found += 1
+                    if not dry_run:
+                        # 将重复记忆标记为已合并（移入 trash 分类）
+                        conn.execute(
+                            "UPDATE memories SET category = 'trash', updated_at = ?, metadata = ? WHERE id = ?",
+                            (time.time(), json.dumps({"merged_into": r1[0], "dedup_similarity": sim}), r2[0])
+                        )
+                        self._add_audit("deduplicate_merge", r2[0], aid, "", f"merged into {r1[0]}")
+                        merged += 1
+                    merged_ids.add(r2[0])
+            if group["duplicates"]:
+                groups.append(group)
+
+        if not dry_run and merged > 0:
+            conn.commit()
+
+        return {
+            "agent_id": aid,
+            "evaluated": len(rows),
+            "duplicates_found": duplicates_found,
+            "merged": merged,
+            "groups": groups[:20],
+            "dry_run": dry_run,
+        }
+
+    def agent_memory_health_check(self, agent_id: str) -> Dict[str, Any]:
+        """Agent 记忆健康检查（v5.5.0 新增）"""
+        conn = self._get_conn()
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+
+        rows = conn.execute(
+            "SELECT id, importance, layer, access_count, created_at, updated_at, "
+            "last_accessed_at, category, privacy, encrypted FROM memories "
+            "WHERE source_agent = ? AND category != 'trash'",
+            (aid,)
+        ).fetchall()
+
+        total = len(rows)
+        if total == 0:
+            return {
+                "agent_id": aid,
+                "overall_score": 0,
+                "total_memories": 0,
+                "dimensions": {},
+                "issues": ["该 Agent 暂无记忆数据"],
+                "recommendations": ["建议开始添加记忆以建立知识库"],
+            }
+
+        now = time.time()
+        issues = []
+        recommendations = []
+
+        # 1. 层级分布
+        layer_dist: Dict[str, int] = {}
+        for r in rows:
+            layer = r[2] or "short_term"
+            layer_dist[layer] = layer_dist.get(layer, 0) + 1
+
+        short_pct = layer_dist.get("short_term", 0) / total * 100
+        if short_pct > 80:
+            issues.append(f"短期记忆占比过高（{short_pct:.1f}%），建议执行记忆巩固")
+            recommendations.append("运行 consolidate() 将高频短期记忆提升为长期记忆")
+
+        # 2. 重要性分布
+        imp_dist: Dict[str, int] = {}
+        for r in rows:
+            imp = r[1] or "MEDIUM"
+            imp_dist[imp] = imp_dist.get(imp, 0) + 1
+
+        # 3. 访问活跃度
+        never_accessed = sum(1 for r in rows if (r[3] or 0) == 0)
+        never_pct = never_accessed / total * 100
+        if never_pct > 50:
+            issues.append(f"{never_pct:.1f}% 的记忆从未被访问，可能存在冗余")
+            recommendations.append("运行 agent_memory_deduplicate() 清理重复和低价值记忆")
+
+        # 4. 遗忘风险（超过90天未访问的非永久记忆）
+        at_risk = 0
+        for r in rows:
+            last_acc = r[6] or r[5] or 0
+            layer = r[2] or "short_term"
+            if layer != "permanent" and (now - last_acc) > 90 * 86400:
+                at_risk += 1
+        at_risk_pct = at_risk / total * 100
+        if at_risk_pct > 30:
+            issues.append(f"{at_risk_pct:.1f}% 的记忆超过90天未访问，存在遗忘风险")
+            recommendations.append("考虑对重要记忆执行记忆强化或提升为永久记忆")
+
+        # 5. 分类均衡度
+        cat_dist: Dict[str, int] = {}
+        for r in rows:
+            cat = r[7] or "general"
+            cat_dist[cat] = cat_dist.get(cat, 0) + 1
+        dominant_cat = max(cat_dist, key=cat_dist.get)
+        dominant_pct = cat_dist[dominant_cat] / total * 100
+        if dominant_pct > 70 and len(cat_dist) > 1:
+            issues.append(f"分类不均衡：'{dominant_cat}' 占比 {dominant_pct:.1f}%")
+
+        # 6. 加密状态
+        unencrypted = sum(1 for r in rows if not r[9])
+        if unencrypted > 0:
+            issues.append(f"{unencrypted} 条记忆未加密")
+            recommendations.append("建议启用加密以保护敏感记忆")
+
+        # 计算综合健康分（0-100）
+        score = 100
+        score -= min(30, short_pct * 0.2)  # 短期占比扣分
+        score -= min(20, never_pct * 0.2)  # 未访问扣分
+        score -= min(20, at_risk_pct * 0.15)  # 遗忘风险扣分
+        score -= min(10, len(issues) * 3)  # 问题数量扣分
+        score = max(0, min(100, round(score)))
+
+        dimensions = {
+            "total_memories": total,
+            "layer_distribution": layer_dist,
+            "importance_distribution": imp_dist,
+            "category_distribution": cat_dist,
+            "never_accessed": never_accessed,
+            "never_accessed_pct": round(never_pct, 1),
+            "at_risk_forget": at_risk,
+            "at_risk_pct": round(at_risk_pct, 1),
+            "unencrypted": unencrypted,
+        }
+
+        if not issues:
+            issues.append("记忆系统状态良好，未发现明显问题")
+
+        return {
+            "agent_id": aid,
+            "overall_score": score,
+            "total_memories": total,
+            "dimensions": dimensions,
+            "issues": issues,
+            "recommendations": recommendations[:5],
+        }
+
+    def agent_memory_importance_recalibrate(self, agent_id: str,
+                                              dry_run: bool = False) -> Dict[str, Any]:
+        """Agent 记忆重要度重校准（v5.5.0 新增）"""
+        conn = self._get_conn()
+        aid = _filter_unicode_ctrl(agent_id[:128]) if isinstance(agent_id, str) else ""
+        if not aid:
+            return {"error": "Agent ID 不能为空"}
+
+        rows = conn.execute(
+            "SELECT id, content, importance, access_count, created_at, updated_at, "
+            "last_accessed_at, layer FROM memories "
+            "WHERE source_agent = ? AND category != 'trash'",
+            (aid,)
+        ).fetchall()
+
+        if not rows:
+            return {
+                "agent_id": aid,
+                "evaluated": 0,
+                "upgraded": 0,
+                "downgraded": 0,
+                "unchanged": 0,
+                "details": [],
+                "dry_run": dry_run,
+            }
+
+        now = time.time()
+        imp_levels = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+        upgraded = 0
+        downgraded = 0
+        unchanged = 0
+        details = []
+
+        for r in rows:
+            mem_id, content, cur_imp, access_cnt, created, updated, last_acc, layer = r
+            cur_imp = (cur_imp or "MEDIUM").upper()
+            access_cnt = access_cnt or 0
+            last_acc = last_acc or updated or created or now
+
+            # 计算综合使用分（0-100）
+            recency_days = (now - last_acc) / 86400
+            recency_score = max(0, 100 - recency_days * 2)  # 每天扣2分
+            frequency_score = min(100, access_cnt * 10)  # 每次访问10分，上限100
+            age_days = (now - (created or now)) / 86400
+            age_score = max(0, 100 - age_days * 0.5)  # 越新分越高
+
+            usage_score = (recency_score * 0.4 + frequency_score * 0.4 + age_score * 0.2)
+
+            # 确定目标重要性
+            if usage_score >= 80:
+                target_imp = "CRITICAL"
+            elif usage_score >= 55:
+                target_imp = "HIGH"
+            elif usage_score >= 25:
+                target_imp = "MEDIUM"
+            else:
+                target_imp = "LOW"
+
+            cur_idx = imp_levels.index(cur_imp) if cur_imp in imp_levels else 1
+            tgt_idx = imp_levels.index(target_imp)
+
+            if tgt_idx > cur_idx:
+                upgraded += 1
+                action = "upgrade"
+            elif tgt_idx < cur_idx:
+                downgraded += 1
+                action = "downgrade"
+            else:
+                unchanged += 1
+                action = "unchanged"
+                continue  # 不变的不记录详情
+
+            if not dry_run and action != "unchanged":
+                conn.execute(
+                    "UPDATE memories SET importance = ?, updated_at = ? WHERE id = ?",
+                    (target_imp, now, mem_id)
+                )
+                self._add_audit("recalibrate", mem_id, aid, "",
+                               f"{cur_imp} -> {target_imp} (score={usage_score:.1f})")
+
+            details.append({
+                "id": mem_id,
+                "content_preview": (content or "")[:60],
+                "from": cur_imp,
+                "to": target_imp,
+                "usage_score": round(usage_score, 1),
+                "access_count": access_cnt,
+                "action": action,
+            })
+
+        if not dry_run and (upgraded + downgraded) > 0:
+            conn.commit()
+
+        return {
+            "agent_id": aid,
+            "evaluated": len(rows),
+            "upgraded": upgraded,
+            "downgraded": downgraded,
+            "unchanged": unchanged,
+            "details": details[:50],
+            "dry_run": dry_run,
+        }
+
+    # ===== v5.5.0 新增：AI 短剧终极增强实现 =====
+
+    def drama_generate_episode(self, drama_id: str,
+                                episode_number: int,
+                                theme: str = "",
+                                num_scenes: int = 3,
+                                mood: str = "neutral") -> Dict[str, Any]:
+        """AI 短剧分集生成（v5.5.0 新增）"""
+        conn = self._get_conn()
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+
+        drama = conn.execute(
+            "SELECT id, title, genre, description FROM drama_series WHERE id = ?", (did,)
+        ).fetchone()
+        if not drama:
+            return {"error": "短剧不存在"}
+
+        drama_title = drama[1] or "未知短剧"
+        genre = drama[2] or "drama"
+
+        # 获取已有场景数
+        existing_scenes = conn.execute(
+            "SELECT COUNT(*) FROM drama_scenes WHERE drama_id = ? AND episode = ?",
+            (did, episode_number)
+        ).fetchone()[0]
+
+        # 获取角色列表
+        chars = conn.execute(
+            "SELECT id, name, role, personality FROM drama_characters WHERE drama_id = ? LIMIT 10",
+            (did,)
+        ).fetchall()
+        char_names = [c[1] for c in chars]
+
+        # 场景模板（基于类型和集数）
+        scene_templates = {
+            "opening": ["建立场景", "引入冲突", "角色出场"],
+            "development": ["冲突升级", "角色互动", "线索揭示"],
+            "climax": ["高潮对峙", "真相揭露", "情感爆发"],
+            "resolution": ["冲突解决", "情感收束", "伏笔回收"],
+        }
+
+        # 根据集数确定阶段
+        if episode_number <= 1:
+            phase = "opening"
+        elif episode_number <= 3:
+            phase = "development"
+        elif episode_number <= 5:
+            phase = "climax"
+        else:
+            phase = "resolution"
+
+        base_templates = scene_templates.get(phase, scene_templates["development"])
+
+        # 生成场景
+        scenes = []
+        now = time.time()
+        for i in range(num_scenes):
+            scene_idx = existing_scenes + i + 1
+            title_base = base_templates[i % len(base_templates)]
+            scene_title = f"第{episode_number}集 - {title_base}" if not theme else f"{theme} - {title_base}"
+
+            # 场景内容建议
+            content_parts = [f"【{title_base}】"]
+            if i == 0:
+                content_parts.append(f"本集主题：{theme or '推进剧情发展'}")
+                content_parts.append(f"情感基调：{mood}")
+            if char_names and i < len(char_names):
+                content_parts.append(f"重点角色：{char_names[i % len(char_names)]}")
+            content_parts.append("场景目的：推进剧情，展现角色性格变化")
+
+            scene_id = str(uuid.uuid4())
+            scene_data = {
+                "scene_id": scene_id,
+                "episode": episode_number,
+                "scene_number": scene_idx,
+                "title": scene_title,
+                "content": "\n".join(content_parts),
+                "mood": mood,
+                "phase": phase,
+                "generated": True,
+            }
+            scenes.append(scene_data)
+
+            # 存储场景
+            conn.execute("""
+                INSERT INTO drama_scenes (
+                    id, drama_id, episode, scene_number, title, content,
+                    tags, metadata, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                scene_id, did, episode_number, scene_idx, scene_title,
+                scene_data["content"], json.dumps([mood, phase], ensure_ascii=False),
+                json.dumps(scene_data, ensure_ascii=False), now
+            ))
+
+        conn.commit()
+
+        # 生成建议
+        suggestions = [
+            f"本集属于{phase}阶段，重点是{base_templates[0]}",
+            f"建议围绕'{theme or '主线剧情'}'展开，保持{mood}的情感基调",
+        ]
+        if char_names:
+            suggestions.append(f"可重点刻画角色：{', '.join(char_names[:3])}")
+        if genre == "romance":
+            suggestions.append("加入情感互动和微妙关系变化")
+        elif genre == "suspense":
+            suggestions.append("埋设线索，保持悬念感")
+
+        return {
+            "episode_id": f"ep_{episode_number}",
+            "drama_id": did,
+            "drama_title": drama_title,
+            "episode_number": episode_number,
+            "theme": theme or "",
+            "phase": phase,
+            "mood": mood,
+            "scenes": scenes,
+            "suggestions": suggestions,
+        }
+
+    def drama_character_dialogue(self, drama_id: str,
+                                   character_name: str,
+                                   context: str = "",
+                                   emotion: str = "neutral",
+                                   num_lines: int = 3) -> Dict[str, Any]:
+        """AI 短剧角色台词生成（v5.5.0 新增）"""
+        conn = self._get_conn()
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+
+        # 查找角色
+        char = conn.execute(
+            "SELECT id, name, role, personality, description FROM drama_characters "
+            "WHERE drama_id = ? AND name = ?",
+            (did, character_name)
+        ).fetchone()
+        if not char:
+            return {"error": f"角色 '{character_name}' 不存在"}
+
+        char_id, name, role, personality, description = char
+
+        # 获取角色历史台词风格
+        past_lines = conn.execute(
+            "SELECT line_text, context FROM drama_lines "
+            "WHERE drama_id = ? AND character_name = ? ORDER BY created_at DESC LIMIT 20",
+            (did, name)
+        ).fetchall()
+
+        # 情感模板
+        emotion_styles = {
+            "happy": ["太好了！", "真让人开心", "我就知道会这样"],
+            "sad": ["怎么会这样...", "我很难过", "这太令人失望了"],
+            "angry": ["岂有此理！", "我不能接受", "这太过分了"],
+            "surprised": ["什么？！", "真的假的？", "这怎么可能！"],
+            "tense": ["我们得小心", "情况不太对", "做好准备"],
+            "neutral": ["原来如此", "我明白了", "这样啊"],
+        }
+
+        style_lines = emotion_styles.get(emotion, emotion_styles["neutral"])
+
+        # 生成台词（基于角色性格和情感）
+        generated_lines = []
+        personality_traits = (personality or "").split("、") if personality else []
+
+        for i in range(num_lines):
+            base = style_lines[i % len(style_lines)]
+            line = base
+            # 根据角色角色调整
+            if role == "protagonist":
+                line = f"{line} 我们必须继续前进。"
+            elif role == "antagonist":
+                line = f"{line} 这还没完。"
+            elif role == "mentor":
+                line = f"{line} 记住这个教训。"
+            # 根据性格调整
+            if personality_traits:
+                trait = personality_traits[i % len(personality_traits)]
+                if "冷静" in trait or "理性" in trait:
+                    line = f"（冷静地）{line}"
+                elif "热情" in trait or "活泼" in trait:
+                    line = f"（热情地）{line}"
+
+            generated_lines.append({
+                "line_id": f"gen_{i}_{int(time.time())}",
+                "character": name,
+                "emotion": emotion,
+                "text": line,
+                "context_note": context[:100] if context else "",
+            })
+
+        # 上下文分析
+        context_analysis = {
+            "character": name,
+            "role": role or "unknown",
+            "personality": personality or "",
+            "past_lines_count": len(past_lines),
+            "requested_emotion": emotion,
+            "context": context[:200] if context else "",
+        }
+
+        return {
+            "character": name,
+            "character_id": char_id,
+            "drama_id": did,
+            "emotion": emotion,
+            "lines": generated_lines,
+            "context_analysis": context_analysis,
+        }
+
+    def drama_plot_twist_suggest(self, drama_id: str,
+                                   num_suggestions: int = 3) -> Dict[str, Any]:
+        """AI 短剧剧情反转建议（v5.5.0 新增）"""
+        conn = self._get_conn()
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+
+        drama = conn.execute(
+            "SELECT id, title, genre, description FROM drama_series WHERE id = ?", (did,)
+        ).fetchone()
+        if not drama:
+            return {"error": "短剧不存在"}
+
+        drama_title = drama[1] or "未知短剧"
+        genre = drama[2] or "drama"
+
+        # 获取已有场景和角色
+        scenes = conn.execute(
+            "SELECT title, content FROM drama_scenes WHERE drama_id = ? ORDER BY episode, scene_number LIMIT 50",
+            (did,)
+        ).fetchall()
+        chars = conn.execute(
+            "SELECT name, role, description FROM drama_characters WHERE drama_id = ? LIMIT 10",
+            (did,)
+        ).fetchall()
+
+        # 当前剧情分析
+        all_content = " ".join((s[0] or "") + " " + (s[1] or "") for s in scenes)
+        current_analysis = {
+            "total_scenes": len(scenes),
+            "total_characters": len(chars),
+            "genre": genre,
+            "key_elements": [],
+        }
+
+        # 检测关键元素
+        key_words = {"秘密": "秘密", "复仇": "复仇", "爱情": "感情线", "背叛": "背叛",
+                     "真相": "真相", "身份": "身份谜团", "死亡": "生死", "失踪": "失踪"}
+        for kw, label in key_words.items():
+            if kw in all_content:
+                current_analysis["key_elements"].append(label)
+
+        # 反转类型库
+        twist_templates = [
+            {
+                "type": "身份反转",
+                "description": "某个角色的真实身份与表面完全不同",
+                "setup": "在前期场景中暗示角色行为的异常之处",
+                "impact": "颠覆观众对角色关系的认知，重新解读之前的剧情",
+                "suitable_genres": ["suspense", "scifi", "fantasy", "drama"],
+            },
+            {
+                "type": "背叛反转",
+                "description": "最信任的角色原来是幕后黑手",
+                "setup": "通过细节暗示该角色与反派有隐秘联系",
+                "impact": "制造强烈的情感冲击，推动主角成长",
+                "suitable_genres": ["suspense", "action", "drama", "romance"],
+            },
+            {
+                "type": "时间线反转",
+                "description": "故事的时间顺序被重新排列，过去与现在交织",
+                "setup": "在叙事中留下时间线索的矛盾点",
+                "impact": "让观众重新理解整个故事的因果关系",
+                "suitable_genres": ["suspense", "scifi", "drama"],
+            },
+            {
+                "type": "死亡反转",
+                "description": "看似死亡的角色其实还活着，或以另一种形式存在",
+                "setup": "不直接展示死亡过程，留下模糊的结局",
+                "impact": "在关键时刻回归，制造高潮",
+                "suitable_genres": ["suspense", "fantasy", "scifi", "action"],
+            },
+            {
+                "type": "动机反转",
+                "description": "反派的行为动机被揭示为正义或无奈",
+                "setup": "展示反派行为的背景和苦衷",
+                "impact": "模糊善恶边界，增加故事深度",
+                "suitable_genres": ["drama", "suspense", "action"],
+            },
+            {
+                "type": "关系反转",
+                "description": "两个角色的真实关系与表面呈现的完全不同",
+                "setup": "通过对话和互动留下关系的疑点",
+                "impact": "改变角色互动的意义，增加戏剧张力",
+                "suitable_genres": ["romance", "drama", "suspense"],
+            },
+        ]
+
+        # 筛选适合当前类型的反转，不足时用通用反转补充
+        suitable_twists = [t for t in twist_templates if genre in t["suitable_genres"]]
+        # 补充通用反转（drama 类型适用的），确保数量足够
+        if len(suitable_twists) < num_suggestions:
+            general_twists = [t for t in twist_templates if t not in suitable_twists]
+            suitable_twists.extend(general_twists)
+        if not suitable_twists:
+            suitable_twists = twist_templates
+
+        # 生成建议
+        twists = []
+        for i in range(min(num_suggestions, len(suitable_twists))):
+            twist = suitable_twists[i]
+            # 结合当前角色个性化
+            char_suggestion = ""
+            if chars:
+                char = chars[i % len(chars)]
+                char_suggestion = f"可围绕角色'{char[0]}'展开此反转"
+
+            twists.append({
+                "twist_id": f"twist_{i}",
+                "type": twist["type"],
+                "description": twist["description"],
+                "setup_method": twist["setup"],
+                "story_impact": twist["impact"],
+                "character_suggestion": char_suggestion,
+                "dramatic_level": min(10, 6 + i),
+            })
+
+        recommendations = [
+            "建议在剧情中段（约60%进度）设置主要反转",
+            "反转前至少铺垫3个以上的伏笔线索",
+            "反转后需要给观众足够的信息来重新理解剧情",
+        ]
+
+        return {
+            "drama_id": did,
+            "drama_title": drama_title,
+            "current_analysis": current_analysis,
+            "twists": twists,
+            "recommendations": recommendations,
+        }
+
+    def drama_script_export(self, drama_id: str,
+                             format: str = "standard") -> Dict[str, Any]:
+        """AI 短剧剧本导出（v5.5.0 新增）"""
+        conn = self._get_conn()
+        did = _filter_unicode_ctrl(drama_id[:64]) if isinstance(drama_id, str) else ""
+        if not did:
+            return {"error": "短剧 ID 不能为空"}
+
+        drama = conn.execute(
+            "SELECT id, title, genre, description, total_episodes FROM drama_series WHERE id = ?",
+            (did,)
+        ).fetchone()
+        if not drama:
+            return {"error": "短剧不存在"}
+
+        drama_title = drama[1] or "未知短剧"
+        genre = drama[2] or "drama"
+        description = drama[3] or ""
+
+        # 获取所有场景（按集数和场景号排序）
+        scenes = conn.execute(
+            "SELECT id, episode, scene_number, title, content, location, time_of_day "
+            "FROM drama_scenes WHERE drama_id = ? ORDER BY episode, scene_number",
+            (did,)
+        ).fetchall()
+
+        # 获取所有台词
+        lines = conn.execute(
+            "SELECT scene_id, character_name, line_text, episode, timestamp, is_classic "
+            "FROM drama_lines WHERE drama_id = ? ORDER BY episode, id",
+            (did,)
+        ).fetchall()
+
+        # 按场景分组台词
+        lines_by_scene: Dict[str, list] = {}
+        for ln in lines:
+            sid = ln[0] or ""
+            if sid not in lines_by_scene:
+                lines_by_scene[sid] = []
+            lines_by_scene[sid].append(ln)
+
+        # 生成剧本
+        script_parts = []
+        script_parts.append("=" * 60)
+        script_parts.append(f"《{drama_title}》")
+        script_parts.append(f"类型：{genre}")
+        if description:
+            script_parts.append(f"简介：{description}")
+        script_parts.append("=" * 60)
+        script_parts.append("")
+
+        current_episode = -1
+        total_scenes = len(scenes)
+        total_lines = len(lines)
+
+        for sc in scenes:
+            sc_id, episode, scene_num, title, content, location, time_of_day = sc
+
+            # 集数标题
+            if episode != current_episode:
+                current_episode = episode
+                script_parts.append("")
+                script_parts.append(f"{'─' * 40}")
+                script_parts.append(f"第 {episode} 集")
+                script_parts.append(f"{'─' * 40}")
+                script_parts.append("")
+
+            # 场景标题
+            script_parts.append(f"【场景 {scene_num}】{title or ''}")
+            if location:
+                script_parts.append(f"地点：{location}")
+            if time_of_day:
+                script_parts.append(f"时间：{time_of_day}")
+            script_parts.append("")
+
+            # 场景描述
+            if content:
+                if format == "detailed":
+                    script_parts.append(f"〔场景描述〕{content}")
+                elif format == "condensed":
+                    script_parts.append(f"〔{content[:100]}〕")
+                else:
+                    script_parts.append(f"〔{content}〕")
+                script_parts.append("")
+
+            # 台词
+            scene_lines = lines_by_scene.get(sc_id, [])
+            for ln in scene_lines:
+                _, char_name, line_text, _, timestamp, is_classic = ln
+                classic_mark = " ★" if is_classic else ""
+                if format == "detailed" and timestamp:
+                    script_parts.append(f"  {char_name or '旁白'}（{timestamp}）{classic_mark}：{line_text}")
+                else:
+                    script_parts.append(f"  {char_name or '旁白'}{classic_mark}：{line_text}")
+
+            if scene_lines:
+                script_parts.append("")
+
+        script_content = "\n".join(script_parts)
+
+        return {
+            "drama_id": did,
+            "title": drama_title,
+            "format": format,
+            "script_content": script_content,
+            "total_scenes": total_scenes,
+            "total_lines": total_lines,
+            "total_episodes": current_episode if current_episode > 0 else 0,
         }
 
