@@ -1,5 +1,5 @@
-"""
-MindForge v5.5.0 存储引擎
+﻿"""
+MindForge v5.5.1 存储引擎
 支持四层记忆架构：感官记忆 → 短期记忆 → 长期记忆 → 永久记忆
 """
 
@@ -42,8 +42,10 @@ def _is_suspicious_windows_path(comp: str) -> bool:
     # 匹配 短名模式：基础名 + ~N + 可选扩展名
     if _re.match(r'^[^~]{1,6}~\d(\..{1,3})?$', comp, _re.IGNORECASE):
         return True
-    # 包含 / 或 \ 在不应该的位置；盘符内的 : 已在上文豁免
-    if any(s in comp for s in ('..', '/', '\\', '\x00', ':')):
+    # v5.5.1 fix: colon only dangerous on Windows
+    import sys as _sys
+    _dangerous = ('..', '/', '\\', '\x00', ':') if _sys.platform == 'win32' else ('..', '/', '\\', '\x00')
+    if any(s in comp for s in _dangerous):
         return True
     return False
 

@@ -1,5 +1,5 @@
-"""
-MindForge v5.5.0 主入口类
+﻿"""
+MindForge v5.5.1 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -36,7 +36,7 @@ from .embedding import EmbeddingEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.5.0"
+    __version__ = "5.5.1"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -55,7 +55,10 @@ def _is_suspicious_windows_path_mf(comp: str) -> bool:
         return False
     if _re.match(r'^[^~]{1,6}~\d(\..{1,3})?$', comp, _re.IGNORECASE):
         return True
-    if any(s in comp for s in ('..', '/', '\\', '\x00', ':')):
+    # v5.5.1 fix: colon only dangerous on Windows
+    import sys as _sys
+    _dangerous = ('..', '/', '\\', '\x00', ':') if _sys.platform == 'win32' else ('..', '/', '\\', '\x00')
+    if any(s in comp for s in _dangerous):
         return True
     return False
 
@@ -465,8 +468,20 @@ class MindForge:
             session_id=session_id,
         )
 
-        if success and content:
-            self._index.index_memory(memory_id, content, metadata={})
+        if success:
+            # v5.5.1 fix: 从存储层获取最新记忆以重建完整索引元数据
+            try:
+                updated_entry = self._storage.get_memory(memory_id, actor, session_id)
+                if updated_entry:
+                    idx_content = content or updated_entry.content
+                    idx_meta = {
+                        "category": updated_entry.category,
+                        "tags": updated_entry.tags or [],
+                        "importance": updated_entry.importance.value if hasattr(updated_entry.importance, 'value') else str(updated_entry.importance),
+                    }
+                    self._index.index_memory(memory_id, idx_content, metadata=idx_meta)
+            except Exception as e:
+                logger.warning("Failed to re-index memory %s after update: %s", memory_id, e)
 
         return success
 
@@ -476,14 +491,34 @@ class MindForge:
         success = self._storage.delete_memory(
             memory_id, actor, session_id, hard_delete
         )
-        if success and hard_delete:
+        # v5.5.1 fix: soft-delete also removes from index to prevent stale search results
+        if success:
             self._index.remove_memory(memory_id)
         return success
 
     def restore(self, memory_id: str, actor: str = "",
                 session_id: str = "") -> bool:
-        """从回收站恢复记忆（v5.1.1 新增）"""
-        return self._storage.restore_memory(memory_id, actor, session_id)
+        """从回收站恢复记忆（v5.1.1 新增）
+        
+        v5.5.1 fix: 恢复后重建索引，使记忆重新可被搜索到
+        """
+        success = self._storage.restore_memory(memory_id, actor, session_id)
+        if success:
+            try:
+                entry = self._storage.get_memory(memory_id, actor, session_id)
+                if entry:
+                    self._index.index_memory(
+                        memory_id,
+                        entry.content,
+                        metadata={
+                            "category": entry.category,
+                            "tags": entry.tags or [],
+                            "importance": entry.importance.value if hasattr(entry.importance, 'value') else str(entry.importance),
+                        },
+                    )
+            except Exception as e:
+                logger.warning("Failed to re-index restored memory %s: %s", memory_id, e)
+        return success
 
     def batch_delete(self,
                      category: Optional[str] = None,
@@ -494,7 +529,24 @@ class MindForge:
                      hard_delete: bool = False,
                      actor: str = "",
                      session_id: str = "") -> int:
-        """批量删除记忆，返回删除数量"""
+        """批量删除记忆，返回删除数量
+        
+        v5.5.1 fix: 删除前获取 ID 列表，删除后清理索引（软删除也需要）
+        """
+        # v5.5.1: 先查询匹配的记忆 ID，用于后续索引清理
+        try:
+            matched_entries = self._storage.list_memories(
+                category=category,
+                layer=layer,
+                starred=starred,
+                created_after=created_after,
+                created_before=created_before,
+                limit=100000,
+            )
+            matched_ids = [e.id for e in matched_entries]
+        except Exception:
+            matched_ids = []
+        
         count = self._storage.batch_delete(
             category=category,
             layer=layer,
@@ -505,6 +557,15 @@ class MindForge:
             actor=actor,
             session_id=session_id,
         )
+        
+        # v5.5.1: 清理索引（软删除也要清理，防止搜索返回已删除记忆）
+        if count > 0 and matched_ids:
+            for mid in matched_ids:
+                try:
+                    self._index.remove_memory(mid)
+                except Exception:
+                    pass
+        
         return count
 
     def search_by_tag(self, tag: str,
@@ -895,7 +956,7 @@ class MindForge:
         try:
             import stat
             import os
-            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)  # v5.5.1: 0600, owner-only
         except (OSError, ImportError):
             pass
 
@@ -932,8 +993,9 @@ class MindForge:
         memories = memories_raw
         stats = {"imported": 0, "skipped": 0, "failed": 0, "deduped": 0}
 
-        # v5.4.6 智能去重：预加载已有记忆内容用于相似度比较
+        # v5.5.1 性能优化：预加载已有记忆并预计算嵌入向量缓存
         _existing_contents = None
+        _existing_vec_cache = {}  # v5.5.1: id -> precomputed embedding vector
         _dedup_engine = None
         if dedup_threshold > 0:
             from difflib import SequenceMatcher
@@ -947,11 +1009,21 @@ class MindForge:
                 eng = self._storage.embedding_engine
                 if eng and eng.is_available:
                     _dedup_engine = eng
+                    # v5.5.1: 预计算所有已有记忆的嵌入向量，避免 O(n*m) 重复 encode
+                    for ex_id, ex_content in _existing_contents:
+                        try:
+                            v = _dedup_engine.encode(ex_content)
+                            if v is not None:
+                                _existing_vec_cache[ex_id] = v
+                        except Exception:
+                            pass
+                    logger.info("智能去重已启用 (threshold=%.2f, existing=%d, embedding=on, vec_cache=%d)",
+                                dedup_threshold, len(_existing_contents), len(_existing_vec_cache))
             except Exception:
                 pass
-            logger.info("智能去重已启用 (threshold=%.2f, existing=%d, embedding=%s)",
-                        dedup_threshold, len(_existing_contents),
-                        "on" if _dedup_engine else "off")
+            if not _dedup_engine:
+                logger.info("智能去重已启用 (threshold=%.2f, existing=%d, embedding=off)",
+                            dedup_threshold, len(_existing_contents))
 
         # v5.2.9 安全加固：内容长度白名单常量
         _MAX_CONTENT = 1000000  # 单条记忆内容 1MB
@@ -989,21 +1061,19 @@ class MindForge:
                     stats["skipped"] += 1
                     continue
 
-                # v5.4.6 智能去重：语义相似度检查
+                # v5.5.1 智能去重：语义相似度检查（使用预计算向量缓存）
                 if dedup_threshold > 0 and _existing_contents:
                     is_dup = False
-                    if _dedup_engine:
+                    if _dedup_engine and _existing_vec_cache:
                         # 使用嵌入向量计算语义相似度
                         new_vec = _dedup_engine.encode(content)
                         if new_vec:
-                            for ex_id, ex_content in _existing_contents:
-                                ex_vec = _dedup_engine.encode(ex_content)
-                                if ex_vec:
-                                    sim = EmbeddingEngine.cosine_similarity(new_vec, ex_vec)
-                                    if sim >= dedup_threshold:
-                                        is_dup = True
-                                        logger.debug("去重命中(semantic): sim=%.3f vs %s", sim, ex_id)
-                                        break
+                            for ex_id, ex_vec in _existing_vec_cache.items():
+                                sim = EmbeddingEngine.cosine_similarity(new_vec, ex_vec)
+                                if sim >= dedup_threshold:
+                                    is_dup = True
+                                    logger.debug("去重命中(semantic): sim=%.3f vs %s", sim, ex_id)
+                                    break
                     else:
                         # 降级：使用文本相似度（difflib）
                         for ex_id, ex_content in _existing_contents:
@@ -1124,6 +1194,7 @@ class MindForge:
         stats = {"imported": 0, "skipped": 0, "failed": 0, "deduped": 0}
 
         _existing_contents = None
+        _existing_vec_cache = {}  # v5.5.1: id -> precomputed embedding vector
         _dedup_engine = None
         if dedup_threshold > 0:
             from difflib import SequenceMatcher
@@ -1136,6 +1207,14 @@ class MindForge:
                 eng = self._storage.embedding_engine
                 if eng and eng.is_available:
                     _dedup_engine = eng
+                    # v5.5.1: 预计算所有已有记忆的嵌入向量，避免 O(n*m) 重复 encode
+                    for ex_id, ex_content in _existing_contents:
+                        try:
+                            v = _dedup_engine.encode(ex_content)
+                            if v is not None:
+                                _existing_vec_cache[ex_id] = v
+                        except Exception:
+                            pass
             except Exception:
                 pass
 
@@ -1151,19 +1230,17 @@ class MindForge:
                 category = str(mem_data.get("category", "general"))[:256]
                 tags = [str(t)[:128] for t in mem_data.get("tags", [])[:64] if t]
 
-                # 智能去重
+                # 智能去重（v5.5.1: 使用预计算向量缓存）
                 if dedup_threshold > 0 and _existing_contents:
                     is_dup = False
-                    if _dedup_engine:
+                    if _dedup_engine and _existing_vec_cache:
                         new_vec = _dedup_engine.encode(content)
                         if new_vec:
-                            for ex_id, ex_content in _existing_contents:
-                                ex_vec = _dedup_engine.encode(ex_content)
-                                if ex_vec:
-                                    sim = EmbeddingEngine.cosine_similarity(new_vec, ex_vec)
-                                    if sim >= dedup_threshold:
-                                        is_dup = True
-                                        break
+                            for ex_id, ex_vec in _existing_vec_cache.items():
+                                sim = EmbeddingEngine.cosine_similarity(new_vec, ex_vec)
+                                if sim >= dedup_threshold:
+                                    is_dup = True
+                                    break
                     else:
                         for ex_id, ex_content in _existing_contents:
                             sim = SequenceMatcher(None, content, ex_content).ratio()
@@ -2083,7 +2160,7 @@ class MindForge:
         try:
             import stat
             import os
-            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)  # v5.5.1: 0600, owner-only
         except (OSError, ImportError):
             pass
 
