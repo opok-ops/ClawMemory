@@ -110,7 +110,7 @@ for chunk in results.chunks:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      MindForge v5.5.0                          │
+│                      MindForge v5.5.1                          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  ┌─────────────────────────────────────────────────────────┐ │
@@ -391,6 +391,30 @@ context = adapter.get_context("database optimization")
 ---
 
 ## Changelog（版本记录）
+
+### v5.5.1 (2026-08-23)
+
+**FTS5 搜索漏洞修复 + 代码质量清理 + 版本统一**
+
+**安全与稳定性修复：**
+
+1. **修复 FTS5 软删除搜索漏洞** — `fts_search()` JOIN memories 表时未过滤 `category != 'trash'`，导致软删除（移入回收站）的记忆仍能通过全文搜索命中。参照 `fuzzy_search()` 做法添加过滤条件，确保回收站数据不可被搜索。
+2. **移除 `core/indexer.py` UTF-8 BOM** — 文件开头 `EF BB BF` 字节可能导致部分工具链（shebang 检测、AST parser 等）异常。
+
+**Bug 修复（v5.5.0 后续）：**
+
+3. **审计白名单补全** — 补充 `deduplicate_merge`、`recalibrate`、`reinforce` 到 `ACTION_WHITELIST`，避免审计日志被降级为 `other`。
+4. **修复审计参数错位** — `deduplicate_merge` 和 `recalibrate` 将描述字符串误传入 `privacy_level` 参数，改为通过 `details` dict 传递结构化信息。
+5. **修复 metadata 覆盖** — `agent_memory_deduplicate()` 直接覆盖原有 metadata，改为读取并合并，保留自定义字段。
+6. **修复 CLI 运行时崩溃** — `cmd_drama_progress` 函数重复定义导致 `drama-progress` 命令触发 `AttributeError`，重命名为 `cmd_drama_progress_update`。
+7. **修复 `drama_script_export()` total_episodes 语义错误** — 返回最大集号而非实际集数，改为 `len(set(...))`。
+8. **修复 MCP `token_budget` 上限不匹配** — handler 上限 65536 与 schema 声明的 128000 不一致。
+9. **修复事务原子性** — `deduplicate_merge` 和 `recalibrate` 逐条提交破坏原子性，改为延迟审计写入、统一提交。
+10. **添加异常处理** — 两个方法增加 try/except + rollback，异常时返回友好错误信息。
+
+**版本同步：**
+
+11. **统一所有核心文件版本标识为 v5.5.1** — 包括 `MindForge.py`、`__init__.py`、`pyproject.toml`、`core/mindforge.py`、`core/storage.py`、`core/embedding.py`、`core/query.py`、`cli/main.py`、`api/server.py`、测试文件等 docstring 和 `__version__` 变量。
 
 ### v5.5.0 (2026-08-21)
 
