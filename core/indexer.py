@@ -1,4 +1,4 @@
-﻿"""
+"""
 MindForge v5.0 索引引擎
 支持 TF-IDF、向量索引、FTS5 全文检索
 """
@@ -275,6 +275,7 @@ class IndexEngine:
                 FROM memory_fts
                 JOIN memories m ON memory_fts.rowid = m.rowid
                 WHERE memory_fts MATCH ?
+                  AND m.category != 'trash'
                 ORDER BY score
                 LIMIT ?
             """, (escaped, top_k)).fetchall()
