@@ -279,6 +279,17 @@ class IndexEngine:
                 ORDER BY score
                 LIMIT ?
             """, (escaped, top_k)).fetchall()
-            return [(row[0], 1.0 / (1.0 + math.exp(row[1]))) for row in rows]
+            # v5.5.2 fix: clamp bm25 score to prevent math.exp overflow.
+            # bm25 returns negative values (lower = more relevant); a large
+            # positive value is anomalous but would cause OverflowError.
+            results = []
+            for row in rows:
+                raw = row[1]
+                if raw is None:
+                    continue
+                clamped = max(-50.0, min(50.0, float(raw)))
+                score = 1.0 / (1.0 + math.exp(clamped))
+                results.append((row[0], score))
+            return results
         except sqlite3.OperationalError:
             return []

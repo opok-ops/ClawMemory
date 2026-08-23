@@ -1,5 +1,5 @@
 """
-MindForge v5.5.1 查询引擎
+MindForge v5.5.2 查询引擎
 语义检索 + 知识图谱查询 + 上下文优化
 """
 
@@ -151,11 +151,19 @@ class QueryEngine:
                         "安装命令: pip install sentence-transformers"
                     )
 
+        # v5.5.2 perf: entry cache to avoid double-fetch in pre-filter + result build
+        _entry_cache: Dict[str, Any] = {}
+
+        def _cached_get(mid: str) -> Optional[Any]:
+            if mid not in _entry_cache:
+                _entry_cache[mid] = self.storage.get_memory(mid, agent_id, session_id)
+            return _entry_cache[mid]
+
         # 预过滤：按 categories/layers 筛选 score_map，避免非匹配记忆占据排序位
         if categories or layers:
             filtered_map = {}
             for doc_id, score in list(score_map.items()):
-                entry = self.storage.get_memory(doc_id)
+                entry = _cached_get(doc_id)
                 if not entry:
                     continue
                 if categories and entry.category not in categories:
@@ -174,7 +182,7 @@ class QueryEngine:
             if score < min_relevance:
                 break
 
-            entry = self.storage.get_memory(doc_id, agent_id, session_id)
+            entry = _cached_get(doc_id)
             if not entry:
                 continue
 

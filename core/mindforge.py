@@ -1,5 +1,5 @@
-﻿"""
-MindForge v5.5.1 主入口类
+"""
+MindForge v5.5.2 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -36,7 +36,7 @@ from .embedding import EmbeddingEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.5.1"
+    __version__ = "5.5.2"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -263,8 +263,11 @@ class MindForge:
             source_session: str = "",
             source_agent: str = "",
             starred: bool = False,
+            expires_at: float = 0.0,
             metadata: Optional[Dict[str, Any]] = None) -> MemoryEntry:
         """添加一条记忆到存储并建立索引。
+
+        v5.5.2 新增 expires_at 参数（TTL 过期时间戳，0=永不过期）。
 
         Args:
             content: 记忆内容文本。
@@ -277,6 +280,7 @@ class MindForge:
             source_session: 来源会话 ID（可选）。
             source_agent: 来源 Agent 标识（可选）。
             starred: 是否星标收藏。
+            expires_at: 过期时间戳（Unix epoch 秒），0 表示永不过期。
             metadata: 附加元数据字典。
 
         Returns:
@@ -305,6 +309,7 @@ class MindForge:
             source_session=source_session,
             source_agent=source_agent,
             starred=starred,
+            expires_at=expires_at,
             metadata=metadata,
         )
 
@@ -1586,8 +1591,82 @@ class MindForge:
     def highlight(self, text: str, query: str,
                   before_tag: str = "<mark>",
                   after_tag: str = "</mark>") -> str:
-        """高亮搜索关键词（v5.2.0 新增）"""
+        """高亮搜索关键词（v5.2.0 新增，v5.5.2 增强多关键词支持）"""
         return self._storage.highlight_text(text, query, before_tag, after_tag)
+
+    # ===== TTL / 过期管理（v5.5.2 新增）=====
+
+    def set_ttl(self, memory_id: str, ttl_seconds: float,
+                actor: str = "", session_id: str = "") -> bool:
+        """为记忆设置 TTL（存活时间）
+
+        v5.5.2 新增。
+
+        Args:
+            memory_id: 记忆 ID
+            ttl_seconds: 存活秒数；<= 0 表示取消过期（永不过期）
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            是否成功
+        """
+        return self._storage.set_ttl(memory_id, ttl_seconds, actor, session_id)
+
+    def list_expired(self, limit: int = 1000) -> List[MemoryEntry]:
+        """列出所有已过期但尚未清理的记忆
+
+        v5.5.2 新增。
+        """
+        return self._storage.list_expired(limit)
+
+    def purge_expired(self, actor: str = "", session_id: str = "") -> int:
+        """清理所有已过期记忆（移入回收站）
+
+        v5.5.2 新增。
+
+        Returns:
+            清理的记忆条数
+        """
+        return self._storage.purge_expired(actor, session_id)
+
+    # ===== 按分类/标签批量删除（v5.5.2 新增）=====
+
+    def batch_delete_by_category(self, category: str,
+                                  actor: str = "", session_id: str = "",
+                                  permanent: bool = False) -> int:
+        """按分类批量删除记忆（移入回收站或永久删除）
+
+        v5.5.2 新增。
+
+        Args:
+            category: 要删除的分类名称
+            actor: 操作者
+            session_id: 会话 ID
+            permanent: True=永久删除，False=移入回收站
+
+        Returns:
+            删除的记忆条数
+        """
+        return self._storage.batch_delete_by_category(category, actor, session_id, permanent)
+
+    def batch_delete_by_tag(self, tag: str,
+                             actor: str = "", session_id: str = "",
+                             permanent: bool = False) -> int:
+        """按标签批量删除记忆（移入回收站或永久删除）
+
+        v5.5.2 新增。
+
+        Args:
+            tag: 要删除的标签
+            actor: 操作者
+            session_id: 会话 ID
+            permanent: True=永久删除，False=移入回收站
+
+        Returns:
+            删除的记忆条数
+        """
+        return self._storage.batch_delete_by_tag(tag, actor, session_id, permanent)
 
     # ===== 标签批量管理（v5.2.0 新增）=====
 

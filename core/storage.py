@@ -1,4 +1,4 @@
-﻿"""
+"""
 MindForge v5.5.1 存储引擎
 支持四层记忆架构：感官记忆 → 短期记忆 → 长期记忆 → 永久记忆
 """
@@ -288,6 +288,7 @@ class MemoryEntry:
     strength: float = 1.0
     starred: bool = False
     pinned: bool = False
+    expires_at: float = 0.0  # v5.5.2: TTL expiration timestamp (0 = never expires)
     metadata: Dict[str, Any] = field(default_factory=dict)
     encrypted: bool = False
     ciphertext: Optional[bytes] = None
@@ -321,6 +322,7 @@ class MemoryEntry:
             "strength": self.strength,
             "starred": self.starred,
             "pinned": self.pinned,
+            "expires_at": self.expires_at,
             "metadata": self.metadata,
         }
 
@@ -633,6 +635,14 @@ class StorageEngine:
         """)
         conn.commit()
 
+        # v5.5.2 migration: add expires_at column for TTL support
+        try:
+            conn.execute("ALTER TABLE memories ADD COLUMN expires_at REAL DEFAULT 0")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_expires_at ON memories(expires_at)")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
     @staticmethod
     def _strip_control(text: Optional[str]) -> str:
         """v5.4.0 安全加固：过滤控制字符（保留 \\t\\n\\r，过滤 \\x00-\\x1f 和 \\x7f）。
@@ -773,8 +783,12 @@ class StorageEngine:
                    source_session: str = "",
                    source_agent: str = "",
                    starred: bool = False,
+                   expires_at: float = 0.0,
                    metadata: Optional[Dict[str, Any]] = None) -> MemoryEntry:
-        """添加记忆"""
+        """添加记忆
+
+        v5.5.2 新增 expires_at 参数（TTL 过期时间戳，0=永不过期）。
+        """
         # v5.4.7 修复 L-8：拒绝 None 或空内容
         if content is None:
             raise ValueError("content cannot be None")
@@ -839,6 +853,7 @@ class StorageEngine:
             last_accessed_at=now,
             metadata=clean_metadata,
             starred=starred,
+            expires_at=float(expires_at) if expires_at else 0.0,
             encrypted=self.encrypted,
             ciphertext=ciphertext,
             nonce=nonce,
@@ -852,8 +867,8 @@ class StorageEngine:
                 privacy, importance, memory_type, layer,
                 source_session, source_agent, created_at, updated_at,
                 last_accessed_at, access_count, consolidation_count,
-                forgetting_score, strength, starred, metadata, encrypted
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                forgetting_score, strength, starred, metadata, encrypted, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             entry.id, entry.content, entry.ciphertext, entry.nonce, entry.salt,
             entry.category, json.dumps(entry.tags, ensure_ascii=False),
@@ -862,7 +877,8 @@ class StorageEngine:
             entry.created_at, entry.updated_at, entry.last_accessed_at,
             entry.access_count, entry.consolidation_count,
             entry.forgetting_score, entry.strength, int(entry.starred),
-            json.dumps(entry.metadata, ensure_ascii=False), int(entry.encrypted)
+            json.dumps(entry.metadata, ensure_ascii=False), int(entry.encrypted),
+            entry.expires_at
         ))
 
         if not self.encrypted:
@@ -884,13 +900,31 @@ class StorageEngine:
 
     def get_memory(self, memory_id: str,
                    actor: str = "", session_id: str = "") -> Optional[MemoryEntry]:
-        """获取记忆"""
+        """获取记忆
+
+        v5.5.2: 自动过期检查——若 expires_at > 0 且已过期，自动移入回收站并返回 None。
+        """
         conn = self._get_conn()
         row = conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
         if not row:
             return None
 
         entry = self._row_to_entry(row)
+
+        # v5.5.2: auto-expire check
+        if entry.expires_at and entry.expires_at > 0 and entry.expires_at <= time.time():
+            try:
+                conn.execute(
+                    "UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
+                    (time.time(), memory_id)
+                )
+                conn.commit()
+                self._add_audit("forget", memory_id, actor, session_id,
+                                 entry.privacy.value, details={"reason": "ttl_expired", "expires_at": entry.expires_at})
+            except Exception:
+                pass
+            return None
+
         self._update_access(entry, actor, session_id)
         return entry
 
@@ -5475,6 +5509,7 @@ class StorageEngine:
             strength=row["strength"],
             starred=bool(row["starred"]) if "starred" in row.keys() else False,
             pinned=bool(row["pinned"]) if "pinned" in row.keys() else False,
+            expires_at=float(row["expires_at"]) if "expires_at" in row.keys() and row["expires_at"] else 0.0,
             metadata=meta_val,
             encrypted=bool(row["encrypted"]),
             ciphertext=row["ciphertext"],
@@ -6923,11 +6958,11 @@ class StorageEngine:
     def highlight_text(self, text: str, query: str,
                        before_tag: str = "<mark>",
                        after_tag: str = "</mark>") -> str:
-        """高亮搜索关键词（v5.2.0 新增）
+        """高亮搜索关键词（v5.2.0 新增，v5.5.2 增强多关键词+中文支持）
 
         Args:
             text: 原始文本
-            query: 搜索关键词
+            query: 搜索关键词（支持空格分隔的多关键词）
             before_tag: 高亮起始标签
             after_tag: 高亮结束标签
 
@@ -6938,8 +6973,240 @@ class StorageEngine:
             return text
 
         import re
-        pattern = re.compile(re.escape(query), re.IGNORECASE)
-        return pattern.sub(lambda m: before_tag + m.group() + after_tag, text)
+
+        # 提取所有关键词：按空白分割，同时保留原始完整查询
+        keywords = []
+        for kw in re.split(r'\s+', query.strip()):
+            kw = kw.strip()
+            if kw and kw not in keywords:
+                keywords.append(kw)
+        # 完整查询也作为一个关键词（如果不在列表中）
+        full_query = query.strip()
+        if full_query and full_query not in keywords:
+            keywords.insert(0, full_query)
+
+        if not keywords:
+            return text
+
+        # 按长度降序排列，避免短关键词先替换破坏长关键词
+        keywords.sort(key=len, reverse=True)
+
+        result = text
+        # 占位符策略：先用唯一占位符替换匹配项，最后统一替换为高亮标签，
+        # 避免短关键词匹配到已插入的标签内部（如 <mark> 中的 "mark"）
+        placeholder_map = {}  # placeholder -> original matched text
+        for i, kw in enumerate(keywords):
+            if not kw:
+                continue
+            pattern = re.compile(re.escape(kw), re.IGNORECASE)
+            placeholder_prefix = f"\x00MFHL{i}_"
+
+            def _make_replacer(prefix, pi_counter):
+                def replacer(m):
+                    matched = m.group()
+                    ph = f"{prefix}{pi_counter[0]}\x00"
+                    placeholder_map[ph] = matched
+                    pi_counter[0] += 1
+                    return ph
+                return replacer
+
+            result = pattern.sub(_make_replacer(placeholder_prefix, [0]), result)
+
+        # 第二阶段：将占位符替换为带高亮标签的原文（保留原始大小写）
+        for ph, matched_text in placeholder_map.items():
+            result = result.replace(ph, before_tag + matched_text + after_tag)
+
+        return result
+
+    # ===== TTL / 过期管理（v5.5.2 新增）=====
+
+    def set_ttl(self, memory_id: str, ttl_seconds: float,
+                actor: str = "", session_id: str = "") -> bool:
+        """为记忆设置 TTL（存活时间）
+
+        v5.5.2 新增。
+
+        Args:
+            memory_id: 记忆 ID
+            ttl_seconds: 存活秒数；<= 0 表示取消过期（永不过期）
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            是否成功
+        """
+        conn = self._get_conn()
+        now = time.time()
+        expires_at = (now + ttl_seconds) if ttl_seconds and ttl_seconds > 0 else 0.0
+        cursor = conn.execute(
+            "UPDATE memories SET expires_at = ?, updated_at = ? WHERE id = ? AND category != 'trash'",
+            (expires_at, now, memory_id)
+        )
+        conn.commit()
+        if cursor.rowcount > 0:
+            self._add_audit("update", memory_id, actor, session_id, "",
+                             details={"ttl_seconds": ttl_seconds, "expires_at": expires_at})
+            return True
+        return False
+
+    def list_expired(self, limit: int = 1000) -> List[MemoryEntry]:
+        """列出所有已过期但尚未清理的记忆
+
+        v5.5.2 新增。
+
+        Args:
+            limit: 最大返回条数
+
+        Returns:
+            已过期记忆列表
+        """
+        conn = self._get_conn()
+        now = time.time()
+        rows = conn.execute(
+            "SELECT * FROM memories WHERE expires_at > 0 AND expires_at <= ? AND category != 'trash' ORDER BY expires_at ASC LIMIT ?",
+            (now, limit)
+        ).fetchall()
+        return [self._row_to_entry(row) for row in rows]
+
+    def purge_expired(self, actor: str = "", session_id: str = "") -> int:
+        """清理所有已过期记忆（移入回收站）
+
+        v5.5.2 新增。
+
+        Args:
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            清理的记忆条数
+        """
+        conn = self._get_conn()
+        now = time.time()
+        expired_rows = conn.execute(
+            "SELECT id, privacy FROM memories WHERE expires_at > 0 AND expires_at <= ? AND category != 'trash'",
+            (now,)
+        ).fetchall()
+        if not expired_rows:
+            return 0
+        count = 0
+        for row in expired_rows:
+            conn.execute(
+                "UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
+                (now, row["id"])
+            )
+            self._add_audit("forget", row["id"], actor, session_id,
+                             row["privacy"] if row["privacy"] else "",
+                             details={"reason": "ttl_purge", "expires_at": now})
+            count += 1
+        conn.commit()
+        return count
+
+    # ===== 按分类/标签批量删除（v5.5.2 新增）=====
+
+    def batch_delete_by_category(self, category: str,
+                                  actor: str = "", session_id: str = "",
+                                  permanent: bool = False) -> int:
+        """按分类批量删除记忆（移入回收站或永久删除）
+
+        v5.5.2 新增。
+
+        Args:
+            category: 要删除的分类名称
+            actor: 操作者
+            session_id: 会话 ID
+            permanent: True=永久删除，False=移入回收站
+
+        Returns:
+            删除的记忆条数
+        """
+        if not category:
+            return 0
+        conn = self._get_conn()
+        now = time.time()
+        rows = conn.execute(
+            "SELECT id, privacy FROM memories WHERE category = ?",
+            (category,)
+        ).fetchall()
+        if not rows:
+            return 0
+        count = 0
+        for row in rows:
+            if permanent:
+                self._delete_memory_cascade(conn, row["id"])
+            else:
+                conn.execute(
+                    "UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
+                    (now, row["id"])
+                )
+            self._add_audit("delete", row["id"], actor, session_id,
+                             row["privacy"] if row["privacy"] else "",
+                             details={"reason": "batch_by_category", "category": category, "permanent": permanent})
+            count += 1
+        conn.commit()
+        return count
+
+    def batch_delete_by_tag(self, tag: str,
+                             actor: str = "", session_id: str = "",
+                             permanent: bool = False) -> int:
+        """按标签批量删除记忆（移入回收站或永久删除）
+
+        v5.5.2 新增。
+
+        Args:
+            tag: 要删除的标签
+            actor: 操作者
+            session_id: 会话 ID
+            permanent: True=永久删除，False=移入回收站
+
+        Returns:
+            删除的记忆条数
+        """
+        if not tag:
+            return 0
+        conn = self._get_conn()
+        now = time.time()
+        rows = conn.execute(
+            "SELECT id, privacy, tags FROM memories WHERE tags LIKE ?",
+            (f'%"{tag}"%',)
+        ).fetchall()
+        if not rows:
+            return 0
+        count = 0
+        for row in rows:
+            try:
+                existing_tags = json.loads(row["tags"]) if isinstance(row["tags"], str) else row["tags"]
+                if tag not in (existing_tags or []):
+                    continue
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if permanent:
+                self._delete_memory_cascade(conn, row["id"])
+            else:
+                conn.execute(
+                    "UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
+                    (now, row["id"])
+                )
+            self._add_audit("delete", row["id"], actor, session_id,
+                             row["privacy"] if row["privacy"] else "",
+                             details={"reason": "batch_by_tag", "tag": tag, "permanent": permanent})
+            count += 1
+        conn.commit()
+        return count
+
+    def _delete_memory_cascade(self, conn: sqlite3.Connection, memory_id: str):
+        """级联删除记忆及其关联数据（v5.5.2 新增内部辅助方法）"""
+        conn.execute("DELETE FROM memory_versions WHERE memory_id = ?", (memory_id,))
+        conn.execute("DELETE FROM memory_links WHERE source_id = ? OR target_id = ?", (memory_id, memory_id))
+        try:
+            conn.execute("DELETE FROM memory_notes WHERE memory_id = ?", (memory_id,))
+        except sqlite3.OperationalError:
+            pass
+        conn.execute("DELETE FROM memory_embeddings WHERE memory_id = ?", (memory_id,))
+        try:
+            conn.execute("DELETE FROM memory_fts WHERE rowid = (SELECT rowid FROM memories WHERE id = ?)", (memory_id,))
+        except sqlite3.OperationalError:
+            pass
+        conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
 
     # ===== 标签批量管理（v5.2.0 新增）=====
 
