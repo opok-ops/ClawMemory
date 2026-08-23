@@ -152,11 +152,13 @@ class QueryEngine:
                     )
 
         # v5.5.2 perf: entry cache to avoid double-fetch in pre-filter + result build
+        # Note: intentionally NOT passing agent_id/session_id to get_memory here,
+        # to avoid updating access stats for memories that are filtered out.
         _entry_cache: Dict[str, Any] = {}
 
         def _cached_get(mid: str) -> Optional[Any]:
             if mid not in _entry_cache:
-                _entry_cache[mid] = self.storage.get_memory(mid, agent_id, session_id)
+                _entry_cache[mid] = self.storage.get_memory(mid)
             return _entry_cache[mid]
 
         # 预过滤：按 categories/layers 筛选 score_map，避免非匹配记忆占据排序位

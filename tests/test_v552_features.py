@@ -30,12 +30,20 @@ class TestVersion:
         assert __version__ == "5.5.2"
 
     def test_pyproject_version(self):
-        import tomllib
         from pathlib import Path
         pyproject = Path(__file__).parent.parent / "pyproject.toml"
-        with open(pyproject, "rb") as f:
-            data = tomllib.load(f)
-        assert data["project"]["version"] == "5.5.2"
+        try:
+            import tomllib
+            with open(pyproject, "rb") as f:
+                data = tomllib.load(f)
+            assert data["project"]["version"] == "5.5.2"
+        except ModuleNotFoundError:
+            # Python < 3.11: tomllib not available, fallback to regex
+            import re
+            text = pyproject.read_text(encoding="utf-8")
+            m = re.search(r'version\s*=\s*"([^"]+)"', text)
+            assert m is not None
+            assert m.group(1) == "5.5.2"
 
 
 class TestTTLExpiration:
