@@ -2285,7 +2285,7 @@ class StorageEngine:
             )
             self._add_audit(
                 "agent_transfer", row[0], actor, session_id,
-                f"{from_agent}→{to_agent}"
+                "", {"from_agent": from_agent, "to_agent": to_agent}
             )
 
         conn.commit()
@@ -2986,7 +2986,7 @@ class StorageEngine:
                         (ta, now, mid)
                     )
                     self._add_audit("agent_merge", mid, actor, session_id,
-                                    f"{fa} -> {ta}")
+                                    "", {"from_agent": fa, "to_agent": ta})
                 except Exception:
                     failed += 1
                     continue
@@ -5352,13 +5352,14 @@ class StorageEngine:
         conn = self._get_conn()
 
         # 使用 FTS5 全文搜索找相似内容
+        # v5.5.4 fix: 排除软删除记忆，防止回收站内容泄露
         try:
             rows = conn.execute(
                 "SELECT m.id, m.content, m.category, m.layer, m.importance, m.starred, "
                 "bm25(memory_fts) as relevance "
                 "FROM memory_fts "
                 "JOIN memories m ON memory_fts.rowid = m.rowid "
-                "WHERE memory_fts MATCH ? AND m.id != ? "
+                "WHERE memory_fts MATCH ? AND m.id != ? AND m.category != 'trash' "
                 "ORDER BY relevance "
                 "LIMIT ?",
                 (entry.content[:200], memory_id, limit * 2)
@@ -5369,7 +5370,7 @@ class StorageEngine:
             if not keywords:
                 return []
 
-            query = "SELECT id, content, category, layer, importance, starred FROM memories WHERE id != ? AND ("
+            query = "SELECT id, content, category, layer, importance, starred FROM memories WHERE id != ? AND category != 'trash' AND ("
             params = [memory_id]
             conditions = []
             for kw in keywords[:3]:
