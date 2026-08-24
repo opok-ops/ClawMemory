@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 MindForge v5.5.2 CLI - 命令行工具
 =================================

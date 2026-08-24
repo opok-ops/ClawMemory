@@ -1,4 +1,4 @@
-﻿"""
+"""
 MindForge v5.5.2 嵌入引擎
 
 多后端适配器架构（v5.4.6 新增）：
@@ -583,12 +583,12 @@ class EmbeddingEngine:
         if hasattr(self, "_initialized"):
             # v5.5.3 fix: 检查参数是否不同，如不同则记录警告
             requested_backend = backend or os.environ.get("MINDFORGE_EMBEDDING_BACKEND", "sentence_transformers")
-            requested_model = model_name or os.environ.get("MINDFORGE_EMBEDDING_MODEL", "`")
+            requested_model = model_name or os.environ.get("MINDFORGE_EMBEDDING_MODEL", "")
             if requested_backend != self._backend_name or (requested_model and requested_model != self._model_name):
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.warning(
-                    "EmbeddingEngine is a singleton: requested backend=%s model=%s, "`
+                    "EmbeddingEngine is a singleton: requested backend=%s model=%s, "
                     "but using existing instance backend=%s model=%s",
                     requested_backend, requested_model, self._backend_name, self._model_name
                 )

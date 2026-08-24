@@ -26,8 +26,8 @@ def mf():
 class TestVersion:
     """v5.5.2 版本校验"""
 
-    def test_version_is_552(self):
-        assert __version__ == "5.5.2"
+    def test_version_is_553(self):
+        assert __version__ == "5.5.3"
 
     def test_pyproject_version(self):
         from pathlib import Path
@@ -36,14 +36,14 @@ class TestVersion:
             import tomllib
             with open(pyproject, "rb") as f:
                 data = tomllib.load(f)
-            assert data["project"]["version"] == "5.5.2"
+            assert data["project"]["version"] == "5.5.3"
         except ModuleNotFoundError:
             # Python < 3.11: tomllib not available, fallback to regex
             import re
             text = pyproject.read_text(encoding="utf-8")
             m = re.search(r'version\s*=\s*"([^"]+)"', text)
             assert m is not None
-            assert m.group(1) == "5.5.2"
+            assert m.group(1) == "5.5.3"
 
 
 class TestTTLExpiration:

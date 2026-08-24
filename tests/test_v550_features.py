@@ -447,7 +447,7 @@ class TestBugFixes:
         result = self.mf.drama_recommend_v2(genre="SUSPENSE", mode="all")
         assert isinstance(result, list)
 
-    def test_version_is_552(self):
-        """验证版本号已更新为 5.5.2"""
+    def test_version_is_553(self):
+        """验证版本号已更新为 5.5.3"""
         from MindForge import __version__
-        assert __version__ == "5.5.2"
+        assert __version__ == "5.5.3"
