@@ -14,7 +14,7 @@ MindForge v5.5.2 嵌入引擎
   MINDFORGE_EMBEDDING_API_URL=https://custom.endpoint/embed
   OLLAMA_HOST=http://localhost:11434
 
-默认模型: all-MiniLM-L6-v2 (384 维, ~80MB, CPU 友好)
+默认模型: paraphrase-multilingual-MiniLM-L12-v2 (384 维, ~120MB, 支持50+语言)
 """
 
 import struct
@@ -27,7 +27,7 @@ from abc import ABC, abstractmethod
 logger = logging.getLogger(__name__)
 
 # 默认模型名
-DEFAULT_MODEL = "all-MiniLM-L6-v2"
+DEFAULT_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
 # 默认维度（all-MiniLM-L6-v2 输出 384 维）
 DEFAULT_DIMENSION = 384

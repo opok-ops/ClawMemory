@@ -1886,7 +1886,7 @@ class StorageEngine:
         conn = self._get_conn()
         # v5.3.3 安全加固：LIKE 通配符转义
         safe_tag = tag[:128] if isinstance(tag, str) else ""
-        query = "SELECT * FROM memories WHERE tags LIKE ? ESCAPE '\\'"
+        query = "SELECT * FROM memories WHERE tags LIKE ? ESCAPE '\\' AND category != 'trash'"
         params = [f'%"{_escape_like(safe_tag)}"%']
 
         if category:
@@ -2491,7 +2491,7 @@ class StorageEngine:
         conn = self._get_conn()
         now = time.time()
 
-        query = "SELECT id FROM memories WHERE source_agent = ?"
+        query = "SELECT id, privacy FROM memories WHERE source_agent = ?"
         params = [from_agent]
 
         if category:
@@ -2504,11 +2504,12 @@ class StorageEngine:
         for row in rows:
             conn.execute(
                 "UPDATE memories SET source_agent = ?, updated_at = ? WHERE id = ?",
-                (to_agent, now, row[0])
+                (to_agent, now, row["id"])
             )
             self._add_audit(
-                "agent_transfer", row[0], actor, session_id,
-                "", {"from_agent": from_agent, "to_agent": to_agent}
+                "agent_transfer", row["id"], actor, session_id,
+                row["privacy"] if row["privacy"] else "",
+                {"from_agent": from_agent, "to_agent": to_agent}
             )
 
         conn.commit()
@@ -3179,7 +3180,7 @@ class StorageEngine:
         ta = to_agent[:128]
 
         src_rows = conn.execute(
-            "SELECT id, content FROM memories WHERE source_agent = ?", (fa,)
+            "SELECT id, content, privacy FROM memories WHERE source_agent = ?", (fa,)
         ).fetchall()
 
         # 如果去重，预取目标 Agent 已有内容集合
@@ -3209,7 +3210,8 @@ class StorageEngine:
                         (ta, now, mid)
                     )
                     self._add_audit("agent_merge", mid, actor, session_id,
-                                    "", {"from_agent": fa, "to_agent": ta})
+                                    r["privacy"] if r["privacy"] else "",
+                                    {"from_agent": fa, "to_agent": ta})
                 except Exception:
                     failed += 1
                     continue
@@ -5760,15 +5762,16 @@ class StorageEngine:
                 meta_val = {}
         else:
             meta_val = {}
+        # v5.5.5 fix: 统一走 _downgrade_enum，兼容双重导入路径下的枚举类不一致
         return MemoryEntry(
             id=row["id"],
             content=row["content"] or "",
             category=row["category"],
             tags=tags_val,
-            privacy=PrivacyLevel(row["privacy"]),
-            importance=Importance(row["importance"]),
-            memory_type=MemoryType(row["memory_type"]),
-            layer=MemoryLayer(row["layer"]),
+            privacy=self._downgrade_enum(row["privacy"], PrivacyLevel, PrivacyLevel.INTERNAL),
+            importance=self._downgrade_enum(row["importance"], Importance, Importance.MEDIUM),
+            memory_type=self._downgrade_enum(row["memory_type"], MemoryType, MemoryType.TEXT),
+            layer=self._downgrade_enum(row["layer"], MemoryLayer, MemoryLayer.SHORT_TERM),
             source_session=row["source_session"],
             source_agent=row["source_agent"],
             created_at=row["created_at"],
@@ -5815,6 +5818,8 @@ class StorageEngine:
                           "conflict_detected", "conflict_resolved", "conflict_dismiss",
                           # v5.4.2 agent 高敏操作变体
                           "agent_purge", "agent_forget", "agent_merge", "agent_clean",
+                          # v5.5.5 fix: agent_transfer 加入白名单，避免被降级为 other
+                          "agent_transfer",
                           # v5.5.0 新增审计动作
                           "deduplicate_merge", "recalibrate", "reinforce"}
         # v5.4.2：高敏感操作，审计失败时 fail-closed
@@ -7451,7 +7456,7 @@ class StorageEngine:
         conn = self._get_conn()
         now = time.time()
         rows = conn.execute(
-            "SELECT id, privacy, tags FROM memories WHERE tags LIKE ?",
+            "SELECT id, privacy, tags FROM memories WHERE tags LIKE ? AND category != 'trash'",
             (f'%"{tag}"%',)
         ).fetchall()
         if not rows:
@@ -7575,18 +7580,17 @@ class StorageEngine:
         merged_tags = list(target_tags | source_tags)
 
         # 重要性取高
-        from .types import Importance
-        source_imp = source.importance if isinstance(source.importance, Importance) else Importance(str(source.importance))
-        target_imp = target.importance if isinstance(target.importance, Importance) else Importance(str(target.importance))
+        # v5.5.5 fix: 使用 _downgrade_enum 兼容双重导入枚举类不一致
+        source_imp = self._downgrade_enum(source.importance, Importance, Importance.MEDIUM)
+        target_imp = self._downgrade_enum(target.importance, Importance, Importance.MEDIUM)
         merged_importance = target_imp if target_imp.to_int() >= source_imp.to_int() else source_imp
         merged_importance_val = merged_importance.value
 
         # 层级取深（数值更大的层级更深）
-        from .types import MemoryLayer
-        source_layer_val = source.layer.value if isinstance(source.layer, MemoryLayer) else source.layer
-        target_layer_val = target.layer.value if isinstance(target.layer, MemoryLayer) else target.layer
-        merged_layer_val = max(source_layer_val, target_layer_val)
-        merged_layer = MemoryLayer(merged_layer_val)
+        # v5.5.5 fix: 使用 _downgrade_enum 兼容双重导入枚举类不一致
+        source_layer = self._downgrade_enum(source.layer, MemoryLayer, MemoryLayer.SHORT_TERM)
+        target_layer = self._downgrade_enum(target.layer, MemoryLayer, MemoryLayer.SHORT_TERM)
+        merged_layer = target_layer if target_layer.to_int() >= source_layer.to_int() else source_layer
 
         # 访问次数相加
         merged_access_count = source.access_count + target.access_count
@@ -7684,7 +7688,8 @@ class StorageEngine:
         recency_weight = math.exp(-time_since_access / (7 * 86400))
 
         # 2. 重要度权重（0~1 归一化）
-        imp = entry.importance if isinstance(entry.importance, Importance) else Importance.from_string(str(entry.importance))
+        # v5.5.5 fix: 使用 _downgrade_enum 兼容双重导入
+        imp = self._downgrade_enum(entry.importance, Importance, Importance.MEDIUM)
         importance_weight = imp.to_int() / 3.0
 
         # 3. 访问次数权重（对数缩放，防止高访问次数过度主导）
@@ -7756,7 +7761,8 @@ class StorageEngine:
             final_score = weights["final_score"]
             time_since_access = now - entry.last_accessed_at if entry.last_accessed_at > 0 else float('inf')
 
-            layer = entry.layer if isinstance(entry.layer, MemoryLayer) else MemoryLayer.from_string(str(entry.layer))
+            # v5.5.5 fix: 使用 _downgrade_enum 兼容双重导入
+            layer = self._downgrade_enum(entry.layer, MemoryLayer, MemoryLayer.SHORT_TERM)
             new_layer = layer
             action = None
             reason = ""
@@ -8119,25 +8125,24 @@ class StorageEngine:
 
             if "new_importance" in updates and updates["new_importance"] is not None:
                 new_imp_val = updates["new_importance"]
-                if isinstance(new_imp_val, Importance):
-                    new_importance = new_imp_val
+                # v5.5.5 fix: 使用 _downgrade_enum 兼容双重导入
+                coerced = self._downgrade_enum(new_imp_val, Importance, None)
+                if coerced is not None:
+                    new_importance = coerced
                 else:
+                    # 如果是数字，尝试映射到最近的级别
                     try:
-                        new_importance = Importance(str(new_imp_val).upper())
-                    except ValueError:
-                        # 如果是数字，尝试映射到最近的级别
-                        try:
-                            level = int(float(new_imp_val))
-                            if level <= 0:
-                                new_importance = Importance.LOW
-                            elif level == 1:
-                                new_importance = Importance.MEDIUM
-                            elif level == 2:
-                                new_importance = Importance.HIGH
-                            else:
-                                new_importance = Importance.CRITICAL
-                        except (ValueError, TypeError):
-                            new_importance = entry.importance
+                        level = int(float(new_imp_val))
+                        if level <= 0:
+                            new_importance = Importance.LOW
+                        elif level == 1:
+                            new_importance = Importance.MEDIUM
+                        elif level == 2:
+                            new_importance = Importance.HIGH
+                        else:
+                            new_importance = Importance.CRITICAL
+                    except (ValueError, TypeError):
+                        pass  # 保持 entry.importance 不变
 
             if "new_privacy" in updates and updates["new_privacy"] is not None:
                 new_privacy = updates["new_privacy"]
@@ -8160,9 +8165,10 @@ class StorageEngine:
                 new_pinned = bool(updates["pinned"])
 
             # 执行更新
-            layer_val = new_layer.value if isinstance(new_layer, MemoryLayer) else new_layer
-            privacy_val = new_privacy.value if isinstance(new_privacy, PrivacyLevel) else new_privacy
-            imp_val = new_importance.value if isinstance(new_importance, Importance) else new_importance
+            # v5.5.5 fix: 使用 _downgrade_enum 兼容双重导入枚举类不一致
+            layer_val = self._downgrade_enum(new_layer, MemoryLayer, MemoryLayer.SHORT_TERM).value
+            privacy_val = self._downgrade_enum(new_privacy, PrivacyLevel, PrivacyLevel.INTERNAL).value
+            imp_val = self._downgrade_enum(new_importance, Importance, Importance.MEDIUM).value
 
             conn.execute(
                 """UPDATE memories SET
