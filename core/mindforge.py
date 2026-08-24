@@ -1871,6 +1871,167 @@ class MindForge:
         """
         return self._storage.check_index_consistency()
 
+    # ===== 记忆分层与时间衰减（v5.5.5 新增）=====
+
+    def memory_decay_weights(self, memory_id: str) -> Dict[str, float]:
+        """计算单条记忆的综合权重（近期度、重要度、访问频率、强度）
+
+        v5.5.5 新增。模仿人脑记忆模式，用于检索排序和自动分层。
+
+        Args:
+            memory_id: 记忆 ID
+
+        Returns:
+            包含各权重分量和 final_score 的字典
+        """
+        return self._storage.memory_decay_weights(memory_id)
+
+    def auto_layer_consolidate(self, dry_run: bool = False) -> Dict[str, Any]:
+        """自动记忆分层整合
+
+        v5.5.5 新增。基于综合权重自动调整记忆层级：
+        - 升级：访问频繁、重要度高的记忆向更高层级迁移
+        - 降级：长期未访问、权重低的记忆向更低层级迁移
+        - 低优先级标记：权重极低的短时记忆标记为低优先级
+
+        Args:
+            dry_run: True=只统计不实际修改
+
+        Returns:
+            {promoted, demoted, low_priority, dry_run, details}
+        """
+        result = self._storage.auto_layer_consolidate(dry_run)
+        if not dry_run and result.get("promoted", 0) + result.get("demoted", 0) > 0:
+            # 重建索引以反映层级变化
+            try:
+                self._index = IndexEngine()
+                self._rebuild_index_from_storage()
+            except Exception:
+                pass
+        return result
+
+    def layered_retrieval(self, query: str, limit: int = 20, min_score: float = 0.1) -> List[Any]:
+        """分层检索记忆
+
+        v5.5.5 新增。按层级优先级检索：
+        PERMANENT（30%）→ LONG_TERM（50%）→ SHORT_TERM（20%）
+        过滤低权重记忆，按综合权重排序返回。
+
+        Args:
+            query: 检索关键词
+            limit: 返回数量上限
+            min_score: 最低权重阈值
+
+        Returns:
+            记忆条目列表
+        """
+        return self._storage.layered_retrieval(query, limit, min_score)
+
+    def get_memory_layers_stats(self) -> Dict[str, Any]:
+        """获取各层记忆统计
+
+        v5.5.5 新增。返回每层的数量、平均重要度、平均访问次数等。
+        """
+        return self._storage.get_memory_layers_stats()
+
+    # ===== 硬件自适应与缓存（v5.5.5 新增）=====
+
+    def get_hardware_profile(self) -> Dict[str, Any]:
+        """获取硬件性能画像
+
+        v5.5.5 新增。自动检测 CPU、内存、磁盘性能，给出性能级别和推荐配置。
+        """
+        return self._storage.get_hardware_profile()
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """获取记忆缓存统计
+
+        v5.5.5 新增。返回缓存大小、命中率等统计信息。
+        """
+        return self._storage.get_cache_stats()
+
+    def adapt_retrieval_params(self, base_limit: int = 20) -> Dict[str, Any]:
+        """根据硬件性能自适应调整检索参数
+
+        v5.5.5 新增。低配设备自动减少检索数量和深度，
+        高性能设备放开检索深度以获得更全面的结果。
+
+        Args:
+            base_limit: 基础检索数量
+
+        Returns:
+            {limit, depth, use_vector, use_fts}
+        """
+        return self._storage.adapt_retrieval_params(base_limit)
+
+    # ===== 前置过滤与冲突检测（v5.5.5 新增）=====
+
+    def prefilter_memories(self, memory_ids: List[str], query: str = "") -> Dict[str, Any]:
+        """前置过滤：送入大模型前筛掉重复、低关联、过期的记忆
+
+        v5.5.5 新增。四步过滤：
+        1. 去重（内容相似度 >= 0.85 只保留最新）
+        2. 低关联过滤（与 query 相关性 < 0.2 移除）
+        3. 过期过滤（已过期记忆移除）
+        4. 低质量过滤（内容过短或纯空白移除）
+
+        Args:
+            memory_ids: 候选记忆 ID 列表
+            query: 可选查询词，用于相关性计算
+
+        Returns:
+            {kept, removed, reasons, stats}
+        """
+        return self._storage.prefilter_memories(memory_ids, query)
+
+    def detect_conflicts(self, memory_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """检测记忆中的事实冲突
+
+        v5.5.5 新增。检测四种冲突类型：
+        - value_update: 数值/价格等矛盾
+        - timeline_inconsistency: 时间线不一致
+        - factual_contradiction: 事实陈述矛盾（否定词检测）
+        - 标签冲突
+
+        Args:
+            memory_ids: 可选，只检测指定记忆；不传则检测所有
+
+        Returns:
+            冲突列表，按置信度降序
+        """
+        return self._storage.detect_conflicts(memory_ids)
+
+    def resolve_conflict(self, conflict: Dict[str, Any], strategy: str = "auto") -> Optional[str]:
+        """解决记忆冲突
+
+        v5.5.5 新增。
+
+        Args:
+            conflict: detect_conflicts 返回的冲突对象
+            strategy: auto / keep_a / keep_b / merge
+
+        Returns:
+            保留的记忆 ID
+        """
+        result = self._storage.resolve_conflict(conflict, strategy)
+        if result:
+            # 清理索引
+            try:
+                if strategy == "keep_a" and conflict.get("memory_b_id"):
+                    self._index.remove_memory(conflict["memory_b_id"])
+                elif strategy == "keep_b" and conflict.get("memory_a_id"):
+                    self._index.remove_memory(conflict["memory_a_id"])
+            except Exception:
+                pass
+        return result
+
+    def get_conflict_stats(self) -> Dict[str, Any]:
+        """获取冲突统计
+
+        v5.5.5 新增。返回总冲突数、各类型数量、置信度分布等。
+        """
+        return self._storage.get_conflict_stats()
+
     # ===== 标签批量管理（v5.2.0 新增）=====
 
     def batch_add_tags(self, entry_ids: List[str], tags: List[str],

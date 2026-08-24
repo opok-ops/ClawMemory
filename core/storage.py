@@ -7,13 +7,24 @@ import sqlite3
 import json
 import math
 import uuid
+import os
 import time
 import logging
 import threading
+import tempfile
 from pathlib import Path
+from collections import OrderedDict
 from dataclasses import dataclass, field, asdict
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timezone
+
+# v5.5.5: psutil 为可选依赖，不可用时降级到 ctypes / 手工检测
+try:
+    import psutil
+    _HAS_PSUTIL = True
+except ImportError:
+    psutil = None
+    _HAS_PSUTIL = False
 
 logger = logging.getLogger(__name__)
 
@@ -340,6 +351,214 @@ class AuditRecord:
     details: Dict[str, Any] = field(default_factory=dict)
 
 
+class HardwareProfiler:
+    """硬件性能分析器（v5.5.5 新增）
+
+    自动检测 CPU、内存、磁盘性能，给出记忆检索的推荐配置。
+    """
+
+    @staticmethod
+    def detect() -> Dict[str, Any]:
+        """检测硬件性能，返回性能画像
+
+        返回：
+        {
+            "cpu_cores": int,
+            "memory_gb": float,
+            "disk_type": "ssd" | "hdd" | "unknown",
+            "performance_level": "low" | "medium" | "high",
+            "recommended_limit": int,  # 推荐检索数量
+            "recommended_depth": int,  # 推荐检索深度
+            "cache_size_mb": int,  # 推荐缓存大小
+        }
+        """
+        # --- CPU 检测 ---
+        cpu_cores = os.cpu_count() or 1
+
+        # --- 内存检测 ---
+        memory_gb = HardwareProfiler._detect_memory_gb()
+
+        # --- 磁盘检测 ---
+        disk_type = HardwareProfiler._detect_disk_type()
+
+        # --- 性能分级 ---
+        performance_level = HardwareProfiler._classify_performance(cpu_cores, memory_gb)
+
+        # --- 推荐配置 ---
+        rec = HardwareProfiler._recommend_config(performance_level)
+
+        return {
+            "cpu_cores": cpu_cores,
+            "memory_gb": memory_gb,
+            "disk_type": disk_type,
+            "performance_level": performance_level,
+            "recommended_limit": rec["limit"],
+            "recommended_depth": rec["depth"],
+            "cache_size_mb": rec["cache_size_mb"],
+        }
+
+    @staticmethod
+    def _detect_memory_gb() -> float:
+        """检测系统总内存（GB），优先使用 psutil，降级到 ctypes"""
+        if _HAS_PSUTIL:
+            try:
+                mem = psutil.virtual_memory()
+                return round(mem.total / (1024 ** 3), 2)
+            except Exception:
+                pass
+
+        # Fallback: Windows API via ctypes
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            ms = MEMORYSTATUSEX()
+            ms.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            if kernel32.GlobalMemoryStatusEx(ctypes.byref(ms)):
+                return round(ms.ullTotalPhys / (1024 ** 3), 2)
+        except Exception:
+            pass
+
+        # 终极 fallback：假设 4GB
+        return 4.0
+
+    @staticmethod
+    def _detect_disk_type() -> str:
+        """检测磁盘类型（SSD/HDD），优先使用 psutil，降级到写入速度测试"""
+        if _HAS_PSUTIL:
+            try:
+                # psutil 在部分平台可直接获取磁盘类型
+                for disk in psutil.disk_partitions():
+                    try:
+                        usage = psutil.disk_usage(disk.mountpoint)
+                        # 无法直接从 psutil 获取 SSD/HDD，跳过
+                    except Exception:
+                        continue
+                # psutil 不直接提供 SSD/HDD 判断，使用写入速度测试
+            except Exception:
+                pass
+
+        # Fallback: 通过小文件写入速度粗略判断
+        try:
+            test_data = os.urandom(5 * 1024 * 1024)  # 5MB
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as f:
+                tmp_path = f.name
+                start = time.time()
+                f.write(test_data)
+                f.flush()
+                os.fsync(f.fileno())
+                elapsed = time.time() - start
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+            if elapsed > 0:
+                speed_mbps = (5 * 1024 * 1024 / elapsed) / (1024 * 1024)  # MB/s
+                if speed_mbps > 50:
+                    return "ssd"
+                else:
+                    return "hdd"
+        except Exception:
+            pass
+
+        return "unknown"
+
+    @staticmethod
+    def _classify_performance(cpu_cores: int, memory_gb: float) -> str:
+        """根据 CPU 和内存分级性能
+
+        - LOW: CPU <= 2 核 或 内存 < 4GB
+        - MEDIUM: CPU 2-4 核 且 内存 4-8GB
+        - HIGH: CPU > 4 核 且 内存 > 8GB
+        """
+        if cpu_cores <= 2 or memory_gb < 4:
+            return "low"
+        elif cpu_cores > 4 and memory_gb > 8:
+            return "high"
+        else:
+            return "medium"
+
+    @staticmethod
+    def _recommend_config(performance_level: str) -> Dict[str, Any]:
+        """根据性能级别给出推荐配置"""
+        configs = {
+            "low": {"limit": 10, "depth": 1, "cache_size_mb": 16},
+            "medium": {"limit": 20, "depth": 2, "cache_size_mb": 64},
+            "high": {"limit": 50, "depth": 3, "cache_size_mb": 256},
+        }
+        return configs.get(performance_level, configs["medium"])
+
+
+class MemoryCache:
+    """记忆缓存（v5.5.5 新增）
+
+    LRU 缓存高频访问的记忆摘要，减少磁盘 IO 和重复计算。
+    """
+
+    def __init__(self, max_size: int = 1000):
+        self.max_size = max_size
+        self._cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, memory_id: str) -> Optional[Dict[str, Any]]:
+        """获取缓存，命中时移到末尾（最近使用）"""
+        if memory_id in self._cache:
+            self._cache.move_to_end(memory_id)
+            self.hits += 1
+            return self._cache[memory_id]
+        self.misses += 1
+        return None
+
+    def set(self, memory_id: str, data: Dict[str, Any]) -> None:
+        """设置缓存，如果满了淘汰最久未使用的"""
+        if memory_id in self._cache:
+            self._cache.move_to_end(memory_id)
+            self._cache[memory_id] = data
+        else:
+            if len(self._cache) >= self.max_size:
+                # 淘汰最久未使用的（队首）
+                self._cache.popitem(last=False)
+            self._cache[memory_id] = data
+
+    def invalidate(self, memory_id: str) -> None:
+        """使单条缓存失效"""
+        if memory_id in self._cache:
+            del self._cache[memory_id]
+
+    def clear(self) -> None:
+        """清空所有缓存"""
+        self._cache.clear()
+        self.hits = 0
+        self.misses = 0
+
+    def stats(self) -> Dict[str, Any]:
+        """缓存统计"""
+        total = self.hits + self.misses
+        hit_rate = round(self.hits / total, 4) if total > 0 else 0.0
+        return {
+            "size": len(self._cache),
+            "max_size": self.max_size,
+            "hits": self.hits,
+            "misses": self.misses,
+            "hit_rate": hit_rate,
+        }
+
+
 class StorageEngine:
     """存储引擎"""
 
@@ -353,6 +572,10 @@ class StorageEngine:
         # v5.4.6 线程安全：SQLite 连接不能跨线程复用。
         # 使用 threading.local 为每个线程维护独立连接（REST API 场景必需）。
         self._conn_local = threading.local()
+        # v5.5.5 硬件自适应：检测硬件性能并初始化记忆缓存
+        self._hardware_profile = HardwareProfiler.detect()
+        cache_size = self._hardware_profile["recommended_limit"] * 50  # 按推荐 limit 估算缓存条目
+        self._memory_cache = MemoryCache(max_size=cache_size)
         self._init_db()
 
     def _get_conn(self) -> sqlite3.Connection:
@@ -7417,6 +7640,331 @@ class StorageEngine:
         ).fetchone()
         return self._row_to_entry(updated_row) if updated_row else None
 
+    # ===== 记忆分层与时间衰减（v5.5.5 新增）=====
+
+    def memory_decay_weights(self, memory_id: str) -> Dict[str, float]:
+        """计算单条记忆的综合权重（v5.5.5 新增）
+
+        用于检索排序和自动分层，包含近期度、重要度、访问频率、强度四个维度。
+
+        权重公式：
+        - recency_weight = exp(-(now - last_accessed_at) / (7*86400))  # 7天半衰期
+        - importance_weight = importance.to_int() / 3.0  # 0~1
+        - access_weight = min(1.0, log(access_count + 1) / log(10))  # 访问次数对数缩放
+        - strength_weight = min(1.0, max(0.0, strength))
+        - final_score = 0.3*recency + 0.3*importance + 0.2*access + 0.2*strength
+
+        Args:
+            memory_id: 记忆 ID
+
+        Returns:
+            包含各权重分量和 final_score 的字典
+        """
+        from .types import Importance
+
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM memories WHERE id = ?",
+            (memory_id,)
+        ).fetchone()
+        if not row:
+            return {
+                "recency_weight": 0.0,
+                "importance_weight": 0.0,
+                "access_weight": 0.0,
+                "strength_weight": 0.0,
+                "final_score": 0.0,
+            }
+
+        entry = self._row_to_entry(row)
+        now = time.time()
+
+        # 1. 近期度权重（7天半衰期的指数衰减）
+        time_since_access = now - entry.last_accessed_at if entry.last_accessed_at > 0 else now
+        recency_weight = math.exp(-time_since_access / (7 * 86400))
+
+        # 2. 重要度权重（0~1 归一化）
+        imp = entry.importance if isinstance(entry.importance, Importance) else Importance.from_string(str(entry.importance))
+        importance_weight = imp.to_int() / 3.0
+
+        # 3. 访问次数权重（对数缩放，防止高访问次数过度主导）
+        access_weight = min(1.0, math.log(entry.access_count + 1) / math.log(10))
+
+        # 4. 强度权重（直接使用，钳位到 0~1）
+        strength_weight = min(1.0, max(0.0, entry.strength))
+
+        # 5. 综合得分
+        final_score = (
+            0.3 * recency_weight
+            + 0.3 * importance_weight
+            + 0.2 * access_weight
+            + 0.2 * strength_weight
+        )
+
+        return {
+            "recency_weight": round(recency_weight, 4),
+            "importance_weight": round(importance_weight, 4),
+            "access_weight": round(access_weight, 4),
+            "strength_weight": round(strength_weight, 4),
+            "final_score": round(final_score, 4),
+        }
+
+    def auto_layer_consolidate(self, dry_run: bool = False) -> Dict[str, Any]:
+        """自动记忆分层整合（v5.5.5 核心功能）
+
+        遍历所有非 trash 记忆，根据综合权重（memory_decay_weights）自动调整记忆层级。
+
+        升级规则（从低层到高层）：
+        - SHORT_TERM → LONG_TERM: final_score >= 0.6 且 access_count >= 3
+        - LONG_TERM → PERMANENT: final_score >= 0.8 且 access_count >= 10 且 consolidation_count >= 2
+
+        降级规则（从高层到低层）：
+        - PERMANENT → LONG_TERM: final_score < 0.4 且 30天未访问
+        - LONG_TERM → SHORT_TERM: final_score < 0.2 且 14天未访问
+
+        低优先级标记：
+        - SHORT_TERM 且 final_score < 0.1 且 7天未访问 → metadata._low_priority = true
+
+        Args:
+            dry_run: 是否仅模拟不实际修改（True 时只返回统计结果）
+
+        Returns:
+            统计字典，包含：
+            - promoted: 升级的记忆数量
+            - demoted: 降级的记忆数量
+            - low_priority: 标记为低优先级的记忆数量
+            - dry_run: 是否为试运行
+            - details: 详细变更列表 [{id, action, from_layer, to_layer, final_score, reason}]
+        """
+        from .types import MemoryLayer
+
+        conn = self._get_conn()
+        now = time.time()
+
+        rows = conn.execute(
+            "SELECT * FROM memories WHERE category != 'trash'"
+        ).fetchall()
+
+        promoted = 0
+        demoted = 0
+        low_priority_count = 0
+        details = []
+
+        for row in rows:
+            entry = self._row_to_entry(row)
+            weights = self.memory_decay_weights(entry.id)
+            final_score = weights["final_score"]
+            time_since_access = now - entry.last_accessed_at if entry.last_accessed_at > 0 else float('inf')
+
+            layer = entry.layer if isinstance(entry.layer, MemoryLayer) else MemoryLayer.from_string(str(entry.layer))
+            new_layer = layer
+            action = None
+            reason = ""
+
+            # === 升级检查 ===
+            if layer == MemoryLayer.SHORT_TERM:
+                if final_score >= 0.6 and entry.access_count >= 3:
+                    new_layer = MemoryLayer.LONG_TERM
+                    action = "promote"
+                    reason = (f"SHORT_TERM→LONG_TERM: score={final_score}>=0.6, "
+                              f"access_count={entry.access_count}>=3")
+                    promoted += 1
+                # 低优先级标记（仅 SHORT_TERM 层）
+                elif final_score < 0.1 and time_since_access > 7 * 86400:
+                    action = "low_priority"
+                    reason = (f"SHORT_TERM low_priority: score={final_score}<0.1, "
+                              f"idle_days={time_since_access / 86400:.1f}>7")
+                    low_priority_count += 1
+
+            elif layer == MemoryLayer.LONG_TERM:
+                if final_score >= 0.8 and entry.access_count >= 10 and entry.consolidation_count >= 2:
+                    new_layer = MemoryLayer.PERMANENT
+                    action = "promote"
+                    reason = (f"LONG_TERM→PERMANENT: score={final_score}>=0.8, "
+                              f"access_count={entry.access_count}>=10, "
+                              f"consolidation={entry.consolidation_count}>=2")
+                    promoted += 1
+                elif final_score < 0.2 and time_since_access > 14 * 86400:
+                    new_layer = MemoryLayer.SHORT_TERM
+                    action = "demote"
+                    reason = (f"LONG_TERM→SHORT_TERM: score={final_score}<0.2, "
+                              f"idle_days={time_since_access / 86400:.1f}>14")
+                    demoted += 1
+
+            elif layer == MemoryLayer.PERMANENT:
+                if final_score < 0.4 and time_since_access > 30 * 86400:
+                    new_layer = MemoryLayer.LONG_TERM
+                    action = "demote"
+                    reason = (f"PERMANENT→LONG_TERM: score={final_score}<0.4, "
+                              f"idle_days={time_since_access / 86400:.1f}>30")
+                    demoted += 1
+
+            if action:
+                details.append({
+                    "id": entry.id,
+                    "action": action,
+                    "from_layer": layer.value,
+                    "to_layer": new_layer.value,
+                    "final_score": final_score,
+                    "reason": reason,
+                })
+
+                if not dry_run:
+                    if action in ("promote", "demote"):
+                        conn.execute(
+                            """UPDATE memories SET
+                                   layer = ?,
+                                   consolidation_count = consolidation_count + 1,
+                                   updated_at = ?
+                               WHERE id = ?""",
+                            (new_layer.value, now, entry.id)
+                        )
+                        priv_val = entry.privacy.value if hasattr(entry.privacy, 'value') else str(entry.privacy)
+                        self._add_audit(
+                            "consolidate", entry.id, "system", "", priv_val,
+                            details={
+                                "action": action,
+                                "from_layer": layer.value,
+                                "to_layer": new_layer.value,
+                                "score": final_score,
+                            }
+                        )
+                    elif action == "low_priority":
+                        metadata = dict(entry.metadata or {})
+                        metadata["_low_priority"] = True
+                        conn.execute(
+                            "UPDATE memories SET metadata = ?, updated_at = ? WHERE id = ?",
+                            (json.dumps(metadata, ensure_ascii=False), now, entry.id)
+                        )
+
+        if not dry_run:
+            conn.commit()
+
+        return {
+            "promoted": promoted,
+            "demoted": demoted,
+            "low_priority": low_priority_count,
+            "dry_run": dry_run,
+            "details": details,
+        }
+
+    def layered_retrieval(self, query: str, limit: int = 20,
+                          min_score: float = 0.1) -> List[MemoryEntry]:
+        """分层检索（v5.5.5 新检索入口）
+
+        按记忆层级优先级检索：PERMANENT（高）→ LONG_TERM（中）→ SHORT_TERM（低），
+        每层按比例分配检索名额，使用 fuzzy_search 作为基础匹配，
+        过滤低权重记忆后按综合权重排序返回。
+
+        分层配额：
+        - PERMANENT: limit * 0.3（高优先级）
+        - LONG_TERM: limit * 0.5（中优先级）
+        - SHORT_TERM: limit * 0.2（低优先级）
+
+        Args:
+            query: 搜索关键词
+            limit: 返回结果总数上限
+            min_score: 最低综合权重阈值（final_score 低于此值的记忆被过滤）
+
+        Returns:
+            按 final_score 降序排列的记忆条目列表，最多 limit 条
+        """
+        from .types import MemoryLayer
+
+        # 各层检索配置：(层级, 配额比例)
+        layer_config = [
+            (MemoryLayer.PERMANENT, 0.3),
+            (MemoryLayer.LONG_TERM, 0.5),
+            (MemoryLayer.SHORT_TERM, 0.2),
+        ]
+
+        collected = []  # List of (entry, final_score)
+        seen_ids = set()
+
+        for layer, ratio in layer_config:
+            layer_quota = max(1, int(limit * ratio))
+            # 多取一些，供 min_score 过滤后仍能凑够配额
+            search_results = self.fuzzy_search(query, layer=layer, limit=layer_quota * 3)
+
+            layer_count = 0
+            for result in search_results:
+                entry = result["entry"]
+                if entry.id in seen_ids:
+                    continue
+
+                weights = self.memory_decay_weights(entry.id)
+                final_score = weights["final_score"]
+
+                if final_score >= min_score:
+                    collected.append((entry, final_score))
+                    seen_ids.add(entry.id)
+                    layer_count += 1
+
+                if layer_count >= layer_quota:
+                    break
+
+        # 按 final_score 降序排列，取前 limit 条
+        collected.sort(key=lambda x: x[1], reverse=True)
+        return [entry for entry, _ in collected[:limit]]
+
+    def get_memory_layers_stats(self) -> Dict[str, Any]:
+        """获取各层记忆统计（v5.5.5 新增）
+
+        统计每层的数量、平均重要度、平均访问次数、平均遗忘分数。
+
+        Returns:
+            以层级 value 为 key 的统计字典，每层包含：
+            - count: 记忆数量
+            - avg_importance: 平均重要度（0~3 数值）
+            - avg_access_count: 平均访问次数
+            - avg_forgetting_score: 平均遗忘分数
+        """
+        from .types import MemoryLayer
+
+        conn = self._get_conn()
+
+        rows = conn.execute("""
+            SELECT layer,
+                   COUNT(*) as count,
+                   AVG(CASE importance
+                       WHEN 'LOW' THEN 0
+                       WHEN 'MEDIUM' THEN 1
+                       WHEN 'HIGH' THEN 2
+                       WHEN 'CRITICAL' THEN 3
+                       ELSE 1 END) as avg_importance,
+                   AVG(access_count) as avg_access_count,
+                   AVG(forgetting_score) as avg_forgetting_score
+            FROM memories
+            WHERE category != 'trash'
+            GROUP BY layer
+        """).fetchall()
+
+        stats: Dict[str, Any] = {}
+        for row in rows:
+            layer_val = row["layer"]
+            try:
+                layer = MemoryLayer(layer_val)
+            except ValueError:
+                continue
+            stats[layer.value] = {
+                "count": row["count"],
+                "avg_importance": round(row["avg_importance"] or 0.0, 4),
+                "avg_access_count": round(row["avg_access_count"] or 0.0, 4),
+                "avg_forgetting_score": round(row["avg_forgetting_score"] or 0.0, 4),
+            }
+
+        # 确保所有层都有记录（即使数量为 0）
+        for layer in MemoryLayer:
+            if layer.value not in stats:
+                stats[layer.value] = {
+                    "count": 0,
+                    "avg_importance": 0.0,
+                    "avg_access_count": 0.0,
+                    "avg_forgetting_score": 0.0,
+                }
+
+        return stats
+
     # ===== 最常访问 / 最近访问（v5.5.4 新增）=====
 
     def most_accessed(self, limit: int = 10,
@@ -14191,5 +14739,792 @@ class StorageEngine:
             "total_scenes": total_scenes,
             "total_lines": total_lines,
             "total_episodes": len(set(sc[1] for sc in scenes)),
+        }
+
+    # ===== v5.5.5 硬件自适应与缓存优化 =====
+
+    def get_hardware_profile(self) -> Dict[str, Any]:
+        """获取硬件性能画像（v5.5.5 新增）
+
+        返回当前设备的 CPU、内存、磁盘性能检测结果及推荐配置。
+        """
+        return self._hardware_profile
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """获取缓存统计（v5.5.5 新增）
+
+        返回记忆缓存的命中率、当前大小、最大容量等统计信息。
+        """
+        return self._memory_cache.stats()
+
+    def adapt_retrieval_params(self, base_limit: int = 20) -> Dict[str, Any]:
+        """根据硬件性能自适应调整检索参数（v5.5.5 新增）
+
+        低配设备自动关闭向量检索，仅使用 FTS + 模糊匹配，
+        同时降低返回数量和检索深度，减少资源占用。
+
+        Args:
+            base_limit: 基础检索数量上限
+
+        Returns:
+            调整后的参数字典：{limit, depth, use_vector, use_fts}
+        """
+        profile = self._hardware_profile
+        level = profile["performance_level"]
+
+        if level == "low":
+            # 低配：关闭向量检索，降低数量和深度
+            return {
+                "limit": min(base_limit, profile["recommended_limit"]),
+                "depth": profile["recommended_depth"],
+                "use_vector": False,
+                "use_fts": True,
+            }
+        elif level == "medium":
+            # 中配：启用 FTS + 向量检索，适度限制
+            return {
+                "limit": min(base_limit, profile["recommended_limit"]),
+                "depth": profile["recommended_depth"],
+                "use_vector": True,
+                "use_fts": True,
+            }
+        else:
+            # 高配：完整启用，较高上限
+            return {
+                "limit": max(base_limit, profile["recommended_limit"]),
+                "depth": profile["recommended_depth"],
+                "use_vector": True,
+                "use_fts": True,
+            }
+
+    # ===== 前置过滤与冲突检测（v5.5.5 新增）=====
+
+    def prefilter_memories(self, memory_ids: List[str],
+                           query: str = "") -> Dict[str, Any]:
+        """前置过滤：在将记忆送入大模型前，筛掉重复、低关联、过期的记忆。
+
+        v5.5.5 新增。
+
+        过滤规则（按顺序）：
+        1. 去重：内容相似度 >= 0.85 的记忆只保留最新的一条（Jaccard 相似度）。
+        2. 低关联过滤：如果提供了 query，计算记忆内容与 query 的关键词重叠率，得分 < 0.2 的移除。
+        3. 过期过滤：对于有 expires_at 字段且已过期的记忆直接移除。
+        4. 低质量过滤：内容长度 < 10 字符或纯空白的移除。
+
+        Args:
+            memory_ids: 候选记忆 ID 列表
+            query: 可选查询文本，用于相关性计算
+
+        Returns:
+            字典结构：
+            {
+                "kept": [...],          # 保留的记忆 ID
+                "removed": [...],       # 被过滤掉的记忆 ID
+                "reasons": {id: reason},  # 每条被移除的原因
+                "stats": {
+                    "total": int,
+                    "kept_count": int,
+                    "removed_count": int,
+                    "dedup": int,
+                    "low_relevance": int,
+                    "expired": int,
+                    "low_quality": int,
+                }
+            }
+        """
+        import re as _re
+
+        if not memory_ids:
+            return {
+                "kept": [],
+                "removed": [],
+                "reasons": {},
+                "stats": {
+                    "total": 0, "kept_count": 0, "removed_count": 0,
+                    "dedup": 0, "low_relevance": 0, "expired": 0, "low_quality": 0,
+                },
+            }
+
+        # v5.4.0 安全加固：ID 过滤
+        cleaned_ids = []
+        for mid in memory_ids:
+            if not mid or not isinstance(mid, str):
+                continue
+            cid = self._strip_control(mid)[:64]
+            if cid and cid not in cleaned_ids:
+                cleaned_ids.append(cid)
+
+        if not cleaned_ids:
+            return {
+                "kept": [],
+                "removed": [],
+                "reasons": {},
+                "stats": {
+                    "total": 0, "kept_count": 0, "removed_count": 0,
+                    "dedup": 0, "low_relevance": 0, "expired": 0, "low_quality": 0,
+                },
+            }
+
+        conn = self._get_conn()
+        total = len(cleaned_ids)
+        removed: List[str] = []
+        reasons: Dict[str, str] = {}
+
+        # 批量获取记忆
+        placeholders = ",".join("?" * len(cleaned_ids))
+        rows = conn.execute(
+            f"SELECT id, content, created_at, expires_at, tags, importance "
+            f"FROM memories WHERE id IN ({placeholders}) AND category != 'trash'",
+            cleaned_ids,
+        ).fetchall()
+
+        # 构建记忆字典
+        mem_map: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            content = row["content"] or ""
+            mem_map[row["id"]] = {
+                "id": row["id"],
+                "content": content,
+                "created_at": row["created_at"] or 0.0,
+                "expires_at": float(row["expires_at"]) if row["expires_at"] else 0.0,
+                "tags": self._safe_json_loads(row["tags"], []),
+                "importance": row["importance"] or "MEDIUM",
+            }
+
+        # 当前存活的记忆 ID 列表（按顺序处理）
+        current_ids = [mid for mid in cleaned_ids if mid in mem_map]
+
+        # ---- 辅助函数：Jaccard 相似度 ----
+        def _jaccard_sim(text_a: str, text_b: str) -> float:
+            """基于字符级 bigram 的 Jaccard 相似度"""
+            if not text_a or not text_b:
+                return 0.0
+            # 生成字符 bigram 集合
+            def _bigrams(t: str) -> set:
+                t = t.strip().lower()
+                if len(t) < 2:
+                    return {t} if t else set()
+                return {t[i:i + 2] for i in range(len(t) - 1)}
+            set_a = _bigrams(text_a)
+            set_b = _bigrams(text_b)
+            if not set_a or not set_b:
+                return 0.0
+            inter = len(set_a & set_b)
+            union = len(set_a | set_b)
+            return inter / union if union > 0 else 0.0
+
+        # ---- 辅助函数：关键词重叠率 ----
+        def _keyword_overlap(text: str, q: str) -> float:
+            """基于关键词（中文按字、英文按词）的重叠率"""
+            if not text or not q:
+                return 0.0
+            # 简单分词：中文单字 + 英文单词
+            def _tokens(t: str) -> set:
+                t = t.lower().strip()
+                tokens = set()
+                # 提取英文单词
+                for m in _re.findall(r'[a-zA-Z]{2,}', t):
+                    tokens.add(m)
+                # 提取中文字符
+                for ch in t:
+                    if '\u4e00' <= ch <= '\u9fff':
+                        tokens.add(ch)
+                # 提取数字
+                for m in _re.findall(r'\d+', t):
+                    tokens.add(m)
+                return tokens
+            t_tokens = _tokens(text)
+            q_tokens = _tokens(q)
+            if not q_tokens:
+                return 0.0
+            overlap = len(t_tokens & q_tokens)
+            return overlap / len(q_tokens) if len(q_tokens) > 0 else 0.0
+
+        # ---- 第 1 步：去重 ----
+        dedup_count = 0
+        deduped_ids: List[str] = []
+        # 按创建时间降序排列（最新在前），遍历时保留第一个，移除后续相似的
+        sorted_by_time = sorted(
+            current_ids,
+            key=lambda mid: mem_map[mid]["created_at"],
+            reverse=True,
+        )
+        seen_contents: List[str] = []
+        for mid in sorted_by_time:
+            content = mem_map[mid]["content"]
+            is_dup = False
+            for seen in seen_contents:
+                if _jaccard_sim(content, seen) >= 0.85:
+                    is_dup = True
+                    break
+            if is_dup:
+                removed.append(mid)
+                reasons[mid] = "dedup"
+                dedup_count += 1
+            else:
+                seen_contents.append(content)
+                deduped_ids.append(mid)
+        # 保持原有顺序
+        current_ids = [mid for mid in current_ids if mid in deduped_ids]
+
+        # ---- 第 2 步：低关联过滤 ----
+        low_rel_count = 0
+        if query:
+            query_clean = self._strip_control(query)
+            relevant_ids = []
+            for mid in current_ids:
+                content = mem_map[mid]["content"]
+                score = _keyword_overlap(content, query_clean)
+                if score < 0.2:
+                    removed.append(mid)
+                    reasons[mid] = "low_relevance"
+                    low_rel_count += 1
+                else:
+                    relevant_ids.append(mid)
+            current_ids = relevant_ids
+
+        # ---- 第 3 步：过期过滤 ----
+        expired_count = 0
+        now = time.time()
+        non_expired = []
+        for mid in current_ids:
+            exp = mem_map[mid]["expires_at"]
+            if exp > 0 and exp <= now:
+                removed.append(mid)
+                reasons[mid] = "expired"
+                expired_count += 1
+            else:
+                non_expired.append(mid)
+        current_ids = non_expired
+
+        # ---- 第 4 步：低质量过滤 ----
+        low_quality_count = 0
+        high_quality = []
+        for mid in current_ids:
+            content = mem_map[mid]["content"]
+            if len(content.strip()) < 10:
+                removed.append(mid)
+                reasons[mid] = "low_quality"
+                low_quality_count += 1
+            else:
+                high_quality.append(mid)
+        current_ids = high_quality
+
+        kept = current_ids
+        removed_count = len(removed)
+
+        return {
+            "kept": kept,
+            "removed": removed,
+            "reasons": reasons,
+            "stats": {
+                "total": total,
+                "kept_count": len(kept),
+                "removed_count": removed_count,
+                "dedup": dedup_count,
+                "low_relevance": low_rel_count,
+                "expired": expired_count,
+                "low_quality": low_quality_count,
+            },
+        }
+
+    def detect_conflicts(self, memory_ids: Optional[List[str]] = None
+                         ) -> List[Dict[str, Any]]:
+        """事实冲突检测：识别内容相互矛盾的记忆对。
+
+        v5.5.5 新增。
+
+        检测策略：
+        1. 数值/时间冲突：提取日期、数字，对比是否矛盾。
+        2. 时间线冲突：时间表述顺序不一致。
+        3. 事实陈述冲突：高度相似内容但一条含否定词。
+        4. 标签冲突：相同实体但标签完全相反。
+
+        Args:
+            memory_ids: 可选记忆 ID 列表，不传则检测所有非 trash 记忆
+
+        Returns:
+            冲突列表，每个元素：
+            {
+                "conflict_id": str,
+                "memory_a_id": str,
+                "memory_b_id": str,
+                "conflict_type": str,  # factual_contradiction / value_update / timeline_inconsistency
+                "confidence": float,   # 0~1
+                "description": str,
+                "suggested_action": str,  # merge / keep_newer / keep_higher_importance / review_needed
+            }
+        """
+        import re as _re
+
+        conn = self._get_conn()
+
+        # 获取候选记忆
+        if memory_ids:
+            cleaned_ids = []
+            for mid in memory_ids:
+                if not mid or not isinstance(mid, str):
+                    continue
+                cid = self._strip_control(mid)[:64]
+                if cid and cid not in cleaned_ids:
+                    cleaned_ids.append(cid)
+            if not cleaned_ids:
+                return []
+            placeholders = ",".join("?" * len(cleaned_ids))
+            rows = conn.execute(
+                f"SELECT id, content, created_at, updated_at, tags, importance, "
+                f"access_count FROM memories WHERE id IN ({placeholders}) "
+                f"AND category != 'trash' AND encrypted = 0",
+                cleaned_ids,
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, content, created_at, updated_at, tags, importance, "
+                "access_count FROM memories WHERE category != 'trash' AND encrypted = 0 "
+                "ORDER BY created_at DESC LIMIT 500"
+            ).fetchall()
+
+        if len(rows) < 2:
+            return []
+
+        # 构建记忆数据
+        memories: List[Dict[str, Any]] = []
+        for row in rows:
+            content = row["content"] or ""
+            if len(content.strip()) < 3:
+                continue
+            tags_val = self._safe_json_loads(row["tags"], [])
+            memories.append({
+                "id": row["id"],
+                "content": content,
+                "created_at": row["created_at"] or 0.0,
+                "updated_at": row["updated_at"] or 0.0,
+                "tags": list(tags_val) if isinstance(tags_val, (list, tuple)) else [],
+                "importance": row["importance"] or "MEDIUM",
+                "access_count": row["access_count"] or 0,
+            })
+
+        if len(memories) < 2:
+            return []
+
+        conflicts: List[Dict[str, Any]] = []
+        conflict_id_set = set()
+
+        # ---- 辅助函数 ----
+        def _make_cid(a_id: str, b_id: str) -> str:
+            """生成稳定的冲突 ID（按字典序排列避免重复）"""
+            if a_id < b_id:
+                return f"conflict_{a_id}_{b_id}"
+            return f"conflict_{b_id}_{a_id}"
+
+        def _add_conflict(a: Dict, b: Dict, ctype: str,
+                          confidence: float, desc: str, action: str):
+            cid = _make_cid(a["id"], b["id"])
+            if cid in conflict_id_set:
+                return  # 避免重复
+            conflict_id_set.add(cid)
+            conflicts.append({
+                "conflict_id": cid,
+                "memory_a_id": a["id"],
+                "memory_b_id": b["id"],
+                "conflict_type": ctype,
+                "confidence": round(confidence, 2),
+                "description": desc,
+                "suggested_action": action,
+            })
+
+        def _suggest_action(a: Dict, b: Dict) -> str:
+            """根据重要度和时间建议处理方式"""
+            imp_map = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+            a_imp = imp_map.get(a["importance"], 1)
+            b_imp = imp_map.get(b["importance"], 1)
+            imp_diff = abs(a_imp - b_imp)
+            time_diff = abs(a["created_at"] - b["created_at"])
+
+            if imp_diff >= 2:
+                return "keep_higher_importance"
+            if time_diff > 86400 * 7:  # 相差超过 7 天
+                return "keep_newer"
+            if imp_diff >= 1 and time_diff > 86400:
+                return "keep_newer"
+            return "review_needed"
+
+        def _extract_numbers(text: str) -> List[Tuple[str, float]]:
+            """提取文本中的数值及其上下文（前 2~4 个字符的关键词）"""
+            results = []
+            # 匹配 "关键词是/为/有/= 数字" 模式
+            pattern = _re.compile(
+                r'([\u4e00-\u9fa5A-Za-z]{1,6})(?:是|为|有|等于|=|：|:)\s*(\d+(?:\.\d+)?)'
+            )
+            for m in pattern.finditer(text):
+                keyword = m.group(1)
+                value = float(m.group(2))
+                results.append((keyword, value))
+            # 匹配 "数字+单位" 模式
+            unit_pattern = _re.compile(
+                r'(\d+(?:\.\d+)?)\s*(元|块|个|岁|年|月|天|小时|分钟|次|斤|公斤|克|千克|米|厘米|毫米|公里|km|kg|g|m|cm|mm)'
+            )
+            for m in unit_pattern.finditer(text):
+                value = float(m.group(1))
+                unit = m.group(2)
+                results.append((unit, value))
+            return results
+
+        def _has_negation(text: str) -> bool:
+            """检测文本中是否包含否定词"""
+            neg_words = ["不是", "没有", "不会", "不能", "不可", "并非", "非也",
+                         "没", "不", "否", "非", "无", "未", "莫", "勿", "别"]
+            # 优先检测长词
+            for w in sorted(neg_words, key=len, reverse=True):
+                if w in text:
+                    return True
+            return False
+
+        def _jaccard_sim(text_a: str, text_b: str) -> float:
+            """字符 bigram Jaccard 相似度"""
+            if not text_a or not text_b:
+                return 0.0
+            def _bigrams(t: str) -> set:
+                t = t.strip().lower()
+                if len(t) < 2:
+                    return {t} if t else set()
+                return {t[i:i + 2] for i in range(len(t) - 1)}
+            sa = _bigrams(text_a)
+            sb = _bigrams(text_b)
+            if not sa or not sb:
+                return 0.0
+            inter = len(sa & sb)
+            union = len(sa | sb)
+            return inter / union if union > 0 else 0.0
+
+        def _extract_dates(text: str) -> List[str]:
+            """提取文本中的日期表述"""
+            dates = []
+            # YYYY-MM-DD / YYYY/MM/DD
+            for m in _re.finditer(r'\d{4}[-/]\d{1,2}[-/]\d{1,2}', text):
+                dates.append(m.group())
+            # MM月DD日
+            for m in _re.finditer(r'\d{1,2}月\d{1,2}日', text):
+                dates.append(m.group())
+            # 相对时间
+            rel_patterns = ["今天", "昨天", "前天", "上周", "本周", "下周",
+                            "上个月", "这个月", "下个月", "去年", "今年", "明年"]
+            for rp in rel_patterns:
+                if rp in text:
+                    dates.append(rp)
+            return dates
+
+        # 相反标签对（用于标签冲突检测）
+        opposite_tag_pairs = [
+            {"happy", "sad"},
+            {"good", "bad"},
+            {"positive", "negative"},
+            {"true", "false"},
+            {"success", "failure"},
+            {"like", "dislike"},
+            {"开心", "难过"},
+            {"好", "坏"},
+            {"对", "错"},
+            {"是", "否"},
+            {"真", "假"},
+            {"成功", "失败"},
+            {"喜欢", "讨厌"},
+            {"记得", "忘记"},
+        ]
+
+        # ---- 两两比较 ----
+        n = len(memories)
+        for i in range(n):
+            for j in range(i + 1, n):
+                mem_a = memories[i]
+                mem_b = memories[j]
+                content_a = mem_a["content"]
+                content_b = mem_b["content"]
+
+                # 跳过完全相同的（已由去重处理）
+                if content_a == content_b:
+                    continue
+
+                sim = _jaccard_sim(content_a, content_b)
+
+                # ---- 1. 数值/时间冲突检测 ----
+                nums_a = _extract_numbers(content_a)
+                nums_b = _extract_numbers(content_b)
+                value_conflicts = []
+                for kw_a, val_a in nums_a:
+                    for kw_b, val_b in nums_b:
+                        if kw_a == kw_b and val_a != val_b:
+                            # 数值差异比例
+                            if val_a > 0 and val_b > 0:
+                                ratio = min(val_a, val_b) / max(val_a, val_b)
+                                if ratio < 0.9:  # 差异超过 10%
+                                    value_conflicts.append((kw_a, val_a, val_b))
+
+                if value_conflicts and sim >= 0.3:
+                    kw, va, vb = value_conflicts[0]
+                    confidence = min(0.95, 0.5 + sim * 0.3 + 0.15 * len(value_conflicts))
+                    desc = f"数值冲突：关键词「{kw}」在两条记忆中分别为 {va} 和 {vb}"
+                    action = _suggest_action(mem_a, mem_b)
+                    _add_conflict(mem_a, mem_b, "value_update", confidence, desc, action)
+                    continue  # 已检测到冲突，跳过后续检测避免重复
+
+                # ---- 2. 时间线冲突检测 ----
+                dates_a = _extract_dates(content_a)
+                dates_b = _extract_dates(content_b)
+                if dates_a and dates_b and sim >= 0.25:
+                    # 检测是否存在互斥的相对时间表述
+                    rel_exclusive_pairs = [
+                        ("上周", "本周"), ("上周", "下周"),
+                        ("上个月", "这个月"), ("上个月", "下个月"),
+                        ("去年", "今年"), ("去年", "明年"),
+                        ("昨天", "今天"), ("前天", "昨天"),
+                    ]
+                    has_timeline_conflict = False
+                    for ra, rb in rel_exclusive_pairs:
+                        if (ra in content_a and rb in content_b) or \
+                           (ra in content_b and rb in content_a):
+                            has_timeline_conflict = True
+                            break
+                    if has_timeline_conflict:
+                        confidence = min(0.85, 0.4 + sim * 0.4)
+                        desc = "时间线冲突：两条记忆中的时间表述不一致"
+                        action = _suggest_action(mem_a, mem_b)
+                        _add_conflict(mem_a, mem_b, "timeline_inconsistency",
+                                      confidence, desc, action)
+                        continue
+
+                # ---- 3. 事实陈述冲突（否定词检测）----
+                if sim >= 0.6:
+                    neg_a = _has_negation(content_a)
+                    neg_b = _has_negation(content_b)
+                    if neg_a != neg_b:  # 一条有否定词，一条没有
+                        confidence = min(0.9, 0.5 + sim * 0.4)
+                        desc = "事实陈述冲突：两条记忆内容高度相似但一条含否定表述"
+                        action = _suggest_action(mem_a, mem_b)
+                        _add_conflict(mem_a, mem_b, "factual_contradiction",
+                                      confidence, desc, action)
+                        continue
+
+                # ---- 4. 标签冲突检测 ----
+                tags_a = set(t.lower() for t in mem_a["tags"] if isinstance(t, str))
+                tags_b = set(t.lower() for t in mem_b["tags"] if isinstance(t, str))
+                if tags_a and tags_b:
+                    has_tag_conflict = False
+                    for pair in opposite_tag_pairs:
+                        pair_lower = {p.lower() for p in pair}
+                        if pair_lower.issubset(tags_a | tags_b) and \
+                           not pair_lower.issubset(tags_a) and \
+                           not pair_lower.issubset(tags_b):
+                            # 一对相反标签分别在两条记忆中
+                            if (pair_lower & tags_a) and (pair_lower & tags_b):
+                                has_tag_conflict = True
+                                break
+                    if has_tag_conflict and sim >= 0.2:
+                        confidence = min(0.75, 0.35 + sim * 0.3)
+                        desc = "标签冲突：两条记忆包含相反的情感/状态标签"
+                        action = _suggest_action(mem_a, mem_b)
+                        _add_conflict(mem_a, mem_b, "factual_contradiction",
+                                      confidence, desc, action)
+
+        # 按置信度降序排列
+        conflicts.sort(key=lambda c: c["confidence"], reverse=True)
+        return conflicts
+
+    def resolve_conflict(self, conflict: Dict[str, Any],
+                         strategy: str = "auto") -> Optional[str]:
+        """冲突解决：根据策略处理冲突。
+
+        v5.5.5 新增。
+
+        strategy 可选：
+        - "auto": 自动选择（优先更新的 > 重要度高的 > 访问次数多的）
+        - "keep_a": 保留 memory_a，将 memory_b 移入 trash
+        - "keep_b": 保留 memory_b，将 memory_a 移入 trash
+        - "merge": 合并两条（复用 merge_memories 逻辑，较新的作为 target）
+
+        Args:
+            conflict: 冲突字典，需包含 memory_a_id 和 memory_b_id
+            strategy: 解决策略
+
+        Returns:
+            保留的记忆 ID，失败返回 None
+        """
+        if not conflict or not isinstance(conflict, dict):
+            return None
+
+        a_id = conflict.get("memory_a_id", "")
+        b_id = conflict.get("memory_b_id", "")
+
+        if not a_id or not b_id:
+            return None
+
+        # v5.4.0 安全加固
+        a_id = self._strip_control(a_id)[:64]
+        b_id = self._strip_control(b_id)[:64]
+        strategy = self._strip_control(strategy)[:32].lower()
+
+        if a_id == b_id:
+            return None
+
+        conn = self._get_conn()
+        now = time.time()
+
+        # 获取两条记忆
+        row_a = conn.execute(
+            "SELECT * FROM memories WHERE id = ? AND category != 'trash'",
+            (a_id,)
+        ).fetchone()
+        row_b = conn.execute(
+            "SELECT * FROM memories WHERE id = ? AND category != 'trash'",
+            (b_id,)
+        ).fetchone()
+
+        if not row_a and not row_b:
+            return None
+        if not row_a:
+            return b_id
+        if not row_b:
+            return a_id
+
+        entry_a = self._row_to_entry(row_a)
+        entry_b = self._row_to_entry(row_b)
+
+        if strategy == "keep_a":
+            # 保留 A，删除 B
+            conn.execute(
+                "UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
+                (now, b_id)
+            )
+            # 审计
+            self._add_audit("delete", b_id, "", "", entry_b.privacy.value,
+                            details={"reason": "conflict_resolved",
+                                     "strategy": "keep_a",
+                                     "kept_id": a_id})
+            conn.commit()
+            return a_id
+
+        elif strategy == "keep_b":
+            # 保留 B，删除 A
+            conn.execute(
+                "UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
+                (now, a_id)
+            )
+            self._add_audit("delete", a_id, "", "", entry_a.privacy.value,
+                            details={"reason": "conflict_resolved",
+                                     "strategy": "keep_b",
+                                     "kept_id": b_id})
+            conn.commit()
+            return b_id
+
+        elif strategy == "merge":
+            # 合并：较新的作为 target，较旧的作为 source
+            if entry_a.created_at >= entry_b.created_at:
+                target_id, source_id = a_id, b_id
+            else:
+                target_id, source_id = b_id, a_id
+            result = self.merge_memories(source_id, target_id)
+            return target_id if result else None
+
+        elif strategy == "auto":
+            # 自动选择：更新的 > 重要度高的 > 访问次数多的
+            imp_map = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+
+            a_newer = entry_a.updated_at >= entry_b.updated_at
+            a_higher_imp = imp_map.get(str(entry_a.importance), 1) > \
+                           imp_map.get(str(entry_b.importance), 1)
+            a_more_access = entry_a.access_count >= entry_b.access_count
+
+            # 评分：更新时间权重最高，其次重要度，最后访问次数
+            score_a = (3 if a_newer else 0) + (2 if a_higher_imp else 0) + (1 if a_more_access else 0)
+            score_b = (3 if not a_newer else 0) + (2 if not a_higher_imp else 0) + (1 if not a_more_access else 0)
+
+            if score_a >= score_b:
+                keep_id, remove_id = a_id, b_id
+                keep_entry, remove_entry = entry_a, entry_b
+            else:
+                keep_id, remove_id = b_id, a_id
+                keep_entry, remove_entry = entry_b, entry_a
+
+            conn.execute(
+                "UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
+                (now, remove_id)
+            )
+            self._add_audit("delete", remove_id, "", "", remove_entry.privacy.value,
+                            details={"reason": "conflict_resolved",
+                                     "strategy": "auto",
+                                     "kept_id": keep_id,
+                                     "score_kept": max(score_a, score_b),
+                                     "score_removed": min(score_a, score_b)})
+            conn.commit()
+            return keep_id
+
+        else:
+            logger.warning("Unknown conflict resolution strategy: %s", strategy)
+            return None
+
+    def get_conflict_stats(self) -> Dict[str, Any]:
+        """获取冲突统计：总冲突数、各类型数量、待处理数。
+
+        v5.5.5 新增。
+
+        Returns:
+            冲突统计字典：
+            {
+                "total_conflicts": int,
+                "by_type": {
+                    "factual_contradiction": int,
+                    "value_update": int,
+                    "timeline_inconsistency": int,
+                },
+                "high_confidence": int,    # confidence >= 0.8
+                "medium_confidence": int,  # 0.5 <= confidence < 0.8
+                "low_confidence": int,     # confidence < 0.5
+                "pending_review": int,     # 建议人工审核的数量
+                "total_memories_checked": int,
+            }
+        """
+        conn = self._get_conn()
+
+        # 统计记忆总数（非 trash、非加密）
+        total_mem = conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE category != 'trash' AND encrypted = 0"
+        ).fetchone()[0]
+
+        # 检测所有冲突
+        conflicts = self.detect_conflicts()
+
+        total = len(conflicts)
+        by_type = {
+            "factual_contradiction": 0,
+            "value_update": 0,
+            "timeline_inconsistency": 0,
+        }
+        high_conf = 0
+        medium_conf = 0
+        low_conf = 0
+        pending_review = 0
+
+        for c in conflicts:
+            ctype = c.get("conflict_type", "")
+            if ctype in by_type:
+                by_type[ctype] += 1
+            conf = c.get("confidence", 0.0)
+            if conf >= 0.8:
+                high_conf += 1
+            elif conf >= 0.5:
+                medium_conf += 1
+            else:
+                low_conf += 1
+            if c.get("suggested_action") == "review_needed":
+                pending_review += 1
+
+        return {
+            "total_conflicts": total,
+            "by_type": by_type,
+            "high_confidence": high_conf,
+            "medium_confidence": medium_conf,
+            "low_confidence": low_conf,
+            "pending_review": pending_review,
+            "total_memories_checked": total_mem,
         }
 
