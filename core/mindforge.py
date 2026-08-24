@@ -1713,6 +1713,164 @@ class MindForge:
         
         return count
 
+    # ===== 记忆合并（v5.5.4 新增）=====
+
+    def merge_memories(self, source_id: str, target_id: str,
+                       actor: str = "", session_id: str = ""):
+        """合并两条记忆
+
+        v5.5.4 新增。
+
+        合并规则：
+        - 内容：按行去重合并（target 在前，source 在后）
+        - 标签：取并集
+        - 重要性：取较高值
+        - 层级：取较深层级
+        - 访问次数：相加
+        - 元数据：合并（target 优先）
+        - source 记忆移入回收站
+
+        Args:
+            source_id: 源记忆 ID（将被移入回收站）
+            target_id: 目标记忆 ID（保留并吸收内容）
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            合并后的目标记忆条目，失败返回 None
+        """
+        result = self._storage.merge_memories(source_id, target_id, actor, session_id)
+        if result:
+            # 更新内存索引
+            try:
+                self._index.remove_memory(source_id)
+            except Exception:
+                pass
+            try:
+                self._index.remove_memory(target_id)
+                self._index.add_memory(target_id, result.content, result.category, result.tags or [])
+            except Exception:
+                pass
+            # 发布事件（容错：EventBus 可能未初始化）
+            try:
+                self._event_bus.publish("memory_updated", {
+                    "memory_id": target_id,
+                    "actor": actor,
+                    "session_id": session_id,
+                    "merge_from": source_id,
+                })
+                self._event_bus.publish("memory_deleted", {
+                    "memory_id": source_id,
+                    "actor": actor,
+                    "session_id": session_id,
+                    "soft_delete": True,
+                    "merge_into": target_id,
+                })
+            except (AttributeError, Exception):
+                pass
+        return result
+
+    # ===== 最常访问 / 最近访问（v5.5.4 新增）=====
+
+    def most_accessed(self, limit: int = 10,
+                      category: Optional[str] = None,
+                      layer: Optional[MemoryLayer] = None) -> list:
+        """按访问次数降序返回最常访问的记忆
+
+        v5.5.4 新增。
+
+        Args:
+            limit: 返回数量上限
+            category: 按分类筛选（可选）
+            layer: 按层级筛选（可选）
+
+        Returns:
+            记忆条目列表
+        """
+        return self._storage.most_accessed(limit, category, layer)
+
+    def recently_accessed(self, limit: int = 10,
+                          category: Optional[str] = None,
+                          layer: Optional[MemoryLayer] = None) -> list:
+        """按最近访问时间降序返回最近访问的记忆
+
+        v5.5.4 新增。
+
+        Args:
+            limit: 返回数量上限
+            category: 按分类筛选（可选）
+            layer: 按层级筛选（可选）
+
+        Returns:
+            记忆条目列表
+        """
+        return self._storage.recently_accessed(limit, category, layer)
+
+    # ===== 按筛选批量更新（v5.5.4 新增）=====
+
+    def bulk_update_by_filter(self,
+                              category: Optional[str] = None,
+                              tag: Optional[str] = None,
+                              updates: Optional[Dict[str, Any]] = None,
+                              actor: str = "",
+                              session_id: str = "") -> int:
+        """按分类或标签筛选后批量更新记忆
+
+        v5.5.4 新增。
+
+        支持的更新字段：
+        - new_category: 新分类
+        - new_layer: 新层级
+        - new_importance: 新重要性 (0-10)
+        - new_privacy: 新隐私级别
+        - add_tags: 要添加的标签列表
+        - remove_tags: 要移除的标签列表
+        - starred: 是否星标 (bool)
+        - pinned: 是否置顶 (bool)
+
+        Args:
+            category: 按分类筛选
+            tag: 按标签筛选
+            updates: 要更新的字段字典
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            更新的记忆条数
+        """
+        count = self._storage.bulk_update_by_filter(category, tag, updates, actor, session_id)
+        if count > 0:
+            # 标记索引需要重新水合（批量更新可能影响大量条目）
+            self._index._dirty = True
+        return count
+
+    # ===== 标签统计（v5.5.4 新增）=====
+
+    def tag_stats(self, limit: int = 20) -> Dict[str, Any]:
+        """标签统计信息
+
+        v5.5.4 新增。
+
+        Args:
+            limit: Top 标签数量
+
+        Returns:
+            统计字典
+        """
+        return self._storage.tag_stats(limit)
+
+    # ===== 索引一致性检查（v5.5.4 新增）=====
+
+    def check_index_consistency(self) -> Dict[str, Any]:
+        """检查 FTS5 索引与主表的一致性
+
+        v5.5.4 新增。
+
+        Returns:
+            检查结果字典
+        """
+        return self._storage.check_index_consistency()
+
     # ===== 标签批量管理（v5.2.0 新增）=====
 
     def batch_add_tags(self, entry_ids: List[str], tags: List[str],

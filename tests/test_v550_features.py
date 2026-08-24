@@ -447,7 +447,9 @@ class TestBugFixes:
         result = self.mf.drama_recommend_v2(genre="SUSPENSE", mode="all")
         assert isinstance(result, list)
 
-    def test_version_is_553(self):
-        """验证版本号已更新为 5.5.3"""
+    def test_version_semver_format(self):
+        """验证版本号符合 semver 格式（v5.5.4 动态校验）"""
+        import re
         from MindForge import __version__
-        assert __version__ == "5.5.3"
+        assert re.match(r'^\d+\.\d+\.\d+$', __version__), \
+            f"版本号格式不正确: {__version__}"

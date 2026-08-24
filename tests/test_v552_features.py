@@ -24,26 +24,33 @@ def mf():
 
 
 class TestVersion:
-    """v5.5.2 版本校验"""
+    """版本校验（动态：semver 格式 + pyproject.toml 一致性）
 
-    def test_version_is_553(self):
-        assert __version__ == "5.5.3"
+    v5.5.4 修复：不再硬编码版本号，改为校验格式和一致性。
+    """
 
-    def test_pyproject_version(self):
+    def test_version_semver_format(self):
+        """版本号符合 semver 格式 (X.Y.Z)"""
+        import re
+        assert re.match(r'^\d+\.\d+\.\d+$', __version__), \
+            f"版本号格式不正确: {__version__}"
+
+    def test_pyproject_version_matches(self):
+        """pyproject.toml 版本与 __version__ 一致"""
         from pathlib import Path
         pyproject = Path(__file__).parent.parent / "pyproject.toml"
         try:
             import tomllib
             with open(pyproject, "rb") as f:
                 data = tomllib.load(f)
-            assert data["project"]["version"] == "5.5.3"
+            assert data["project"]["version"] == __version__
         except ModuleNotFoundError:
             # Python < 3.11: tomllib not available, fallback to regex
             import re
             text = pyproject.read_text(encoding="utf-8")
             m = re.search(r'version\s*=\s*"([^"]+)"', text)
             assert m is not None
-            assert m.group(1) == "5.5.3"
+            assert m.group(1) == __version__
 
 
 class TestTTLExpiration:

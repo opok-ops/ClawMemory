@@ -1546,9 +1546,12 @@ class StorageEngine:
 
     def count_memories(self, category: Optional[str] = None,
                        layer: Optional[MemoryLayer] = None) -> int:
-        """统计记忆数量"""
+        """统计记忆数量
+
+        v5.5.4 修复：排除软删除（category='trash'）的记忆。
+        """
         conn = self._get_conn()
-        query = "SELECT COUNT(*) FROM memories WHERE 1=1"
+        query = "SELECT COUNT(*) FROM memories WHERE category != 'trash'"
         params = []
 
         if category:
@@ -1561,34 +1564,53 @@ class StorageEngine:
         return conn.execute(query, params).fetchone()[0]
 
     def get_stats(self) -> dict:
-        """获取统计信息"""
+        """获取统计信息
+
+        v5.5.4 修复：排除软删除（category='trash'）的记忆，与 get_detailed_stats 保持一致，
+        并新增 trash_count 字段。
+        """
         conn = self._get_conn()
-        total = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        total = conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE category != 'trash'"
+        ).fetchone()[0]
+
+        trash_count = conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE category = 'trash'"
+        ).fetchone()[0]
 
         by_privacy = {}
-        for row in conn.execute("SELECT privacy, COUNT(*) FROM memories GROUP BY privacy"):
+        for row in conn.execute(
+            "SELECT privacy, COUNT(*) FROM memories WHERE category != 'trash' GROUP BY privacy"
+        ):
             by_privacy[row[0]] = row[1]
 
         by_layer = {}
-        for row in conn.execute("SELECT layer, COUNT(*) FROM memories GROUP BY layer"):
+        for row in conn.execute(
+            "SELECT layer, COUNT(*) FROM memories WHERE category != 'trash' GROUP BY layer"
+        ):
             by_layer[row[0]] = row[1]
 
         by_importance = {}
-        for row in conn.execute("SELECT importance, COUNT(*) FROM memories GROUP BY importance"):
+        for row in conn.execute(
+            "SELECT importance, COUNT(*) FROM memories WHERE category != 'trash' GROUP BY importance"
+        ):
             by_importance[row[0]] = row[1]
 
         top_categories = {}
         for row in conn.execute(
-            "SELECT category, COUNT(*) as c FROM memories GROUP BY category ORDER BY c DESC LIMIT 10"
+            "SELECT category, COUNT(*) as c FROM memories WHERE category != 'trash' "
+            "GROUP BY category ORDER BY c DESC LIMIT 10"
         ):
             top_categories[row[0]] = row[1]
 
         starred_count = conn.execute(
-            "SELECT COUNT(*) FROM memories WHERE starred = 1"
+            "SELECT COUNT(*) FROM memories WHERE starred = 1 AND category != 'trash'"
         ).fetchone()[0]
 
         tag_counts = {}
-        for row in conn.execute("SELECT tags FROM memories"):
+        for row in conn.execute(
+            "SELECT tags FROM memories WHERE category != 'trash'"
+        ):
             if row[0]:
                 try:
                     tags = json.loads(row[0])
@@ -1603,6 +1625,7 @@ class StorageEngine:
 
         return {
             "total": total,
+            "trash_count": trash_count,
             "db_size_bytes": db_size,
             "by_privacy": by_privacy,
             "by_layer": by_layer,
@@ -7215,6 +7238,499 @@ class StorageEngine:
             count += 1
         conn.commit()
         return count
+
+    # ===== 记忆合并（v5.5.4 新增）=====
+
+    def merge_memories(self, source_id: str, target_id: str,
+                       actor: str = "", session_id: str = "") -> Optional[MemoryEntry]:
+        """合并两条记忆
+
+        v5.5.4 新增。
+
+        合并规则：
+        - 内容：按行去重合并（target 在前，source 在后）
+        - 标签：取并集
+        - 重要性：取较高值
+        - 层级：取较深层级（数值更大）
+        - 访问次数：相加
+        - 元数据：合并（target 优先，source 补充不存在的 key）
+        - source 记忆移入回收站（软删除）
+
+        Args:
+            source_id: 源记忆 ID（将被移入回收站）
+            target_id: 目标记忆 ID（保留并吸收内容）
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            合并后的目标记忆条目，失败返回 None
+        """
+        if not source_id or not target_id or source_id == target_id:
+            return None
+        # v5.4.0 安全加固
+        source_id = self._strip_control(source_id)[:64]
+        target_id = self._strip_control(target_id)[:64]
+        actor = self._strip_control(actor)[:128]
+        session_id = self._strip_control(session_id)[:128]
+
+        conn = self._get_conn()
+        now = time.time()
+
+        source_row = conn.execute(
+            "SELECT * FROM memories WHERE id = ? AND category != 'trash'",
+            (source_id,)
+        ).fetchone()
+        target_row = conn.execute(
+            "SELECT * FROM memories WHERE id = ? AND category != 'trash'",
+            (target_id,)
+        ).fetchone()
+        if not source_row or not target_row:
+            return None
+
+        source = self._row_to_entry(source_row)
+        target = self._row_to_entry(target_row)
+
+        # 内容按行去重合并
+        target_lines = target.content.splitlines() if target.content else []
+        source_lines = source.content.splitlines() if source.content else []
+        seen = set(target_lines)
+        merged_lines = list(target_lines)
+        for line in source_lines:
+            if line and line not in seen:
+                merged_lines.append(line)
+                seen.add(line)
+        merged_content = "\n".join(merged_lines)
+
+        # 标签取并集
+        target_tags = set(target.tags or [])
+        source_tags = set(source.tags or [])
+        merged_tags = list(target_tags | source_tags)
+
+        # 重要性取高
+        from .types import Importance
+        source_imp = source.importance if isinstance(source.importance, Importance) else Importance(str(source.importance))
+        target_imp = target.importance if isinstance(target.importance, Importance) else Importance(str(target.importance))
+        merged_importance = target_imp if target_imp.to_int() >= source_imp.to_int() else source_imp
+        merged_importance_val = merged_importance.value
+
+        # 层级取深（数值更大的层级更深）
+        from .types import MemoryLayer
+        source_layer_val = source.layer.value if isinstance(source.layer, MemoryLayer) else source.layer
+        target_layer_val = target.layer.value if isinstance(target.layer, MemoryLayer) else target.layer
+        merged_layer_val = max(source_layer_val, target_layer_val)
+        merged_layer = MemoryLayer(merged_layer_val)
+
+        # 访问次数相加
+        merged_access_count = source.access_count + target.access_count
+
+        # 元数据合并（target 优先）
+        merged_metadata = dict(source.metadata or {})
+        merged_metadata.update(target.metadata or {})
+
+        # 平均 strength 和 forgetting_score
+        merged_strength = (source.strength + target.strength) / 2
+        merged_forgetting = (source.forgetting_score + target.forgetting_score) / 2
+
+        # 更新目标记忆
+        conn.execute(
+            """UPDATE memories SET
+                   content = ?, tags = ?, importance = ?, layer = ?,
+                   access_count = ?, metadata = ?, strength = ?,
+                   forgetting_score = ?, updated_at = ?
+               WHERE id = ?""",
+            (
+                merged_content,
+                json.dumps(merged_tags, ensure_ascii=False),
+                merged_importance_val,
+                merged_layer.value,
+                merged_access_count,
+                json.dumps(merged_metadata, ensure_ascii=False),
+                merged_strength,
+                merged_forgetting,
+                now,
+                target_id,
+            )
+        )
+
+        # 源记忆移入回收站
+        conn.execute(
+            "UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
+            (now, source_id)
+        )
+
+        # 审计日志
+        self._add_audit("update", target_id, actor, session_id, target.privacy.value,
+                         details={"action": "merge_from", "source_id": source_id})
+        self._add_audit("delete", source_id, actor, session_id, source.privacy.value,
+                         details={"reason": "merge_into", "target_id": target_id})
+
+        conn.commit()
+
+        # 返回更新后的目标记忆
+        updated_row = conn.execute(
+            "SELECT * FROM memories WHERE id = ?", (target_id,)
+        ).fetchone()
+        return self._row_to_entry(updated_row) if updated_row else None
+
+    # ===== 最常访问 / 最近访问（v5.5.4 新增）=====
+
+    def most_accessed(self, limit: int = 10,
+                      category: Optional[str] = None,
+                      layer: Optional[MemoryLayer] = None) -> List[MemoryEntry]:
+        """按访问次数降序返回最常访问的记忆
+
+        v5.5.4 新增。
+
+        Args:
+            limit: 返回数量上限
+            category: 按分类筛选（可选）
+            layer: 按层级筛选（可选）
+
+        Returns:
+            记忆条目列表，按 access_count 降序
+        """
+        conn = self._get_conn()
+        query = "SELECT * FROM memories WHERE category != 'trash'"
+        params = []
+
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        if layer:
+            query += " AND layer = ?"
+            params.append(layer.value)
+
+        query += " ORDER BY access_count DESC, last_accessed_at DESC LIMIT ?"
+        params.append(max(1, min(limit, 1000)))
+
+        rows = conn.execute(query, params).fetchall()
+        return [self._row_to_entry(row) for row in rows]
+
+    def recently_accessed(self, limit: int = 10,
+                          category: Optional[str] = None,
+                          layer: Optional[MemoryLayer] = None) -> List[MemoryEntry]:
+        """按最近访问时间降序返回最近访问的记忆
+
+        v5.5.4 新增。
+
+        Args:
+            limit: 返回数量上限
+            category: 按分类筛选（可选）
+            layer: 按层级筛选（可选）
+
+        Returns:
+            记忆条目列表，按 last_accessed_at 降序
+        """
+        conn = self._get_conn()
+        query = "SELECT * FROM memories WHERE category != 'trash' AND last_accessed_at > 0"
+        params = []
+
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        if layer:
+            query += " AND layer = ?"
+            params.append(layer.value)
+
+        query += " ORDER BY last_accessed_at DESC LIMIT ?"
+        params.append(max(1, min(limit, 1000)))
+
+        rows = conn.execute(query, params).fetchall()
+        return [self._row_to_entry(row) for row in rows]
+
+    # ===== 按筛选批量更新（v5.5.4 新增）=====
+
+    def bulk_update_by_filter(self,
+                              category: Optional[str] = None,
+                              tag: Optional[str] = None,
+                              updates: Optional[Dict[str, Any]] = None,
+                              actor: str = "",
+                              session_id: str = "") -> int:
+        """按分类或标签筛选后批量更新记忆
+
+        v5.5.4 新增。
+
+        支持的更新字段（updates dict 的 key）：
+        - new_category: 新分类
+        - new_layer: 新层级 (MemoryLayer)
+        - new_importance: 新重要性 (0-10)
+        - new_privacy: 新隐私级别 (PrivacyLevel)
+        - add_tags: 要添加的标签列表
+        - remove_tags: 要移除的标签列表
+        - starred: 是否星标 (bool)
+        - pinned: 是否置顶 (bool)
+
+        Args:
+            category: 按分类筛选（二选一或同时使用）
+            tag: 按标签筛选（二选一或同时使用）
+            updates: 要更新的字段字典
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            更新的记忆条数
+        """
+        if not updates or (not category and not tag):
+            return 0
+        # v5.4.0 安全加固
+        if category:
+            category = self._strip_control(category)[:64]
+        if tag:
+            tag = self._strip_control(tag)[:64]
+        actor = self._strip_control(actor)[:128]
+        session_id = self._strip_control(session_id)[:128]
+
+        from .types import MemoryLayer, PrivacyLevel, Importance
+
+        conn = self._get_conn()
+        now = time.time()
+
+        # 先筛选匹配的记忆
+        query = "SELECT * FROM memories WHERE category != 'trash'"
+        params = []
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        if tag:
+            query += " AND tags LIKE ?"
+            params.append(f'%"{tag}"%')
+
+        rows = conn.execute(query, params).fetchall()
+        if not rows:
+            return 0
+
+        count = 0
+        for row in rows:
+            entry = self._row_to_entry(row)
+
+            # 如果按 tag 筛选，在 Python 端再精确验证
+            if tag:
+                if tag not in (entry.tags or []):
+                    continue
+
+            # 构建更新字段
+            new_entry_tags = list(entry.tags or [])
+            new_category = entry.category
+            new_layer = entry.layer
+            new_importance = entry.importance
+            new_privacy = entry.privacy
+            new_starred = entry.starred
+            new_pinned = entry.pinned
+            new_metadata = dict(entry.metadata or {})
+
+            if "new_category" in updates and updates["new_category"]:
+                new_category = self._strip_control(updates["new_category"])[:64]
+
+            if "new_layer" in updates and updates["new_layer"] is not None:
+                new_layer = updates["new_layer"]
+
+            if "new_importance" in updates and updates["new_importance"] is not None:
+                new_imp_val = updates["new_importance"]
+                if isinstance(new_imp_val, Importance):
+                    new_importance = new_imp_val
+                else:
+                    try:
+                        new_importance = Importance(str(new_imp_val).upper())
+                    except ValueError:
+                        # 如果是数字，尝试映射到最近的级别
+                        try:
+                            level = int(float(new_imp_val))
+                            if level <= 0:
+                                new_importance = Importance.LOW
+                            elif level == 1:
+                                new_importance = Importance.MEDIUM
+                            elif level == 2:
+                                new_importance = Importance.HIGH
+                            else:
+                                new_importance = Importance.CRITICAL
+                        except (ValueError, TypeError):
+                            new_importance = entry.importance
+
+            if "new_privacy" in updates and updates["new_privacy"] is not None:
+                new_privacy = updates["new_privacy"]
+
+            if "add_tags" in updates and updates["add_tags"]:
+                for t in updates["add_tags"]:
+                    t_clean = self._strip_control(t)[:64]
+                    if t_clean and t_clean not in new_entry_tags:
+                        new_entry_tags.append(t_clean)
+
+            if "remove_tags" in updates and updates["remove_tags"]:
+                for t in updates["remove_tags"]:
+                    if t in new_entry_tags:
+                        new_entry_tags.remove(t)
+
+            if "starred" in updates and updates["starred"] is not None:
+                new_starred = bool(updates["starred"])
+
+            if "pinned" in updates and updates["pinned"] is not None:
+                new_pinned = bool(updates["pinned"])
+
+            # 执行更新
+            layer_val = new_layer.value if isinstance(new_layer, MemoryLayer) else new_layer
+            privacy_val = new_privacy.value if isinstance(new_privacy, PrivacyLevel) else new_privacy
+            imp_val = new_importance.value if isinstance(new_importance, Importance) else new_importance
+
+            conn.execute(
+                """UPDATE memories SET
+                       category = ?, layer = ?, importance = ?, privacy = ?,
+                       tags = ?, starred = ?, pinned = ?, metadata = ?, updated_at = ?
+                   WHERE id = ?""",
+                (
+                    new_category,
+                    layer_val,
+                    imp_val,
+                    privacy_val,
+                    json.dumps(new_entry_tags, ensure_ascii=False),
+                    1 if new_starred else 0,
+                    1 if new_pinned else 0,
+                    json.dumps(new_metadata, ensure_ascii=False),
+                    now,
+                    entry.id,
+                )
+            )
+
+            self._add_audit("update", entry.id, actor, session_id,
+                             entry.privacy.value,
+                             details={"action": "bulk_update", "changes": list(updates.keys())})
+            count += 1
+
+        conn.commit()
+        return count
+
+    # ===== 标签统计（v5.5.4 新增）=====
+
+    def tag_stats(self, limit: int = 20) -> Dict[str, Any]:
+        """标签统计信息
+
+        v5.5.4 新增。
+
+        Args:
+            limit: Top 标签数量
+
+        Returns:
+            统计字典：total_tags, memories_with_tags, memories_without_tags,
+            avg_tags_per_memory, top_tags (list of {tag, count, categories})
+        """
+        conn = self._get_conn()
+        limit = max(1, min(limit, 100))
+
+        rows = conn.execute(
+            "SELECT tags, category FROM memories WHERE category != 'trash'"
+        ).fetchall()
+
+        total_memories = len(rows)
+        memories_with_tags = 0
+        total_tag_count = 0
+        tag_counter: Dict[str, Dict[str, Any]] = {}
+
+        for row in rows:
+            if not row["tags"]:
+                continue
+            try:
+                tags = json.loads(row["tags"]) if isinstance(row["tags"], str) else row["tags"]
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not tags:
+                continue
+            memories_with_tags += 1
+            total_tag_count += len(tags)
+            for tag in tags:
+                if tag not in tag_counter:
+                    tag_counter[tag] = {"count": 0, "categories": set()}
+                tag_counter[tag]["count"] += 1
+                tag_counter[tag]["categories"].add(row["category"])
+
+        # 排序取 top
+        sorted_tags = sorted(tag_counter.items(), key=lambda x: x[1]["count"], reverse=True)[:limit]
+        top_tags = [
+            {
+                "tag": tag,
+                "count": info["count"],
+                "categories": sorted(list(info["categories"])),
+            }
+            for tag, info in sorted_tags
+        ]
+
+        avg_tags = round(total_tag_count / memories_with_tags, 2) if memories_with_tags > 0 else 0
+
+        return {
+            "total_tags": len(tag_counter),
+            "memories_with_tags": memories_with_tags,
+            "memories_without_tags": total_memories - memories_with_tags,
+            "avg_tags_per_memory": avg_tags,
+            "top_tags": top_tags,
+        }
+
+    # ===== 索引一致性检查（v5.5.4 新增）=====
+
+    def check_index_consistency(self) -> Dict[str, Any]:
+        """检查 FTS5 索引与主表的一致性
+
+        v5.5.4 新增。
+
+        检测两类问题（contentless FTS5 无法对比内容）：
+        - missing_in_fts: 主表有记录，但 FTS5 索引中缺失
+        - stale_in_fts: FTS5 索引中有记录，但主表中已删除或已进入回收站
+
+        Returns:
+            检查结果字典
+        """
+        conn = self._get_conn()
+        issues = {
+            "missing_in_fts": [],     # 主表有，FTS 没有
+            "stale_in_fts": [],       # FTS 有，主表没有或已删除
+        }
+
+        try:
+            # 获取主表中所有非删除记忆的 rowid
+            main_rows = conn.execute(
+                "SELECT m.rowid, m.id FROM memories m WHERE m.category != 'trash'"
+            ).fetchall()
+
+            # 获取 FTS 表中所有 rowid（contentless FTS5 只能查 rowid）
+            fts_rows = conn.execute(
+                "SELECT rowid FROM memory_fts"
+            ).fetchall()
+
+        except sqlite3.OperationalError:
+            # FTS 表可能不存在
+            return {
+                "status": "error",
+                "error": "memory_fts table not found or inaccessible",
+                "total_main": 0,
+                "total_fts": 0,
+                "issues_found": 0,
+                "issues": issues,
+            }
+
+        main_ids = {row["rowid"]: row["id"] for row in main_rows}
+        fts_ids = {row["rowid"] for row in fts_rows}
+
+        # 检查缺失（主表有，FTS 没有）
+        for rowid, memory_id in main_ids.items():
+            if rowid not in fts_ids:
+                issues["missing_in_fts"].append({
+                    "rowid": rowid,
+                    "memory_id": memory_id,
+                })
+
+        # 检查陈旧（FTS 有，主表没有或已删除）
+        for rowid in fts_ids:
+            if rowid not in main_ids:
+                issues["stale_in_fts"].append({
+                    "rowid": rowid,
+                })
+
+        total_issues = len(issues["missing_in_fts"]) + len(issues["stale_in_fts"])
+
+        return {
+            "status": "ok" if total_issues == 0 else "issues_found",
+            "total_main": len(main_ids),
+            "total_fts": len(fts_ids),
+            "issues_found": total_issues,
+            "issues": issues,
+        }
 
     def _delete_memory_cascade(self, conn: sqlite3.Connection, memory_id: str):
         """级联删除记忆及其关联数据（v5.5.2 新增内部辅助方法）
