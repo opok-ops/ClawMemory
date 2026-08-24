@@ -1,5 +1,5 @@
-"""
-MindForge v5.5.2 REST API Server
+﻿"""
+MindForge v5.5.3 REST API Server
 ================================
 
 标准 REST API，让非 Python 应用（JS、Go、移动端）也能直接调用 MindForge。
@@ -116,8 +116,7 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
     def _read_body(self):
         content_length = int(self.headers.get("Content-Length", 0))
         if content_length == 0:
-            # v5.5.1 fix: 空请求体返回明确错误而非空字典
-            self._send_json({"error": "Request body is empty. Please provide a JSON body."}, 400)
+            # v5.5.3 fix: 返回 None 让调用方统一处理错误响应，避免双重写入
             return None
         # v5.4.8 安全修复：请求体大小限制
         if content_length > MAX_BODY_SIZE:

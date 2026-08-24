@@ -1,5 +1,5 @@
-"""
-MindForge v5.5.2 存储引擎
+﻿"""
+MindForge v5.5.3 存储引擎
 支持四层记忆架构：感官记忆 → 短期记忆 → 长期记忆 → 永久记忆
 """
 
@@ -912,15 +912,21 @@ class StorageEngine:
         entry = self._row_to_entry(row)
 
         # v5.5.2: auto-expire check
+        # v5.5.3 fix: 使用 UPDATE WHERE 防止并发竞态条件；静默失败避免重复写入
         if entry.expires_at and entry.expires_at > 0 and entry.expires_at <= time.time():
             try:
-                conn.execute(
-                    "UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
-                    (time.time(), memory_id)
+                now = time.time()
+                result = conn.execute(
+                    "UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ? AND category != 'trash'",
+                    (now, memory_id)
                 )
-                conn.commit()
-                self._add_audit("forget", memory_id, actor, session_id,
-                                 entry.privacy.value, details={"reason": "ttl_expired", "expires_at": entry.expires_at})
+                if result.rowcount > 0:
+                    conn.commit()
+                    self._add_audit("forget", memory_id, actor, session_id,
+                                     entry.privacy.value, details={"reason": "ttl_expired", "expires_at": entry.expires_at})
+                else:
+                    # 已被其他线程/进程处理，无需重复操作
+                    pass
             except Exception:
                 pass
             return None

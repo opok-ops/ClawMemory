@@ -1,5 +1,5 @@
-"""
-MindForge v5.5.2 主入口类
+﻿"""
+MindForge v5.5.3 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -36,7 +36,7 @@ from .embedding import EmbeddingEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.5.2"
+    __version__ = "5.5.3"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -1624,11 +1624,26 @@ class MindForge:
         """清理所有已过期记忆（移入回收站）
 
         v5.5.2 新增。
+        v5.5.3 fix: 清理索引，避免过期记忆仍可搜索
 
         Returns:
             清理的记忆条数
         """
-        return self._storage.purge_expired(actor, session_id)
+        # 先获取过期记忆 ID 列表
+        expired_entries = self._storage.list_expired(limit=10000)
+        expired_ids = [e.id for e in expired_entries]
+        
+        # 执行清理
+        count = self._storage.purge_expired(actor, session_id)
+        
+        # 清理索引
+        for mid in expired_ids:
+            try:
+                self._index.remove_memory(mid)
+            except Exception:
+                pass
+        
+        return count
 
     # ===== 按分类/标签批量删除（v5.5.2 新增）=====
 
@@ -1638,6 +1653,7 @@ class MindForge:
         """按分类批量删除记忆（移入回收站或永久删除）
 
         v5.5.2 新增。
+        v5.5.3 fix: 删除后清理索引，避免搜索结果返回已删除记忆
 
         Args:
             category: 要删除的分类名称
@@ -1648,7 +1664,21 @@ class MindForge:
         Returns:
             删除的记忆条数
         """
-        return self._storage.batch_delete_by_category(category, actor, session_id, permanent)
+        # 先获取匹配的记忆 ID
+        matched_entries = self._storage.list_memories(category=category, limit=100000)
+        matched_ids = [e.id for e in matched_entries]
+        
+        # 执行删除
+        count = self._storage.batch_delete_by_category(category, actor, session_id, permanent)
+        
+        # 清理索引
+        for mid in matched_ids:
+            try:
+                self._index.remove_memory(mid)
+            except Exception:
+                pass
+        
+        return count
 
     def batch_delete_by_tag(self, tag: str,
                              actor: str = "", session_id: str = "",
@@ -1656,6 +1686,7 @@ class MindForge:
         """按标签批量删除记忆（移入回收站或永久删除）
 
         v5.5.2 新增。
+        v5.5.3 fix: 删除后清理索引，避免搜索结果返回已删除记忆
 
         Args:
             tag: 要删除的标签
@@ -1666,7 +1697,21 @@ class MindForge:
         Returns:
             删除的记忆条数
         """
-        return self._storage.batch_delete_by_tag(tag, actor, session_id, permanent)
+        # 先获取匹配的记忆 ID
+        all_entries = self._storage.list_memories(limit=100000)
+        matched_ids = [e.id for e in all_entries if tag in (e.tags or [])]
+        
+        # 执行删除
+        count = self._storage.batch_delete_by_tag(tag, actor, session_id, permanent)
+        
+        # 清理索引
+        for mid in matched_ids:
+            try:
+                self._index.remove_memory(mid)
+            except Exception:
+                pass
+        
+        return count
 
     # ===== 标签批量管理（v5.2.0 新增）=====
 
