@@ -207,6 +207,10 @@ class QueryEngine:
                 metadata=entry.metadata,
             )
             chunks.append(chunk)
+            # v5.5.2 fix: update access stats for returned results.
+            # The cached fetch intentionally skips access updates, so we
+            # update them here for memories that actually make it to results.
+            self.storage._update_access(entry, agent_id, session_id)
 
             if len(chunks) >= max_results:
                 break

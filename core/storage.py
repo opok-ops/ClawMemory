@@ -927,8 +927,11 @@ class StorageEngine:
                 else:
                     # 已被其他线程/进程处理，无需重复操作
                     pass
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error("auto-expire failed for %s: %s", memory_id, e)
+                # 过期失败时仍返回原始记忆，避免数据不一致
+                self._update_access(entry, actor, session_id)
+                return entry
             return None
 
         self._update_access(entry, actor, session_id)
@@ -7041,6 +7044,9 @@ class StorageEngine:
         Returns:
             是否成功
         """
+        # v5.4.0 安全加固
+        actor = self._strip_control(actor)[:128]
+        session_id = self._strip_control(session_id)[:128]
         conn = self._get_conn()
         now = time.time()
         expires_at = (now + ttl_seconds) if ttl_seconds and ttl_seconds > 0 else 0.0
@@ -7086,6 +7092,9 @@ class StorageEngine:
         Returns:
             清理的记忆条数
         """
+        # v5.4.0 安全加固
+        actor = self._strip_control(actor)[:128]
+        session_id = self._strip_control(session_id)[:128]
         conn = self._get_conn()
         now = time.time()
         expired_rows = conn.execute(
@@ -7127,6 +7136,10 @@ class StorageEngine:
         """
         if not category:
             return 0
+        # v5.4.0 安全加固
+        category = self._strip_control(category)[:64]
+        actor = self._strip_control(actor)[:128]
+        session_id = self._strip_control(session_id)[:128]
         conn = self._get_conn()
         now = time.time()
         rows = conn.execute(
@@ -7169,6 +7182,10 @@ class StorageEngine:
         """
         if not tag:
             return 0
+        # v5.4.0 安全加固
+        tag = self._strip_control(tag)[:64]
+        actor = self._strip_control(actor)[:128]
+        session_id = self._strip_control(session_id)[:128]
         conn = self._get_conn()
         now = time.time()
         rows = conn.execute(
@@ -7200,18 +7217,39 @@ class StorageEngine:
         return count
 
     def _delete_memory_cascade(self, conn: sqlite3.Connection, memory_id: str):
-        """级联删除记忆及其关联数据（v5.5.2 新增内部辅助方法）"""
+        """级联删除记忆及其关联数据（v5.5.2 新增内部辅助方法）
+
+        v5.5.2 修复：补充 review_schedules、kg_edges 清理，并修正 FTS5 删除方式
+        （contentless FTS5 表必须用 'delete' 特殊命令，不能用普通 DELETE）。
+        """
+        # 先取 rowid 和 FTS 字段用于清理 FTS 索引
+        row = conn.execute(
+            "SELECT rowid, content, category, tags FROM memories WHERE id = ?",
+            (memory_id,)
+        ).fetchone()
+        # 清理带外键的从表
         conn.execute("DELETE FROM memory_versions WHERE memory_id = ?", (memory_id,))
         conn.execute("DELETE FROM memory_links WHERE source_id = ? OR target_id = ?", (memory_id, memory_id))
+        conn.execute("DELETE FROM review_schedules WHERE memory_id = ?", (memory_id,))
         try:
             conn.execute("DELETE FROM memory_notes WHERE memory_id = ?", (memory_id,))
         except sqlite3.OperationalError:
             pass
-        conn.execute("DELETE FROM memory_embeddings WHERE memory_id = ?", (memory_id,))
         try:
-            conn.execute("DELETE FROM memory_fts WHERE rowid = (SELECT rowid FROM memories WHERE id = ?)", (memory_id,))
+            conn.execute("DELETE FROM kg_edges WHERE source = ? OR target = ?", (memory_id, memory_id))
         except sqlite3.OperationalError:
             pass
+        conn.execute("DELETE FROM memory_embeddings WHERE memory_id = ?", (memory_id,))
+        if row:
+            try:
+                # contentless FTS5 必须用 'delete' 特殊命令
+                conn.execute(
+                    "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                    "VALUES('delete', ?, ?, ?, ?)",
+                    (row[0], row[1] or "", row[2] or "", row[3] or "[]")
+                )
+            except sqlite3.OperationalError:
+                pass
         conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
 
     # ===== 标签批量管理（v5.2.0 新增）=====
