@@ -749,14 +749,29 @@ class StorageEngine:
     def _downgrade_enum(value: Any, enum_cls: type, default: Any) -> Any:
         """v5.4.0 安全加固：枚举值降级——非法值自动降级到默认值。
         同时支持大小写（.value 匹配 / 原始大小写 / .name 匹配）。
+
+        v5.5.4 fix: 兼容双重导入路径导致的枚举类不一致问题。
+        当 isinstance() 因不同模块路径加载同名枚举而失败时，
+        通过 .value / .name 属性匹配来识别。
         """
         if isinstance(value, enum_cls):
             return value
+        # 兼容双重导入：isinstance 失败但 value 有枚举属性时，用 .value 匹配
+        if hasattr(value, 'value') and hasattr(value, 'name'):
+            try:
+                return enum_cls(value.value)
+            except (ValueError, KeyError):
+                pass
         if value is None:
             return default
         sval = str(value).strip()
         if not sval:
             return default
+        # 处理 "Importance.LOW" → "LOW" 的情况（双重导入 str() 结果）
+        if '.' in sval and not sval.startswith('.'):
+            parts = sval.split('.')
+            if len(parts) == 2:
+                sval = parts[-1]
         # 1) value 精确匹配（大小写不敏感）
         for m in enum_cls:
             if m.value.lower() == sval.lower():
@@ -7238,6 +7253,35 @@ class StorageEngine:
             count += 1
         conn.commit()
         return count
+
+    def get_ids_by_tag(self, tag: str) -> List[str]:
+        """获取包含指定标签的记忆 ID 列表（SQL 级过滤，避免全表加载）
+
+        v5.5.4 新增：供 mindforge 层清理索引用，替代 list_memories 全表加载方案。
+
+        Args:
+            tag: 标签名
+
+        Returns:
+            匹配的记忆 ID 列表
+        """
+        if not tag:
+            return []
+        tag = self._strip_control(tag)[:64]
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT id, tags FROM memories WHERE tags LIKE ? AND category != 'trash'",
+            (f'%"{tag}"%',)
+        ).fetchall()
+        result = []
+        for row in rows:
+            try:
+                existing_tags = json.loads(row["tags"]) if isinstance(row["tags"], str) else row["tags"]
+                if tag in (existing_tags or []):
+                    result.append(row["id"])
+            except (json.JSONDecodeError, TypeError):
+                continue
+        return result
 
     # ===== 记忆合并（v5.5.4 新增）=====
 

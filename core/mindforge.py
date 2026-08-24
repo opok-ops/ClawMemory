@@ -1687,6 +1687,7 @@ class MindForge:
 
         v5.5.2 新增。
         v5.5.3 fix: 删除后清理索引，避免搜索结果返回已删除记忆
+        v5.5.4 fix: 用 storage 层 SQL 过滤替代全表加载，修复大数据量性能问题
 
         Args:
             tag: 要删除的标签
@@ -1697,9 +1698,8 @@ class MindForge:
         Returns:
             删除的记忆条数
         """
-        # 先获取匹配的记忆 ID
-        all_entries = self._storage.list_memories(limit=100000)
-        matched_ids = [e.id for e in all_entries if tag in (e.tags or [])]
+        # 先获取匹配的记忆 ID（SQL 级过滤，避免全表加载）
+        matched_ids = self._storage.get_ids_by_tag(tag)
         
         # 执行删除
         count = self._storage.batch_delete_by_tag(tag, actor, session_id, permanent)
