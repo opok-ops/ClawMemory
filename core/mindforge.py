@@ -218,6 +218,44 @@ class MindForge:
         if self._storage and self._index:
             self._query = QueryEngine(self._storage, self._index)
 
+    def _rebuild_index_from_storage(self):
+        """从存储层重建内存索引（v5.5.5 修复：替代不存在的方法调用）
+
+        遍历所有非软删除记忆，重新构建 IndexEngine。
+        """
+        if not self._storage or not self._index:
+            return
+        try:
+            # 分页加载所有记忆
+            offset = 0
+            page_size = 500
+            while True:
+                entries = self._storage.list_memories(
+                    limit=page_size, offset=offset,
+                    include_trash=False, actor="system", session_id="rebuild_index"
+                )
+                if not entries:
+                    break
+                for entry in entries:
+                    try:
+                        imp_val = entry.importance.value if hasattr(entry.importance, 'value') else str(entry.importance)
+                        self._index.index_memory(
+                            entry.id, entry.content,
+                            metadata={
+                                "category": entry.category,
+                                "tags": entry.tags or [],
+                                "importance": imp_val,
+                                "layer": entry.layer.value if hasattr(entry.layer, 'value') else str(entry.layer),
+                            }
+                        )
+                    except Exception:
+                        pass
+                offset += page_size
+                if len(entries) < page_size:
+                    break
+        except Exception as e:
+            logger.warning("Failed to rebuild index from storage: %s", e)
+
     def init_with_password(self, password: str):
         """使用密码初始化加密引擎
 
@@ -1748,7 +1786,10 @@ class MindForge:
                 pass
             try:
                 self._index.remove_memory(target_id)
-                self._index.add_memory(target_id, result.content, result.category, result.tags or [])
+                self._index.index_memory(target_id, result.content, {
+                    "category": result.category,
+                    "tags": result.tags or [],
+                })
             except Exception:
                 pass
             # 发布事件（容错：EventBus 可能未初始化）

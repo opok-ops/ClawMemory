@@ -1605,8 +1605,16 @@ class StorageEngine:
                 (entry_id,)
             ).fetchone()
             # v5.4.1 修复：先清理带外键的从表，再删主表，避免 FOREIGN KEY 约束失败
+            # v5.5.5 fix: 补充缺失的关联表清理（memory_links, memory_notes, memory_embeddings, memory_templates）
             conn.execute("DELETE FROM memory_versions WHERE memory_id = ?", (entry_id,))
             conn.execute("DELETE FROM review_schedules WHERE memory_id = ?", (entry_id,))
+            conn.execute("DELETE FROM memory_links WHERE source_id = ? OR target_id = ?", (entry_id, entry_id))
+            conn.execute("DELETE FROM memory_notes WHERE memory_id = ?", (entry_id,))
+            conn.execute("DELETE FROM memory_embeddings WHERE memory_id = ?", (entry_id,))
+            try:
+                conn.execute("DELETE FROM memory_templates WHERE memory_id = ?", (entry_id,))
+            except sqlite3.OperationalError:
+                pass
             try:
                 conn.execute("DELETE FROM kg_edges WHERE source = ? OR target = ?", (entry_id, entry_id))
             except sqlite3.OperationalError:
@@ -1708,8 +1716,16 @@ class StorageEngine:
         if hard_delete:
             placeholders = ",".join(["?"] * len(ids))
             # v5.4.1 修复：先清从表外键再删主表
+            # v5.5.5 fix: 补充缺失的关联表清理
             conn.execute(f"DELETE FROM memory_versions WHERE memory_id IN ({placeholders})", ids)
             conn.execute(f"DELETE FROM review_schedules WHERE memory_id IN ({placeholders})", ids)
+            conn.execute(f"DELETE FROM memory_links WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders})", ids + ids)
+            conn.execute(f"DELETE FROM memory_notes WHERE memory_id IN ({placeholders})", ids)
+            conn.execute(f"DELETE FROM memory_embeddings WHERE memory_id IN ({placeholders})", ids)
+            try:
+                conn.execute(f"DELETE FROM memory_templates WHERE memory_id IN ({placeholders})", ids)
+            except sqlite3.OperationalError:
+                pass
             try:
                 conn.execute(
                     f"DELETE FROM kg_edges WHERE source IN ({placeholders}) OR target IN ({placeholders})",
@@ -2435,7 +2451,7 @@ class StorageEngine:
         # 执行升级
         upgraded_short = 0
         rows = conn.execute(
-            "SELECT id FROM memories "
+            "SELECT id, privacy FROM memories "
             "WHERE layer = ? AND category != 'trash' "
             "AND (julianday('now') - julianday(created_at, 'unixepoch')) >= 1 "
             "AND access_count > 0 LIMIT 200",
@@ -2446,12 +2462,16 @@ class StorageEngine:
                 "UPDATE memories SET layer = ?, updated_at = ? WHERE id = ?",
                 (MemoryLayer.LONG_TERM.value, now, row[0])
             )
-            self._add_audit("evolve", row[0], actor, session_id, "short_term→long_term")
+            self._add_audit(
+                "evolve", row[0], actor, session_id,
+                row[1] if row[1] else "",
+                {"transition": "short_term→long_term"}
+            )
             upgraded_short += 1
 
         upgraded_long = 0
         rows = conn.execute(
-            "SELECT id FROM memories "
+            "SELECT id, privacy FROM memories "
             "WHERE layer = ? AND category != 'trash' "
             "AND (julianday('now') - julianday(created_at, 'unixepoch')) >= 7 "
             "AND (starred = 1 OR importance IN ('HIGH', 'CRITICAL')) LIMIT 100",
@@ -2462,7 +2482,11 @@ class StorageEngine:
                 "UPDATE memories SET layer = ?, updated_at = ? WHERE id = ?",
                 (MemoryLayer.PERMANENT.value, now, row[0])
             )
-            self._add_audit("evolve", row[0], actor, session_id, "long_term→permanent")
+            self._add_audit(
+                "evolve", row[0], actor, session_id,
+                row[1] if row[1] else "",
+                {"transition": "long_term→permanent"}
+            )
             upgraded_long += 1
 
         conn.commit()
@@ -5821,7 +5845,9 @@ class StorageEngine:
                           # v5.5.5 fix: agent_transfer 加入白名单，避免被降级为 other
                           "agent_transfer",
                           # v5.5.0 新增审计动作
-                          "deduplicate_merge", "recalibrate", "reinforce"}
+                          "deduplicate_merge", "recalibrate", "reinforce",
+                          # v5.5.5 fix: evolve 加入白名单
+                          "evolve"}
         # v5.4.2：高敏感操作，审计失败时 fail-closed
         HIGH_SENSITIVE_ACTIONS = {"delete", "purge", "grant", "revoke", "forget",
                                   "agent_purge", "agent_forget"}
@@ -8355,6 +8381,10 @@ class StorageEngine:
         except sqlite3.OperationalError:
             pass
         conn.execute("DELETE FROM memory_embeddings WHERE memory_id = ?", (memory_id,))
+        try:
+            conn.execute("DELETE FROM memory_templates WHERE memory_id = ?", (memory_id,))
+        except sqlite3.OperationalError:
+            pass
         if row:
             try:
                 # contentless FTS5 必须用 'delete' 特殊命令
