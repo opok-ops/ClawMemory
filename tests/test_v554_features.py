@@ -48,9 +48,13 @@ class TestMemoryMerge:
         assert set(result.tags) == {"tag1", "tag2", "tag3"}
 
         # source 已被软删除（category 变为 trash）
-        source_entry = mf.get(e1.id)
-        assert source_entry is not None
-        assert source_entry.category == "trash"
+        # v5.5.5 fix: get_memory 已排除回收站，直接查 SQL 验证
+        conn = mf._storage._get_conn()
+        row = conn.execute(
+            "SELECT category FROM memories WHERE id = ?", (e1.id,)
+        ).fetchone()
+        assert row is not None
+        assert row["category"] == "trash"
 
     def test_merge_same_id(self, mf):
         """source 和 target 相同则失败"""

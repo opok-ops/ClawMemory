@@ -1143,7 +1143,8 @@ class StorageEngine:
         v5.5.2: 自动过期检查——若 expires_at > 0 且已过期，自动移入回收站并返回 None。
         """
         conn = self._get_conn()
-        row = conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
+        # v5.5.5 fix: 排除回收站记忆
+        row = conn.execute("SELECT * FROM memories WHERE id = ? AND category != 'trash'", (memory_id,)).fetchone()
         if not row:
             return None
 
@@ -1225,7 +1226,11 @@ class StorageEngine:
                       sort_order: str = "desc") -> List[MemoryEntry]:
         """列出记忆（v5.2.5 新增 pinned 筛选和置顶优先排序）"""
         conn = self._get_conn()
-        query = "SELECT * FROM memories WHERE 1=1"
+        # v5.5.5 fix: 默认排除回收站记忆，但显式查询 trash 时除外
+        if category == "trash":
+            query = "SELECT * FROM memories WHERE 1=1"
+        else:
+            query = "SELECT * FROM memories WHERE category != 'trash'"
         params = []
 
         if category:
@@ -1467,14 +1472,14 @@ class StorageEngine:
                 "VALUES('delete', ?, ?, ?, ?)",
                 (row[0], row[1] or "", row[2] or "", row[3] or "[]")
             )
-        except sqlite3.OperationalError:
+        except sqlite3.Error:
             pass
         try:
             conn.execute(
                 "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
                 (row[0], row[1] or "", row[2] or "", row[3] or "[]")
             )
-        except sqlite3.OperationalError:
+        except sqlite3.Error:
             pass
 
     def rebuild_fts(self) -> dict:
@@ -1547,7 +1552,7 @@ class StorageEngine:
         """
         conn = self._get_conn()
         rows = conn.execute(
-            "SELECT id, rowid, content, category, tags FROM memories WHERE category = 'trash'"
+            "SELECT id, rowid, content, category, tags, privacy FROM memories WHERE category = 'trash'"
         ).fetchall()
 
         if not rows:
@@ -1570,8 +1575,10 @@ class StorageEngine:
                 pass
 
         conn.commit()
-        for mid in ids:
-            self._add_audit("purge", mid, actor, session_id, "")
+        # v5.5.5 fix: 审计日志记录真实隐私级别
+        for row in rows:
+            self._add_audit("purge", row[0], actor, session_id,
+                             row[5] if row[5] else "")
 
         return len(ids)
 
@@ -1592,11 +1599,13 @@ class StorageEngine:
         conn = self._get_conn()
 
         # v5.4.7 修复 C-1：先检查记忆是否存在
-        exists = conn.execute(
-            "SELECT 1 FROM memories WHERE id = ?", (entry_id,)
+        # v5.5.5 fix: 同时获取 privacy 用于审计日志
+        exists_row = conn.execute(
+            "SELECT privacy FROM memories WHERE id = ?", (entry_id,)
         ).fetchone()
-        if not exists:
+        if not exists_row:
             return False
+        privacy_val = exists_row[0] if exists_row[0] else ""
 
         if hard_delete:
             # 先取 rowid 和 FTS 字段用于清理
@@ -1652,7 +1661,8 @@ class StorageEngine:
                              (now, entry_id))
 
         conn.commit()
-        self._add_audit("delete", entry_id, actor, session_id, "")
+        # v5.5.5 fix: 审计日志记录真实隐私级别
+        self._add_audit("delete", entry_id, actor, session_id, privacy_val)
         return True
 
     def batch_delete(self,
@@ -1676,7 +1686,8 @@ class StorageEngine:
         session_id = self._strip_control(session_id)[:128]
 
         conn = self._get_conn()
-        query = "SELECT id, rowid, content, category, tags, metadata FROM memories WHERE 1=1"
+        # v5.5.5 fix: 添加 privacy 用于审计日志；排除回收站记忆
+        query = "SELECT id, rowid, content, category, tags, metadata, privacy FROM memories WHERE category != 'trash'"
         params = []
 
         if category:
@@ -1758,8 +1769,10 @@ class StorageEngine:
                 )
 
         conn.commit()
-        for mid in ids:
-            self._add_audit("delete", mid, actor, session_id, "")
+        # v5.5.5 fix: 审计日志记录真实隐私级别
+        for row in rows:
+            self._add_audit("delete", row[0], actor, session_id,
+                             row[6] if row[6] else "")
 
         return len(ids)
 
@@ -1771,8 +1784,9 @@ class StorageEngine:
         如果找不到原分类，则恢复到 'default'。
         """
         conn = self._get_conn()
+        # v5.5.5 fix: 同时获取 privacy 用于审计日志
         row = conn.execute(
-            "SELECT category, metadata FROM memories WHERE id = ?",
+            "SELECT category, metadata, privacy FROM memories WHERE id = ?",
             (entry_id,)
         ).fetchone()
 
@@ -1793,7 +1807,8 @@ class StorageEngine:
         )
         conn.commit()
         self._add_audit(
-            "restore", entry_id, actor, session_id, "",
+            "restore", entry_id, actor, session_id,
+            row["privacy"] if row["privacy"] else "",
             details={"message": f"恢复到 {original_category}", "original_category": original_category}
         )
         return True
@@ -1956,7 +1971,8 @@ class StorageEngine:
             }
         """
         conn = self._get_conn()
-        query = "SELECT * FROM memories WHERE 1=1"
+        # v5.5.5 fix: 排除回收站记忆
+        query = "SELECT * FROM memories WHERE category != 'trash'"
         params = []
         if category:
             query += " AND category = ?"
@@ -2379,8 +2395,9 @@ class StorageEngine:
                       offset: int = 0) -> List[MemoryEntry]:
         """列出特定 Agent 的记忆（v5.2.2 新增）"""
         conn = self._get_conn()
+        # v5.5.5 fix: 排除回收站记忆
         rows = conn.execute(
-            "SELECT * FROM memories WHERE source_agent = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            "SELECT * FROM memories WHERE source_agent = ? AND category != 'trash' ORDER BY created_at DESC LIMIT ? OFFSET ?",
             (agent_id, limit, offset)
         ).fetchall()
         return [self._row_to_entry(r) for r in rows]
@@ -2515,7 +2532,7 @@ class StorageEngine:
         conn = self._get_conn()
         now = time.time()
 
-        query = "SELECT id, privacy FROM memories WHERE source_agent = ?"
+        query = "SELECT id, privacy FROM memories WHERE source_agent = ? AND category != 'trash'"
         params = [from_agent]
 
         if category:
@@ -2583,7 +2600,7 @@ class StorageEngine:
             clean_importances = importance_order
 
         query = (
-            "SELECT id, content FROM memories "
+            "SELECT id, content, privacy FROM memories "
             "WHERE source_agent = ? AND category != 'trash' "
             "AND (julianday('now') - julianday(created_at, 'unixepoch')) >= ? "
             "AND importance IN ({}) AND starred = 0"
@@ -2611,7 +2628,8 @@ class StorageEngine:
                 "UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
                 (now, row[0])
             )
-            self._add_audit("agent_clean", row[0], actor, session_id, "")
+            self._add_audit("agent_clean", row[0], actor, session_id,
+                             row[2] if row[2] else "")
 
         conn.commit()
         result["cleaned"] = total
@@ -2818,14 +2836,17 @@ class StorageEngine:
         cutoff = now - older_than_days * 86400
 
         mems = conn.execute(
-            "SELECT id, source_agent, updated_at FROM memories "
+            "SELECT id, source_agent, updated_at, privacy FROM memories "
             "WHERE source_agent = ? AND updated_at < ? AND category != 'trash'",
             (agent_id[:128], cutoff)
         ).fetchall()
 
         selected_ids = []
+        # v5.5.5 fix: 记录 privacy 用于审计日志
+        privacy_map = {}
         for r in mems:
             mid = r[0]
+            privacy_map[mid] = r[3] if r[3] else ""
             qs = self.quality_score(mid)
             if qs and qs["total_score"] < min_quality_score:
                 selected_ids.append(mid)
@@ -2838,7 +2859,8 @@ class StorageEngine:
                 [now] + selected_ids,
             )
             for mid in selected_ids:
-                self._add_audit("agent_forget", mid, actor, session_id, "")
+                self._add_audit("agent_forget", mid, actor, session_id,
+                                 privacy_map.get(mid, ""))
             conn.commit()
 
         return {
@@ -3204,14 +3226,14 @@ class StorageEngine:
         ta = to_agent[:128]
 
         src_rows = conn.execute(
-            "SELECT id, content, privacy FROM memories WHERE source_agent = ?", (fa,)
+            "SELECT id, content, privacy FROM memories WHERE source_agent = ? AND category != 'trash'", (fa,)
         ).fetchall()
 
         # 如果去重，预取目标 Agent 已有内容集合
         existing_contents: set = set()
         if dedup == "exact":
             tgt_rows = conn.execute(
-                "SELECT content FROM memories WHERE source_agent = ?", (ta,)
+                "SELECT content FROM memories WHERE source_agent = ? AND category != 'trash'", (ta,)
             ).fetchall()
             for r in tgt_rows:
                 existing_contents.add(r[0])
@@ -6625,7 +6647,8 @@ class StorageEngine:
             是否移动成功
         """
         conn = self._get_conn()
-        row = conn.execute("SELECT category FROM memories WHERE id = ?", (entry_id,)).fetchone()
+        # v5.5.5 fix: 同时获取 privacy 用于审计日志
+        row = conn.execute("SELECT category, privacy FROM memories WHERE id = ?", (entry_id,)).fetchone()
         if not row or row["category"] == "trash":
             return False
 
@@ -6640,7 +6663,8 @@ class StorageEngine:
         )
 
         self._add_audit(
-            "move", entry_id, actor, session_id, "",
+            "move", entry_id, actor, session_id,
+            row["privacy"] if row["privacy"] else "",
             details={"message": f"从 {old_category} 移动到 {new_category}"}
         )
         return True
@@ -7343,13 +7367,19 @@ class StorageEngine:
         conn = self._get_conn()
         now = time.time()
         expires_at = (now + ttl_seconds) if ttl_seconds and ttl_seconds > 0 else 0.0
+        # v5.5.5 fix: 获取 privacy 用于审计日志
+        priv_row = conn.execute(
+            "SELECT privacy FROM memories WHERE id = ? AND category != 'trash'",
+            (memory_id,)
+        ).fetchone()
+        privacy_val = priv_row[0] if priv_row and priv_row[0] else ""
         cursor = conn.execute(
             "UPDATE memories SET expires_at = ?, updated_at = ? WHERE id = ? AND category != 'trash'",
             (expires_at, now, memory_id)
         )
         conn.commit()
         if cursor.rowcount > 0:
-            self._add_audit("update", memory_id, actor, session_id, "",
+            self._add_audit("update", memory_id, actor, session_id, privacy_val,
                              details={"ttl_seconds": ttl_seconds, "expires_at": expires_at})
             return True
         return False
@@ -7661,6 +7691,9 @@ class StorageEngine:
                          details={"action": "merge_from", "source_id": source_id})
         self._add_audit("delete", source_id, actor, session_id, source.privacy.value,
                          details={"reason": "merge_into", "target_id": target_id})
+
+        # v5.5.5 fix: 合并后刷新 FTS 索引，避免全文搜索返回过期数据
+        self._refresh_fts(conn, target_id)
 
         conn.commit()
 
@@ -8218,6 +8251,8 @@ class StorageEngine:
             self._add_audit("update", entry.id, actor, session_id,
                              entry.privacy.value,
                              details={"action": "bulk_update", "changes": list(updates.keys())})
+            # v5.5.5 fix: 批量更新后刷新 FTS 索引，避免全文搜索返回过期数据
+            self._refresh_fts(conn, entry.id)
             count += 1
 
         conn.commit()
@@ -8421,7 +8456,7 @@ class StorageEngine:
 
         for entry_id in entry_ids:
             row = conn.execute(
-                "SELECT tags FROM memories WHERE id = ? AND category != 'trash'",
+                "SELECT tags, privacy FROM memories WHERE id = ? AND category != 'trash'",
                 (entry_id,)
             ).fetchone()
             if not row:
@@ -8434,8 +8469,11 @@ class StorageEngine:
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
                     (json.dumps(new_tags, ensure_ascii=False), now, entry_id)
                 )
+                # v5.5.5 fix: 更新标签后刷新 FTS 索引
+                self._refresh_fts(conn, entry_id)
                 self._add_audit(
-                    "batch_add_tags", entry_id, actor, session_id, "",
+                    "batch_add_tags", entry_id, actor, session_id,
+                    row["privacy"] if row["privacy"] else "",
                     details={"added_tags": tags, "result_tags": new_tags}
                 )
                 count += 1
@@ -8465,7 +8503,7 @@ class StorageEngine:
 
         for entry_id in entry_ids:
             row = conn.execute(
-                "SELECT tags FROM memories WHERE id = ? AND category != 'trash'",
+                "SELECT tags, privacy FROM memories WHERE id = ? AND category != 'trash'",
                 (entry_id,)
             ).fetchone()
             if not row:
@@ -8478,8 +8516,11 @@ class StorageEngine:
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
                     (json.dumps(new_tags, ensure_ascii=False), now, entry_id)
                 )
+                # v5.5.5 fix: 更新标签后刷新 FTS 索引
+                self._refresh_fts(conn, entry_id)
                 self._add_audit(
-                    "batch_remove_tags", entry_id, actor, session_id, "",
+                    "batch_remove_tags", entry_id, actor, session_id,
+                    row["privacy"] if row["privacy"] else "",
                     details={"removed_tags": tags, "result_tags": new_tags}
                 )
                 count += 1
@@ -8508,7 +8549,7 @@ class StorageEngine:
         now = time.time()
 
         rows = conn.execute(
-            "SELECT id, tags FROM memories WHERE category != 'trash'"
+            "SELECT id, tags, privacy FROM memories WHERE category != 'trash'"
         ).fetchall()
 
         for row in rows:
@@ -8526,8 +8567,11 @@ class StorageEngine:
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
                     (json.dumps(new_tags, ensure_ascii=False), now, row["id"])
                 )
+                # v5.5.5 fix: 更新标签后刷新 FTS 索引
+                self._refresh_fts(conn, row["id"])
                 self._add_audit(
-                    "merge_tags", row["id"], actor, session_id, "",
+                    "merge_tags", row["id"], actor, session_id,
+                    row["privacy"] if row["privacy"] else "",
                     details={"source_tags": source_tags, "target_tag": target_tag}
                 )
                 count += 1
@@ -10060,6 +10104,8 @@ class StorageEngine:
                    updated_at = ? WHERE id = ?""",
                 (content, category, tags_json, importance, time.time(), memory_id)
             )
+            # v5.5.5 fix: 回滚后刷新 FTS 索引，避免全文搜索返回过期数据
+            self._refresh_fts(conn, memory_id)
             conn.commit()
 
             return {
@@ -13429,8 +13475,9 @@ class StorageEngine:
             return {"error": "Agent ID 不能为空"}
 
         # 查找高频记忆
+        # v5.5.5 fix: 添加 privacy 用于审计日志
         rows = conn.execute(
-            "SELECT id, content, importance, access_count FROM memories "
+            "SELECT id, content, importance, access_count, privacy FROM memories "
             "WHERE source_agent = ? AND category != 'trash' AND access_count >= ?",
             (aid, min_access_count)
         ).fetchall()
@@ -13449,7 +13496,7 @@ class StorageEngine:
         details = []
 
         for r in rows:
-            mem_id, content, cur_imp, access_cnt = r[0], r[1], (r[2] or "MEDIUM").upper(), r[3]
+            mem_id, content, cur_imp, access_cnt, privacy = r[0], r[1], (r[2] or "MEDIUM").upper(), r[3], r[4]
             new_imp = imp_upgrade.get(cur_imp)
 
             if new_imp and boost_importance:
@@ -13458,8 +13505,10 @@ class StorageEngine:
                         "UPDATE memories SET importance = ?, updated_at = ? WHERE id = ?",
                         (new_imp, time.time(), mem_id)
                     )
-                    self._add_audit("reinforce", mem_id, agent_id, "", "",
-                                    details={"from": cur_imp, "to": new_imp})
+                    # v5.5.5 fix: 审计日志记录真实隐私级别
+                    self._add_audit("reinforce", mem_id, agent_id, "",
+                                     privacy if privacy else "",
+                                     details={"from": cur_imp, "to": new_imp})
                 reinforced += 1
                 details.append({
                     "id": mem_id,
@@ -13568,7 +13617,9 @@ class StorageEngine:
                 except Exception as e:
                     logger.warning("FTS sync failed for shared memory %s: %s", new_id, e)
                 # 审计记录
-                self._add_audit("share", new_id, to_aid, "", "")
+                # v5.5.5 fix: 审计日志记录真实隐私级别
+                self._add_audit("share", new_id, to_aid, "",
+                                 privacy if privacy else "")
 
             shared += 1
             existing_contents.add(content)  # 更新去重集合
