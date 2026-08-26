@@ -2,6 +2,47 @@
 
 All notable changes to MindForge will be documented in this file.
 
+## [5.5.6] - 2026-08-26
+
+### Added
+- **Memory Pinning (置顶)**: Full pin/unpin lifecycle with priority sorting
+  - `add(..., pinned=True)` — create memory already pinned
+  - `pin(memory_id)` / `unpin(memory_id)` — toggle pin status with audit logging
+  - `list(pinned=True/False)` — filter by pin status
+  - `list_pinned(limit)` — list all pinned memories
+  - Pinned memories always appear first in `list()` results (`ORDER BY pinned DESC`)
+  - `update(memory_id, pinned=True/False)` — update pin status
+- **Batch Get Memories**: `batch_get(memory_ids)` — fetch multiple memories in a single SQL query, preserving input order, with automatic dedup and expired-memory filtering
+- **Memory Timeline View**: `timeline(category, layer, limit)` — group memories by time period (today / yesterday / this_week / this_month / earlier)
+- **Search Suggestions**: `search_suggestions(prefix, limit, category)` — autocomplete suggestions based on existing tags and categories (case-insensitive prefix matching)
+- **Duplicate Detection on Add**: `check_duplicates(content, threshold, category, limit)` — detect near-duplicate memories before adding, using Jaccard + SequenceMatcher hybrid similarity
+- **Batch Tag Operations by ID**: `add_tags_to_memories(ids, tags)` and `remove_tags_from_memories(ids, tags)` — bulk add/remove tags for specific memory IDs
+- **Stats Enhancement**: `stats()` now includes `pinned_count`
+
+### Fixed
+- **fuzzy_search crash on None/empty query**: Added defensive checks for `None`, non-string, and whitespace-only queries; returns `[]` instead of raising `AttributeError`
+- **rename_tag case-insensitive matching**: Tags now match case-insensitively (`"MyTag"` renamed via `"mytag"` works); post-rename deduplication prevents duplicate tags
+- **rename_tag empty/None input**: Returns `0` instead of crashing on empty or `None` tag names
+- **batch_add missing fields**: Now supports `pinned`, `expires_at`, and `metadata` fields (previously silently ignored)
+- **Facade `list()` missing `pinned` filter**: Now passes `pinned` parameter through to storage layer
+- **Facade `update()` missing `pinned` parameter**: Now supports updating pin status via `update()`
+
+### Performance
+- `batch_get()` reduces N+1 query pattern to a single `IN` query for bulk memory retrieval
+- Timeline view uses single sorted query instead of multiple date-range queries
+- Search suggestions use in-memory set aggregation after one DB scan
+
+### Tests
+- Added `tests/test_v556_features.py` with 50+ test cases covering:
+  - Pinning (10 tests): basic pin/unpin, add-with-pin, list filter, priority sorting, delete/restore persistence, update pin
+  - Batch get (5 tests): basic, empty, nonexistent, order preservation, dedup
+  - Timeline (4 tests): basic, empty, category filter, total count
+  - Search suggestions (6 tests): tags, categories, empty/None prefix, no match, limit
+  - Duplicate detection (6 tests): exact, high similarity, no match, empty, category filter, threshold
+  - Batch tag ops (6 tests): add, no-duplicate, empty, nonexistent, remove, case-insensitive remove
+  - Bug fixes (12 tests): fuzzy_search None/empty/whitespace, rename_tag case/empty/dedup, batch_add pinned/expires/metadata, stats pinned_count
+- Full suite: **265+ passed** (215 existing + 50+ new)
+
 ## [5.5.2] - 2026-08-23
 
 ### Added

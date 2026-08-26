@@ -1021,11 +1021,13 @@ class StorageEngine:
                    source_session: str = "",
                    source_agent: str = "",
                    starred: bool = False,
+                   pinned: bool = False,
                    expires_at: float = 0.0,
                    metadata: Optional[Dict[str, Any]] = None) -> MemoryEntry:
         """添加记忆
 
         v5.5.2 新增 expires_at 参数（TTL 过期时间戳，0=永不过期）。
+        v5.5.6 新增 pinned 参数（置顶标记）。
         """
         # v5.4.7 修复 L-8：拒绝 None 或空内容
         if content is None:
@@ -1059,6 +1061,7 @@ class StorageEngine:
 
         # starred 类型强制
         starred = bool(starred)
+        pinned = bool(pinned)
 
         now = time.time()
         entry_id = str(uuid.uuid4())
@@ -1091,6 +1094,7 @@ class StorageEngine:
             last_accessed_at=now,
             metadata=clean_metadata,
             starred=starred,
+            pinned=pinned,
             expires_at=float(expires_at) if expires_at else 0.0,
             encrypted=self.encrypted,
             ciphertext=ciphertext,
@@ -1105,8 +1109,8 @@ class StorageEngine:
                 privacy, importance, memory_type, layer,
                 source_session, source_agent, created_at, updated_at,
                 last_accessed_at, access_count, consolidation_count,
-                forgetting_score, strength, starred, metadata, encrypted, expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                forgetting_score, strength, starred, pinned, metadata, encrypted, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             entry.id, entry.content, entry.ciphertext, entry.nonce, entry.salt,
             entry.category, json.dumps(entry.tags, ensure_ascii=False),
@@ -1115,6 +1119,7 @@ class StorageEngine:
             entry.created_at, entry.updated_at, entry.last_accessed_at,
             entry.access_count, entry.consolidation_count,
             entry.forgetting_score, entry.strength, int(entry.starred),
+            int(entry.pinned),
             json.dumps(entry.metadata, ensure_ascii=False), int(entry.encrypted),
             entry.expires_at
         ))
@@ -1876,6 +1881,11 @@ class StorageEngine:
             "SELECT COUNT(*) FROM memories WHERE starred = 1 AND category != 'trash'"
         ).fetchone()[0]
 
+        # v5.5.6 新增：置顶记忆统计
+        pinned_count = conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE pinned = 1 AND category != 'trash'"
+        ).fetchone()[0]
+
         tag_counts = {}
         for row in conn.execute(
             "SELECT tags FROM memories WHERE category != 'trash'"
@@ -1901,6 +1911,7 @@ class StorageEngine:
             "by_importance": by_importance,
             "top_categories": top_categories,
             "starred_count": starred_count,
+            "pinned_count": pinned_count,
             "top_tags": top_tags,
         }
 
@@ -5965,7 +5976,7 @@ class StorageEngine:
         return deleted_count
 
     def batch_add(self, entries: List[Dict[str, Any]]) -> int:
-        """批量添加记忆（v5.1.3 新增）
+        """批量添加记忆（v5.1.3 新增，v5.5.6 增强：支持 expires_at/pinned/metadata）
 
         Args:
             entries: 记忆条目列表，每个条目包含 content、category、tags 等字段
@@ -5988,6 +5999,13 @@ class StorageEngine:
                 privacy_str = entry_data.get("privacy", "internal")
                 importance_str = entry_data.get("importance", "medium")
                 layer_str = entry_data.get("layer", "short_term")
+                # v5.5.6 新增：支持 expires_at 和 pinned
+                expires_at = float(entry_data.get("expires_at", 0.0) or 0.0)
+                pinned = 1 if entry_data.get("pinned", False) else 0
+                starred = 1 if entry_data.get("starred", False) else 0
+                metadata = entry_data.get("metadata", {})
+                if not isinstance(metadata, dict):
+                    metadata = {}
 
                 ciphertext = None
                 nonce = None
@@ -6007,16 +6025,17 @@ class StorageEngine:
                         privacy, importance, memory_type, layer,
                         source_session, source_agent, created_at, updated_at,
                         last_accessed_at, access_count, consolidation_count,
-                        forgetting_score, strength, starred, metadata, encrypted
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        forgetting_score, strength, starred, pinned, metadata, encrypted, expires_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     entry_id, stored_content, ciphertext, nonce, salt,
                     category, json.dumps(tags, ensure_ascii=False),
                     privacy_str, importance_str, "text",
                     layer_str, "", "",
                     now, now, now,
-                    0, 0, 0.0, 1.0, 0,
-                    json.dumps({}, ensure_ascii=False), int(self.encrypted)
+                    0, 0, 0.0, 1.0, starred, pinned,
+                    json.dumps(metadata, ensure_ascii=False), int(self.encrypted),
+                    expires_at
                 ))
 
                 if not self.encrypted:
@@ -6199,7 +6218,7 @@ class StorageEngine:
         return results
 
     def rename_tag(self, old_tag: str, new_tag: str) -> int:
-        """重命名标签（v5.1.7 新增）
+        """重命名标签（v5.1.7 新增，v5.5.6 修复：大小写不敏感 + 空值防御）
 
         Args:
             old_tag: 旧标签名
@@ -6208,16 +6227,40 @@ class StorageEngine:
         Returns:
             受影响的记忆条数
         """
+        # v5.5.6 fix: 空值防御
+        if not old_tag or not new_tag or not isinstance(old_tag, str) or not isinstance(new_tag, str):
+            return 0
+        old_tag = old_tag.strip()
+        new_tag = new_tag.strip()
+        if not old_tag or not new_tag:
+            return 0
+
         conn = self._get_conn()
         count = 0
 
         rows = conn.execute("SELECT id, tags FROM memories WHERE category != 'trash'").fetchall()
         for row in rows:
             tags = self._safe_json_loads(row["tags"], [])
-            if old_tag in tags:
-                new_tags = [new_tag if t == old_tag else t for t in tags]
+            # v5.5.6 fix: 大小写不敏感匹配，但保留其他标签的原始大小写
+            new_tags = []
+            changed = False
+            for t in tags:
+                if isinstance(t, str) and t.lower() == old_tag.lower():
+                    new_tags.append(new_tag)
+                    changed = True
+                else:
+                    new_tags.append(t)
+            if changed:
+                # 去重（重命名后可能产生重复标签）
+                seen = set()
+                deduped = []
+                for t in new_tags:
+                    key = t.lower() if isinstance(t, str) else str(t)
+                    if key not in seen:
+                        seen.add(key)
+                        deduped.append(t)
                 conn.execute("UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
-                             (json.dumps(new_tags, ensure_ascii=False), time.time(), row["id"]))
+                             (json.dumps(deduped, ensure_ascii=False), time.time(), row["id"]))
                 count += 1
 
         conn.commit()
@@ -7170,6 +7213,14 @@ class StorageEngine:
         """
         from difflib import SequenceMatcher
 
+        # v5.5.6 fix: 防御 None / 非字符串 / 空查询
+        if query is None:
+            return []
+        if not isinstance(query, str):
+            query = str(query)
+        if not query.strip():
+            return []
+
         conn = self._get_conn()
         query_lower = query.lower()
 
@@ -7280,6 +7331,316 @@ class StorageEngine:
             ]
         except sqlite3.OperationalError:
             return []
+
+    # ===== v5.5.6 新增方法 =====
+
+    def batch_get_memories(self, memory_ids: List[str],
+                           actor: str = "", session_id: str = "") -> List[MemoryEntry]:
+        """批量获取记忆（v5.5.6 新增）
+
+        单次 SQL 查询获取多条记忆，避免 N+1 查询。
+        自动排除回收站和过期记忆。
+
+        Args:
+            memory_ids: 记忆 ID 列表
+            actor: 操作者（审计用）
+            session_id: 会话 ID
+
+        Returns:
+            按输入 ID 顺序排列的记忆列表（不存在的 ID 跳过）
+        """
+        if not memory_ids:
+            return []
+        # 去重并限制数量，防止 SQL 注入和性能问题
+        unique_ids = []
+        seen = set()
+        for mid in memory_ids:
+            if isinstance(mid, str) and mid and mid not in seen:
+                seen.add(mid)
+                unique_ids.append(mid)
+        if not unique_ids:
+            return []
+        if len(unique_ids) > 10000:
+            unique_ids = unique_ids[:10000]
+
+        conn = self._get_conn()
+        placeholders = ",".join(["?"] * len(unique_ids))
+        rows = conn.execute(
+            f"SELECT * FROM memories WHERE id IN ({placeholders}) AND category != 'trash'",
+            unique_ids
+        ).fetchall()
+
+        # 按输入顺序排列
+        id_to_row = {row["id"]: row for row in rows}
+        now = time.time()
+        result = []
+        for mid in unique_ids:
+            row = id_to_row.get(mid)
+            if not row:
+                continue
+            entry = self._row_to_entry(row)
+            # v5.5.2 兼容：过期记忆自动移入回收站
+            if entry.expires_at and entry.expires_at > 0 and entry.expires_at <= now:
+                try:
+                    conn.execute(
+                        "UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ? AND category != 'trash'",
+                        (now, mid)
+                    )
+                    conn.commit()
+                except Exception:
+                    pass
+                continue
+            self._update_access(entry, actor, session_id)
+            result.append(entry)
+        return result
+
+    def timeline_view(self, category: Optional[str] = None,
+                      layer: Optional[MemoryLayer] = None,
+                      limit: int = 500) -> Dict[str, List[MemoryEntry]]:
+        """记忆时间线视图（v5.5.6 新增）
+
+        按创建时间分组为：今天、昨天、本周、本月、更早。
+
+        Args:
+            category: 限定分类
+            layer: 限定层级
+            limit: 最大返回条数
+
+        Returns:
+            {"today": [...], "yesterday": [...], "this_week": [...], "this_month": [...], "earlier": [...]}
+        """
+        import time as _time
+        now = _time.time()
+        # 计算各时间边界（本地日期）
+        from datetime import datetime, timedelta
+        now_dt = datetime.now()
+        today_start = datetime(now_dt.year, now_dt.month, now_dt.day).timestamp()
+        yesterday_start = today_start - 86400
+        # 本周一零点
+        week_start = today_start - (now_dt.weekday() * 86400)
+        # 本月1号零点
+        month_start = datetime(now_dt.year, now_dt.month, 1).timestamp()
+
+        entries = self.list_memories(
+            category=category, layer=layer, limit=limit,
+            sort_by="created_at", sort_order="desc"
+        )
+
+        result = {"today": [], "yesterday": [], "this_week": [], "this_month": [], "earlier": []}
+        for e in entries:
+            ts = e.created_at
+            if ts >= today_start:
+                result["today"].append(e)
+            elif ts >= yesterday_start:
+                result["yesterday"].append(e)
+            elif ts >= week_start:
+                result["this_week"].append(e)
+            elif ts >= month_start:
+                result["this_month"].append(e)
+            else:
+                result["earlier"].append(e)
+        return result
+
+    def search_suggestions(self, prefix: str, limit: int = 10,
+                           category: Optional[str] = None) -> Dict[str, List[str]]:
+        """搜索建议（v5.5.6 新增）
+
+        基于已有标签和分类，返回与前缀匹配的自动补全建议。
+
+        Args:
+            prefix: 输入前缀（大小写不敏感）
+            limit: 每类返回数量上限
+            category: 限定分类范围
+
+        Returns:
+            {"tags": [...], "categories": [...]}
+        """
+        if not prefix or not isinstance(prefix, str):
+            return {"tags": [], "categories": []}
+        prefix_lower = prefix.lower().strip()
+        if not prefix_lower:
+            return {"tags": [], "categories": []}
+
+        conn = self._get_conn()
+        query = "SELECT tags, category FROM memories WHERE category != 'trash'"
+        params = []
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        rows = conn.execute(query, params).fetchall()
+
+        tag_set = set()
+        cat_set = set()
+        for row in rows:
+            cat = row["category"]
+            if cat and cat.lower().startswith(prefix_lower):
+                cat_set.add(cat)
+            raw_tags = row["tags"]
+            if raw_tags:
+                try:
+                    tags = json.loads(raw_tags) if isinstance(raw_tags, str) else raw_tags
+                    for t in tags:
+                        if isinstance(t, str) and t.lower().startswith(prefix_lower):
+                            tag_set.add(t)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        return {
+            "tags": sorted(tag_set)[:limit],
+            "categories": sorted(cat_set)[:limit],
+        }
+
+    def check_duplicates(self, content: str,
+                         similarity_threshold: float = 0.85,
+                         category: Optional[str] = None,
+                         limit: int = 5) -> List[Dict[str, Any]]:
+        """添加前检测近重复记忆（v5.5.6 新增）
+
+        使用 Jaccard 词重叠 + SequenceMatcher 综合判断，
+        返回与给定内容高度相似的已有记忆。
+
+        Args:
+            content: 待检测内容
+            similarity_threshold: 相似度阈值（0-1），默认 0.85
+            category: 限定分类范围
+            limit: 最大返回数量
+
+        Returns:
+            [{"entry": MemoryEntry, "similarity": float, "match_type": str}, ...]
+        """
+        if not content or not isinstance(content, str) or not content.strip():
+            return []
+
+        from difflib import SequenceMatcher
+        import re
+
+        conn = self._get_conn()
+        query = "SELECT * FROM memories WHERE category != 'trash' AND encrypted = 0"
+        params = []
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        rows = conn.execute(query, params).fetchall()
+
+        content_lower = content.lower().strip()
+        content_words = set(re.findall(r'\w+', content_lower))
+
+        results = []
+        for row in rows:
+            entry = self._row_to_entry(row)
+            entry_content = (entry.content or "").lower().strip()
+            if not entry_content:
+                continue
+
+            # 完全相同
+            if entry_content == content_lower:
+                results.append({"entry": entry, "similarity": 1.0, "match_type": "exact"})
+                continue
+
+            # Jaccard 词重叠
+            entry_words = set(re.findall(r'\w+', entry_content))
+            if content_words and entry_words:
+                jaccard = len(content_words & entry_words) / len(content_words | entry_words)
+            else:
+                jaccard = 0.0
+
+            # SequenceMatcher
+            seq_ratio = SequenceMatcher(None, content_lower, entry_content).ratio()
+
+            # 综合相似度（加权平均）
+            similarity = max(jaccard * 0.6 + seq_ratio * 0.4, seq_ratio * 0.8)
+
+            if similarity >= similarity_threshold:
+                match_type = "high" if similarity >= 0.95 else "partial"
+                results.append({"entry": entry, "similarity": round(similarity, 4), "match_type": match_type})
+
+        results.sort(key=lambda x: x["similarity"], reverse=True)
+        return results[:limit]
+
+    def add_tags_to_ids(self, memory_ids: List[str], tags: List[str],
+                        actor: str = "", session_id: str = "") -> int:
+        """按 ID 列表批量添加标签（v5.5.6 新增）
+
+        Args:
+            memory_ids: 记忆 ID 列表
+            tags: 要添加的标签列表
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            实际更新的记忆条数
+        """
+        if not memory_ids or not tags:
+            return 0
+        clean_tags = [t for t in tags if isinstance(t, str) and t.strip()]
+        if not clean_tags:
+            return 0
+
+        conn = self._get_conn()
+        now = time.time()
+        updated = 0
+        for mid in memory_ids:
+            if not isinstance(mid, str) or not mid:
+                continue
+            row = conn.execute(
+                "SELECT tags FROM memories WHERE id = ? AND category != 'trash'", (mid,)
+            ).fetchone()
+            if not row:
+                continue
+            existing = self._safe_json_loads(row["tags"], [])
+            merged = list(existing)
+            for t in clean_tags:
+                if t not in merged:
+                    merged.append(t)
+            if len(merged) != len(existing):
+                conn.execute(
+                    "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(merged, ensure_ascii=False), now, mid)
+                )
+                updated += 1
+        conn.commit()
+        return updated
+
+    def remove_tags_from_ids(self, memory_ids: List[str], tags: List[str],
+                             actor: str = "", session_id: str = "") -> int:
+        """按 ID 列表批量移除标签（v5.5.6 新增）
+
+        Args:
+            memory_ids: 记忆 ID 列表
+            tags: 要移除的标签列表
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            实际更新的记忆条数
+        """
+        if not memory_ids or not tags:
+            return 0
+        remove_lower = {t.lower() for t in tags if isinstance(t, str)}
+        if not remove_lower:
+            return 0
+
+        conn = self._get_conn()
+        now = time.time()
+        updated = 0
+        for mid in memory_ids:
+            if not isinstance(mid, str) or not mid:
+                continue
+            row = conn.execute(
+                "SELECT tags FROM memories WHERE id = ? AND category != 'trash'", (mid,)
+            ).fetchone()
+            if not row:
+                continue
+            existing = self._safe_json_loads(row["tags"], [])
+            filtered = [t for t in existing if isinstance(t, str) and t.lower() not in remove_lower]
+            if len(filtered) != len(existing):
+                conn.execute(
+                    "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(filtered, ensure_ascii=False), now, mid)
+                )
+                updated += 1
+        conn.commit()
+        return updated
 
     def highlight_text(self, text: str, query: str,
                        before_tag: str = "<mark>",

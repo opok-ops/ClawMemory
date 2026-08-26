@@ -36,7 +36,7 @@ from .embedding import EmbeddingEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.5.5"
+    __version__ = "5.5.6"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -303,11 +303,13 @@ class MindForge:
             source_session: str = "",
             source_agent: str = "",
             starred: bool = False,
+            pinned: bool = False,
             expires_at: float = 0.0,
             metadata: Optional[Dict[str, Any]] = None) -> MemoryEntry:
         """添加一条记忆到存储并建立索引。
 
         v5.5.2 新增 expires_at 参数（TTL 过期时间戳，0=永不过期）。
+        v5.5.6 新增 pinned 参数（置顶标记）。
 
         Args:
             content: 记忆内容文本。
@@ -320,6 +322,7 @@ class MindForge:
             source_session: 来源会话 ID（可选）。
             source_agent: 来源 Agent 标识（可选）。
             starred: 是否星标收藏。
+            pinned: 是否置顶（v5.5.6 新增）。
             expires_at: 过期时间戳（Unix epoch 秒），0 表示永不过期。
             metadata: 附加元数据字典。
 
@@ -349,6 +352,7 @@ class MindForge:
             source_session=source_session,
             source_agent=source_agent,
             starred=starred,
+            pinned=pinned,
             expires_at=expires_at,
             metadata=metadata,
         )
@@ -449,17 +453,22 @@ class MindForge:
              category: Optional[str] = None,
              layer: Optional[MemoryLayer] = None,
              starred: Optional[bool] = None,
+             pinned: Optional[bool] = None,
              created_after: Optional[float] = None,
              created_before: Optional[float] = None,
              limit: int = 50,
              offset: int = 0,
              sort_by: str = "created_at",
              sort_order: str = "desc") -> List[MemoryEntry]:
-        """列出记忆"""
+        """列出记忆
+
+        v5.5.6 新增 pinned 参数（置顶筛选）。
+        """
         return self._storage.list_memories(
             category=category,
             layer=layer,
             starred=starred,
+            pinned=pinned,
             created_after=created_after,
             created_before=created_before,
             limit=limit,
@@ -495,10 +504,14 @@ class MindForge:
                importance: Optional[Importance] = None,
                layer: Optional[MemoryLayer] = None,
                starred: Optional[bool] = None,
+               pinned: Optional[bool] = None,
                metadata: Optional[Dict[str, Any]] = None,
                actor: str = "",
                session_id: str = "") -> bool:
-        """更新记忆"""
+        """更新记忆
+
+        v5.5.6 新增 pinned 参数。
+        """
         success = self._storage.update_memory(
             entry_id=memory_id,
             content=content,
@@ -508,6 +521,7 @@ class MindForge:
             importance=importance,
             layer=layer,
             starred=starred,
+            pinned=pinned,
             metadata=metadata,
             actor=actor,
             session_id=session_id,
@@ -4028,19 +4042,127 @@ class MindForge:
         """删除记忆关联"""
         return self._storage.unlink_memories(link_id)
 
-    # ===== 置顶功能（v5.2.5 新增）=====
+    # ===== 置顶功能（v5.2.5 新增，v5.5.6 增强 actor/session_id）=====
 
-    def pin(self, memory_id: str) -> bool:
-        """置顶记忆"""
-        return self._storage.pin_memory(memory_id)
+    def pin(self, memory_id: str, actor: str = "", session_id: str = "") -> bool:
+        """置顶记忆
 
-    def unpin(self, memory_id: str) -> bool:
-        """取消置顶"""
-        return self._storage.unpin_memory(memory_id)
+        v5.5.6 增强：支持 actor/session_id 审计。
+        """
+        return self._storage.update_memory(
+            entry_id=memory_id, pinned=True, actor=actor, session_id=session_id
+        )
+
+    def unpin(self, memory_id: str, actor: str = "", session_id: str = "") -> bool:
+        """取消置顶
+
+        v5.5.6 增强：支持 actor/session_id 审计。
+        """
+        return self._storage.update_memory(
+            entry_id=memory_id, pinned=False, actor=actor, session_id=session_id
+        )
 
     def list_pinned(self, limit: int = 50) -> list:
         """列出所有置顶记忆"""
         return self._storage.list_pinned(limit)
+
+    # ===== v5.5.6 新增功能 =====
+
+    def batch_get(self, memory_ids: List[str],
+                  actor: str = "", session_id: str = "") -> List[Any]:
+        """批量获取记忆（v5.5.6 新增）
+
+        单次查询获取多条记忆，避免 N+1 查询。
+
+        Args:
+            memory_ids: 记忆 ID 列表
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            按输入顺序排列的记忆列表
+        """
+        return self._storage.batch_get_memories(memory_ids, actor, session_id)
+
+    def timeline(self, category: Optional[str] = None,
+                 layer: Optional[MemoryLayer] = None,
+                 limit: int = 500) -> Dict[str, Any]:
+        """记忆时间线视图（v5.5.6 新增）
+
+        按创建时间分组为：今天、昨天、本周、本月、更早。
+
+        Args:
+            category: 限定分类
+            layer: 限定层级
+            limit: 最大返回条数
+
+        Returns:
+            {"today": [...], "yesterday": [...], "this_week": [...], "this_month": [...], "earlier": [...]}
+        """
+        return self._storage.timeline_view(category, layer, limit)
+
+    def search_suggestions(self, prefix: str, limit: int = 10,
+                           category: Optional[str] = None) -> Dict[str, List[str]]:
+        """搜索建议（v5.5.6 新增）
+
+        基于已有标签和分类返回自动补全建议。
+
+        Args:
+            prefix: 输入前缀
+            limit: 每类返回数量上限
+            category: 限定分类范围
+
+        Returns:
+            {"tags": [...], "categories": [...]}
+        """
+        return self._storage.search_suggestions(prefix, limit, category)
+
+    def check_duplicates(self, content: str,
+                         similarity_threshold: float = 0.85,
+                         category: Optional[str] = None,
+                         limit: int = 5) -> List[Dict[str, Any]]:
+        """添加前检测近重复记忆（v5.5.6 新增）
+
+        Args:
+            content: 待检测内容
+            similarity_threshold: 相似度阈值（0-1）
+            category: 限定分类范围
+            limit: 最大返回数量
+
+        Returns:
+            [{"entry": MemoryEntry, "similarity": float, "match_type": str}, ...]
+        """
+        return self._storage.check_duplicates(content, similarity_threshold, category, limit)
+
+    def add_tags_to_memories(self, memory_ids: List[str], tags: List[str],
+                             actor: str = "", session_id: str = "") -> int:
+        """按 ID 列表批量添加标签（v5.5.6 新增）
+
+        Args:
+            memory_ids: 记忆 ID 列表
+            tags: 要添加的标签列表
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            实际更新的记忆条数
+        """
+        return self._storage.add_tags_to_ids(memory_ids, tags, actor, session_id)
+
+    def remove_tags_from_memories(self, memory_ids: List[str], tags: List[str],
+                                  actor: str = "", session_id: str = "") -> int:
+        """按 ID 列表批量移除标签（v5.5.6 新增）
+
+        Args:
+            memory_ids: 记忆 ID 列表
+            tags: 要移除的标签列表
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            实际更新的记忆条数
+        """
+        return self._storage.remove_tags_from_ids(memory_ids, tags, actor, session_id)
 
     # ===== 记忆版本历史（v5.2.7 新增）=====
 
