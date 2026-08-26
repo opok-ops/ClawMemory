@@ -89,7 +89,7 @@ from core import (
 )
 
 try:
-    from __init__ import __version__
+    from MindForge import __version__
 except ImportError:
     __version__ = "5.5.5"
 

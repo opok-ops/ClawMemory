@@ -150,6 +150,7 @@ class MindForge:
         self._federated_acl = None      # v5.4.2 lazy
         self._share_conflict = None     # v5.4.2 lazy
         self._evolution = None          # v5.4.8 lazy (记忆巩固)
+        self._event_bus = None          # v5.5.5 lazy (事件总线)
 
         if self.config.encrypted:
             self._init_encryption()
@@ -226,17 +227,18 @@ class MindForge:
         if not self._storage or not self._index:
             return
         try:
-            # 分页加载所有记忆
             offset = 0
             page_size = 500
             while True:
                 entries = self._storage.list_memories(
                     limit=page_size, offset=offset,
-                    include_trash=False, actor="system", session_id="rebuild_index"
+                    sort_by="created_at", sort_order="asc"
                 )
                 if not entries:
                     break
                 for entry in entries:
+                    if entry.category == 'trash':
+                        continue
                     try:
                         imp_val = entry.importance.value if hasattr(entry.importance, 'value') else str(entry.importance)
                         self._index.index_memory(
@@ -354,7 +356,7 @@ class MindForge:
         self._index.index_memory(
             entry.id,
             content,
-            metadata={"category": category, "tags": tags or [], "importance": importance.value if isinstance(importance, Importance) else str(importance)},
+            metadata={"category": category, "tags": tags or [], "importance": importance.value if hasattr(importance, 'value') else str(importance)},
         )
 
         return entry
@@ -1792,8 +1794,11 @@ class MindForge:
                 })
             except Exception:
                 pass
-            # 发布事件（容错：EventBus 可能未初始化）
+            # 发布事件（惰性初始化 EventBus）
             try:
+                if self._event_bus is None:
+                    from modules.event_bus import EventBus
+                    self._event_bus = EventBus()
                 self._event_bus.publish("memory_updated", {
                     "memory_id": target_id,
                     "actor": actor,
@@ -1807,8 +1812,8 @@ class MindForge:
                     "soft_delete": True,
                     "merge_into": target_id,
                 })
-            except (AttributeError, Exception):
-                pass
+            except Exception as e:
+                logger.warning("EventBus publish failed: %s", e)
         return result
 
     # ===== 最常访问 / 最近访问（v5.5.4 新增）=====

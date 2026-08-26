@@ -5,8 +5,8 @@ import re
 here = Path(__file__).parent
 long_description = (here / "README.md").read_text(encoding="utf-8")
 
-# 直接从 __init__.py 读取版本号，避免 exec 导入问题
-init_content = (here / "__init__.py").read_text(encoding="utf-8")
+# 从 MindForge.py 读取版本号（根目录 __init__.py 已删除以避免 pytest 双重导入）
+init_content = (here / "MindForge.py").read_text(encoding="utf-8")
 version_match = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', init_content, re.M)
 version = version_match.group(1) if version_match else "0.0.0"
 

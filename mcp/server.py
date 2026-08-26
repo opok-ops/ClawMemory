@@ -923,7 +923,7 @@ def _handle_initialize(request: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "protocolVersion": "2024-11-05",
         "capabilities": {"tools": {}, "logging": {}},
-        "serverInfo": {"name": "mindforge", "version": "5.5.0"},
+        "serverInfo": {"name": "mindforge", "version": "5.5.5"},
     }
 
 
