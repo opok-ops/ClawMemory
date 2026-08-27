@@ -1542,7 +1542,13 @@ class StorageEngine:
                 return False
 
             existing_tags = self._safe_json_loads(row[0], [])
-            new_tags = list(set(existing_tags + list(tags)))
+            # v5.5.6 fix: 保序去重 + 大小写不敏感（原 list(set()) 打乱顺序）
+            new_tags = list(existing_tags)
+            seen_lower = {t.lower() for t in new_tags if isinstance(t, str)}
+            for t in tags:
+                if isinstance(t, str) and t.strip() and t.lower() not in seen_lower:
+                    new_tags.append(t)
+                    seen_lower.add(t.lower())
             if len(new_tags) == len(existing_tags):
                 return False
 

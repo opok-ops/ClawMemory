@@ -590,3 +590,42 @@ class TestBulkUpdateAddTagsConsistency:
         assert "MyTag" in entry.tags
         assert "new" in entry.tags
         assert "mytag" not in entry.tags
+
+
+class TestAppendTagsOrderPreserving:
+    """Bug 3 修正: append_tags 保序去重"""
+
+    def test_append_tags_preserves_order(self, mf):
+        """append_tags 应保留标签顺序"""
+        e = mf.add("测试", tags=["a", "b", "c"])
+        result = mf._storage.append_tags(e.id, ["d", "e"])
+        assert result is True
+        tags = mf.get(e.id).tags
+        assert tags == ["a", "b", "c", "d", "e"]
+
+    def test_append_tags_no_duplicate(self, mf):
+        """append_tags 不重复添加已有标签"""
+        e = mf.add("测试", tags=["a", "b"])
+        result = mf._storage.append_tags(e.id, ["b", "c"])
+        assert result is True
+        tags = mf.get(e.id).tags
+        assert tags == ["a", "b", "c"]
+
+    def test_append_tags_case_insensitive(self, mf):
+        """append_tags 大小写不敏感去重"""
+        e = mf.add("测试", tags=["MyTag"])
+        result = mf._storage.append_tags(e.id, ["mytag", "new"])
+        assert result is True
+        tags = mf.get(e.id).tags
+        assert tags == ["MyTag", "new"]
+
+    def test_append_tags_no_change_returns_false(self, mf):
+        """标签无变化时返回 False"""
+        e = mf.add("测试", tags=["a", "b"])
+        result = mf._storage.append_tags(e.id, ["A", "B"])
+        assert result is False
+
+    def test_append_tags_nonexistent(self, mf):
+        """不存在的记忆返回 False"""
+        result = mf._storage.append_tags("fake-id", ["tag"])
+        assert result is False
