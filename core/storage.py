@@ -7616,6 +7616,10 @@ class StorageEngine:
         if not content or not isinstance(content, str) or not content.strip():
             return []
 
+        # v5.5.6 fix: 与 add() 一致，先消毒再比较（否则 <b>bold</b> 无法匹配存储的 bold text）
+        content = self._strip_control(content)
+        content = _sanitize_html(content)
+
         from difflib import SequenceMatcher
         import re
 
@@ -7694,9 +7698,12 @@ class StorageEngine:
                 continue
             existing = self._safe_json_loads(row["tags"], [])
             merged = list(existing)
+            # v5.5.6 fix: 大小写不敏感去重，与 remove_tags_from_ids / rename_tag 一致
+            existing_lower = {t.lower() for t in merged if isinstance(t, str)}
             for t in clean_tags:
-                if t not in merged:
+                if t.lower() not in existing_lower:
                     merged.append(t)
+                    existing_lower.add(t.lower())
             if len(merged) != len(existing):
                 conn.execute(
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
@@ -8673,10 +8680,13 @@ class StorageEngine:
                 new_privacy = updates["new_privacy"]
 
             if "add_tags" in updates and updates["add_tags"]:
+                # v5.5.6 fix: 大小写不敏感去重，与 add_tags_to_ids / batch_add_tags 一致
+                existing_lower = {t.lower() for t in new_entry_tags if isinstance(t, str)}
                 for t in updates["add_tags"]:
                     t_clean = self._strip_control(t)[:64]
-                    if t_clean and t_clean not in new_entry_tags:
+                    if t_clean and t_clean.lower() not in existing_lower:
                         new_entry_tags.append(t_clean)
+                        existing_lower.add(t_clean.lower())
 
             if "remove_tags" in updates and updates["remove_tags"]:
                 for t in updates["remove_tags"]:
@@ -8929,7 +8939,13 @@ class StorageEngine:
                 continue
 
             existing_tags = self._safe_json_loads(row["tags"], [])
-            new_tags = list(set(existing_tags + tags))
+            # v5.5.6 fix: 保序去重（原 list(set()) 会打乱顺序），与 add_tags_to_ids 一致
+            new_tags = list(existing_tags)
+            seen_lower = {t.lower() for t in new_tags if isinstance(t, str)}
+            for t in tags:
+                if isinstance(t, str) and t.strip() and t.lower() not in seen_lower:
+                    new_tags.append(t)
+                    seen_lower.add(t.lower())
             if new_tags != existing_tags:
                 conn.execute(
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",

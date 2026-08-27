@@ -486,3 +486,107 @@ class TestStatsPinnedCount:
         mf.delete(e.id, hard_delete=False)
         stats = mf.stats()
         assert stats["pinned_count"] == 0
+
+
+# ===== v5.5.6 Bug 修复追加测试 =====
+
+class TestCheckDuplicatesHtmlSanitize:
+    """Bug 1: check_duplicates 未对输入做 HTML 消毒"""
+
+    def test_html_content_matches_sanitized(self, mf):
+        """含 HTML 标签的输入应匹配消毒后存储的内容"""
+        mf.add("bold text")
+        result = mf.check_duplicates("<b>bold</b> text")
+        assert len(result) >= 1
+        assert result[0]["similarity"] == 1.0
+
+    def test_html_content_partial_match(self, mf):
+        """HTML 消毒后部分匹配（降低阈值验证）"""
+        mf.add("Python 编程教程")
+        # 消毒后输入为 "Python 编程"，与存储内容高度相似
+        result = mf.check_duplicates("<i>Python</i> 编程", similarity_threshold=0.5)
+        assert len(result) >= 1
+
+    def test_script_tag_sanitized(self, mf):
+        """script 标签被消毒（标签移除，内容保留）"""
+        mf.add("alert(1)安全内容")
+        # 消毒后 <script>alert(1)</script>安全内容 → alert(1)安全内容
+        result = mf.check_duplicates("<script>alert(1)</script>安全内容")
+        assert len(result) >= 1
+        assert result[0]["similarity"] == 1.0
+
+
+class TestAddTagsCaseInsensitive:
+    """Bug 2: add_tags_to_ids 大小写敏感"""
+
+    def test_add_tags_case_insensitive_dedup(self, mf):
+        """添加大小写不同的已有标签不应重复"""
+        e = mf.add("测试", tags=["MyTag"])
+        count = mf.add_tags_to_memories([e.id], ["mytag"])
+        assert count == 0  # 已存在（大小写不敏感），无变化
+        tags = mf.get(e.id).tags
+        assert len(tags) == 1
+        assert tags[0] == "MyTag"  # 保留原始大小写
+
+    def test_add_tags_new_case_insensitive(self, mf):
+        """添加新标签（大小写不同）正常工作"""
+        e = mf.add("测试", tags=["MyTag"])
+        count = mf.add_tags_to_memories([e.id], ["OTHER"])
+        assert count == 1
+        tags = mf.get(e.id).tags
+        assert "MyTag" in tags
+        assert "OTHER" in tags
+
+    def test_add_tags_preserves_original_case(self, mf):
+        """去重时保留已有标签的原始大小写"""
+        e = mf.add("测试", tags=["Important"])
+        mf.add_tags_to_memories([e.id], ["important"])
+        tags = mf.get(e.id).tags
+        assert "Important" in tags
+        assert "important" not in tags
+
+
+class TestBatchAddTagsOrderPreserving:
+    """Bug 3: batch_add_tags 使用 set 去重不保留顺序"""
+
+    def test_batch_add_tags_preserves_order(self, mf):
+        """batch_add_tags 应保留标签顺序"""
+        e = mf.add("测试", tags=["a", "b", "c"])
+        # 通过 storage 层直接调用 batch_add_tags
+        count = mf._storage.batch_add_tags([e.id], ["d", "e"])
+        assert count == 1
+        tags = mf.get(e.id).tags
+        assert tags == ["a", "b", "c", "d", "e"]
+
+    def test_batch_add_tags_no_duplicate(self, mf):
+        """batch_add_tags 不重复添加已有标签"""
+        e = mf.add("测试", tags=["a", "b"])
+        count = mf._storage.batch_add_tags([e.id], ["b", "c"])
+        assert count == 1
+        tags = mf.get(e.id).tags
+        assert tags == ["a", "b", "c"]
+
+    def test_batch_add_tags_case_insensitive(self, mf):
+        """batch_add_tags 大小写不敏感去重"""
+        e = mf.add("测试", tags=["MyTag"])
+        count = mf._storage.batch_add_tags([e.id], ["mytag", "new"])
+        assert count == 1
+        tags = mf.get(e.id).tags
+        assert tags == ["MyTag", "new"]
+
+
+class TestBulkUpdateAddTagsConsistency:
+    """bulk_update_by_filter add_tags 大小写一致性"""
+
+    def test_bulk_update_add_tags_case_insensitive(self, mf):
+        """bulk_update add_tags 大小写不敏感"""
+        mf.add("A", category="test", tags=["MyTag"])
+        count = mf.bulk_update_by_filter(
+            category="test",
+            updates={"add_tags": ["mytag", "new"]}
+        )
+        assert count == 1
+        entry = mf.list(category="test")[0]
+        assert "MyTag" in entry.tags
+        assert "new" in entry.tags
+        assert "mytag" not in entry.tags
