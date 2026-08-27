@@ -41,10 +41,13 @@ class TestVersion:
 
     def test_pyproject_version(self):
         """pyproject.toml 版本号一致"""
-        import tomllib
-        with open("pyproject.toml", "rb") as f:
-            data = tomllib.load(f)
-        assert data["project"]["version"] == "5.5.6"
+        import re
+        pyproject_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pyproject.toml")
+        with open(pyproject_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        m = re.search(r'^version\s*=\s*["\']([^"\']+)["\']', content, re.M)
+        assert m, "pyproject.toml 中未找到 version"
+        assert m.group(1) == "5.5.6"
 
 
 # ===== 置顶功能 =====
