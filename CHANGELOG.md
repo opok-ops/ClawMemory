@@ -26,6 +26,9 @@ All notable changes to MindForge will be documented in this file.
 - **batch_add missing fields**: Now supports `pinned`, `expires_at`, and `metadata` fields (previously silently ignored)
 - **Facade `list()` missing `pinned` filter**: Now passes `pinned` parameter through to storage layer
 - **Facade `update()` missing `pinned` parameter**: Now supports updating pin status via `update()`
+- **P1: Conflict decay methods missing**: Added `adjust_importance()` and `append_tags()` to `StorageEngine`, which were called by the conflict resolution module but never implemented, causing silent failures in conflict decay functionality.
+- **P1: Package naming conflict in pytest**: Removed root-level `__init__.py` that caused pytest to load the `MindForge` package from two different paths, resulting in enum classes with different identities and `isinstance()` returning `False`. Updated `setup.py` to read version from `MindForge.py` instead.
+- **P2: Version hardcoded test failure**: Changed `test_version_is_555` in v5.5.5 tests to `test_version_at_least_555` to avoid breaking on minor version bumps.
 
 ### Performance
 - `batch_get()` reduces N+1 query pattern to a single `IN` query for bulk memory retrieval
@@ -33,15 +36,19 @@ All notable changes to MindForge will be documented in this file.
 - Search suggestions use in-memory set aggregation after one DB scan
 
 ### Tests
-- Added `tests/test_v556_features.py` with 50+ test cases covering:
+- Added `tests/test_v556_features.py` with 60+ test cases covering:
   - Pinning (10 tests): basic pin/unpin, add-with-pin, list filter, priority sorting, delete/restore persistence, update pin
   - Batch get (5 tests): basic, empty, nonexistent, order preservation, dedup
   - Timeline (4 tests): basic, empty, category filter, total count
   - Search suggestions (6 tests): tags, categories, empty/None prefix, no match, limit
   - Duplicate detection (6 tests): exact, high similarity, no match, empty, category filter, threshold
   - Batch tag ops (6 tests): add, no-duplicate, empty, nonexistent, remove, case-insensitive remove
+  - adjust_importance (5 tests): lower, raise, zero delta, nonexistent, range clamping
+  - append_tags (4 tests): basic, duplicate no-change, empty list, nonexistent
+  - Package naming fix (3 tests): no root __init__.py, import consistency, isinstance cross-import
   - Bug fixes (12 tests): fuzzy_search None/empty/whitespace, rename_tag case/empty/dedup, batch_add pinned/expires/metadata, stats pinned_count
-- Full suite: **265+ passed** (215 existing + 50+ new)
+  - Version verification (3 tests): semver format, exact 5.5.6 match, pyproject.toml consistency
+- Full suite: **260+ passed**
 
 ## [5.5.2] - 2026-08-23
 

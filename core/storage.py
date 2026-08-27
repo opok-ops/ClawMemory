@@ -1457,6 +1457,111 @@ class StorageEngine:
 
         return True
 
+    def adjust_importance(self, entry_id: str, delta: float,
+                          actor: str = "", session_id: str = "") -> bool:
+        """调整记忆重要性（增量方式，v5.5.6 新增）
+
+        用于冲突衰减等场景，将重要性按 delta 增量调整（正数增加，负数降低）。
+        自动限制在 Importance 枚举范围内。
+
+        Args:
+            entry_id: 记忆 ID
+            delta: 重要性增量（如 -0.15 表示降低 0.15）
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            是否成功
+        """
+        if not entry_id or delta == 0:
+            return False
+        conn = self._get_conn()
+        now = time.time()
+        try:
+            row = conn.execute(
+                "SELECT importance, privacy FROM memories WHERE id = ? AND category != 'trash'",
+                (entry_id,)
+            ).fetchone()
+            if not row:
+                return False
+
+            current_imp = self._downgrade_enum(row[0], Importance, Importance.MEDIUM)
+            imp_order = list(Importance)
+            try:
+                current_idx = imp_order.index(current_imp)
+            except ValueError:
+                current_idx = len(imp_order) // 2
+
+            new_idx = current_idx + int(round(delta * len(imp_order)))
+            new_idx = max(0, min(len(imp_order) - 1, new_idx))
+            new_imp = imp_order[new_idx]
+
+            if new_imp == current_imp:
+                return False
+
+            conn.execute(
+                "UPDATE memories SET importance = ?, updated_at = ? WHERE id = ?",
+                (new_imp.value, now, entry_id)
+            )
+            conn.commit()
+            self._add_audit(
+                "update", entry_id, actor, session_id,
+                row[1] if row[1] else "",
+                details={"importance_delta": delta, "new_importance": new_imp.value}
+            )
+            return True
+        except Exception:
+            conn.rollback()
+            return False
+
+    def append_tags(self, entry_id: str, tags: List[str],
+                    actor: str = "", session_id: str = "") -> bool:
+        """追加标签到单条记忆（v5.5.6 新增）
+
+        与 batch_add_tags 类似，但只操作单条记忆，用于冲突衰减等场景。
+
+        Args:
+            entry_id: 记忆 ID
+            tags: 要追加的标签列表
+            actor: 操作者
+            session_id: 会话 ID
+
+        Returns:
+            是否成功（标签有变化返回 True）
+        """
+        if not entry_id or not tags:
+            return False
+        conn = self._get_conn()
+        now = time.time()
+        try:
+            row = conn.execute(
+                "SELECT tags, privacy FROM memories WHERE id = ? AND category != 'trash'",
+                (entry_id,)
+            ).fetchone()
+            if not row:
+                return False
+
+            existing_tags = self._safe_json_loads(row[0], [])
+            new_tags = list(set(existing_tags + list(tags)))
+            if len(new_tags) == len(existing_tags):
+                return False
+
+            conn.execute(
+                "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(new_tags, ensure_ascii=False), now, entry_id)
+            )
+            self._refresh_fts(conn, entry_id)
+            conn.commit()
+            self._add_audit(
+                "update", entry_id, actor, session_id,
+                row[1] if row[1] else "",
+                details={"added_tags": tags, "result_tags": new_tags}
+            )
+            return True
+        except Exception:
+            conn.rollback()
+            return False
+
     def _refresh_fts(self, conn: sqlite3.Connection, entry_id: str):
         """刷新单条记忆的 FTS 索引（contentless FTS5：先 delete 旧条目再 insert 新条目）
 
