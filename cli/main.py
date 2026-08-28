@@ -612,7 +612,8 @@ def cmd_delete(args):
 
     if success:
         if getattr(args, 'json_output', False):
-            _json_out({"status": "ok", "id": args.memory_id,
+            # v5.5.6 fix: 参数名为 id 而非 memory_id（此前 AttributeError）
+            _json_out({"status": "ok", "id": args.id,
                        "action": "hard_delete" if args.hard else "soft_delete"})
             cm.close()
             return 0
@@ -857,13 +858,21 @@ def cmd_stats(args):
         print(f"\n📋 审计记录数：   {stats.get('audit_records', 0)}")
     else:
         stats = cm.stats()
+        # v5.5.6 fix: 非 detailed 模式也支持 --json 输出（此前无 JSON 分支）
+        if getattr(args, 'json_output', False):
+            # 附加数据库路径信息（便于插件集成）
+            stats["db_path"] = args.db_path or ""
+            _json_out(stats)
+            cm.close()
+            return 0
         print_banner()
         print(c("MindForge 统计报告", "bold"))
         print("=" * 50)
         print(f"总记忆数：  {c(str(stats['total']), 'cyan')}")
         print(f"⭐ 收藏数： {c(str(stats.get('starred_count', 0)), 'yellow')}")
         print(f"数据库大小：{format_size(stats['db_size_bytes'])}")
-        print(f"数据库路径：{stats['db_path']}")
+        # v5.5.6 fix: stats() 不返回 db_path，改为显示数据库文件大小即可
+        print(f"数据库路径：{args.db_path or '(默认)'}")
 
         print(f"\n按隐私分级：")
         for level, count in stats.get("by_privacy", {}).items():
@@ -3983,6 +3992,12 @@ def cmd_memory_reflection(args):
         cm.close()
         return 1
 
+    # v5.5.6 fix: 新增 --json 输出分支
+    if getattr(args, 'json_output', False):
+        _json_out(result)
+        cm.close()
+        return 0
+
     if result["total_memories"] == 0:
         print(c("\n窗口内暂无记忆可供反思。", "yellow"))
         cm.close()
@@ -4035,6 +4050,12 @@ def cmd_memory_lineage(args):
         cm.close()
         return 1
 
+    # v5.5.6 fix: 新增 --json 输出分支
+    if getattr(args, 'json_output', False):
+        _json_out(result)
+        cm.close()
+        return 0
+
     basic = result.get("basic", {})
     stats = result.get("stats", {})
     print(f"  内容预览:   {basic.get('content_preview', '')}")
@@ -4081,6 +4102,12 @@ def cmd_memory_reinforce(args):
         print(c(f"\n❌ {result['error']}", "red"))
         cm.close()
         return 1
+
+    # v5.5.6 fix: 新增 --json 输出分支
+    if getattr(args, 'json_output', False):
+        _json_out(result)
+        cm.close()
+        return 0
 
     if result["total_scanned"] == 0:
         print(c("\n窗口内暂无记忆。", "yellow"))
@@ -4420,7 +4447,7 @@ def cmd_intent_router(args):
         print(c(f"\n❌ 失败: {e}", "red"))
         cm.close()
         return 1
-    if getattr(args, "json", False):
+    if getattr(args, "json_output", False):
         print(json.dumps(result, ensure_ascii=False, indent=2))
         cm.close()
         return 0
@@ -4459,7 +4486,7 @@ def cmd_conflict_scan(args):
         print(c(f"\n❌ 失败: {e}", "red"))
         cm.close()
         return 1
-    if getattr(args, "json", False):
+    if getattr(args, "json_output", False):
         print(json.dumps(result, ensure_ascii=False, indent=2))
         cm.close()
         return 0
@@ -4508,7 +4535,7 @@ def cmd_skill_extract(args):
         print(c(f"\n❌ 失败: {e}", "red"))
         cm.close()
         return 1
-    if getattr(args, "json", False):
+    if getattr(args, "json_output", False):
         print(json.dumps(result, ensure_ascii=False, indent=2))
         cm.close()
         return 0
@@ -4557,7 +4584,7 @@ def cmd_rerank_search(args):
         print(c(f"\n❌ 失败: {e}", "red"))
         cm.close()
         return 1
-    if getattr(args, "json", False):
+    if getattr(args, "json_output", False):
         print(json.dumps(result, ensure_ascii=False, indent=2))
         cm.close()
         return 0
@@ -4624,7 +4651,7 @@ def cmd_session_focus(args):
         print(c(f"\n❌ 失败: {e}", "red"))
         cm.close()
         return 1
-    if getattr(args, "json", False):
+    if getattr(args, "json_output", False):
         print(json.dumps(result, ensure_ascii=False, indent=2))
         cm.close()
         return 0
