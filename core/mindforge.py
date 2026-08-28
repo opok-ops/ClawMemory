@@ -1193,6 +1193,9 @@ class MindForge:
                     layer=layer or self.config.default_layer,
                     source_session=session_id,
                     source_agent=agent_id,
+                    pinned=bool(mem_data.get("pinned", False)),
+                    starred=bool(mem_data.get("starred", False)),
+                    expires_at=float(mem_data.get("expires_at", 0.0) or 0.0),
                     metadata={},
                 )
 
