@@ -33,3 +33,6 @@ run_all_tests.py
 # Node / DSH plugin
 node_modules/
 plugins/*/node_modules/
+
+# 本地克隆的 dsh-mindforge（独立 git 仓库，不纳入本仓库）
+dsh-mindforge/
