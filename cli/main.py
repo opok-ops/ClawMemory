@@ -2419,6 +2419,11 @@ def main():
 
     sub = parser.add_subparsers(dest="command", required=False)
 
+    # 共享 --json 参数（统一 dest=json_output，所有子命令复用）
+    json_parser = argparse.ArgumentParser(add_help=False)
+    json_parser.add_argument("--json", action="store_true", dest="json_output",
+                             help="JSON 格式输出（供插件/脚本集成使用）")
+
     p_init = sub.add_parser("init", help="初始化 MindForge")
     p_init.add_argument("--no-encrypt", action="store_true", help="不启用加密（CI/自动化场景）")
     p_init.add_argument("--password", default=None, help="直接指定密码（非交互式，CI/脚本场景）")
@@ -2515,7 +2520,7 @@ def main():
     p_restore.add_argument("--agent", default="cli", help="Agent ID")
     p_restore.add_argument("--session", default="cli", help="会话 ID")
 
-    p_stats = sub.add_parser("stats", help="统计信息")
+    p_stats = sub.add_parser("stats", help="统计信息", parents=[json_parser])
     p_stats.add_argument("--detailed", action="store_true", help="显示详细统计（v5.1.4 新增）")
 
     p_star = sub.add_parser("star", help="收藏记忆")
@@ -3556,37 +3561,32 @@ def main():
     p_scene_rhythm.add_argument("drama_id", help="短剧 ID")
 
     # ===== v5.3.9 新增五大能力 CLI =====
-    p_intent_router = sub.add_parser("intent-router", help="意图分类路由（v5.3.9 新增）")
+    p_intent_router = sub.add_parser("intent-router", help="意图分类路由（v5.3.9 新增）", parents=[json_parser])
     p_intent_router.add_argument("text", help="要分类的文本（用引号包裹）")
     p_intent_router.add_argument("--force", help="强制指定意图 ID 用于 debug")
-    p_intent_router.add_argument("--json", action="store_true", help="以 JSON 格式输出完整结果")
 
-    p_conflict_scan = sub.add_parser("conflict-scan", help="矛盾扫描 + 自动衰减（v5.3.9 新增）")
+    p_conflict_scan = sub.add_parser("conflict-scan", help="矛盾扫描 + 自动衰减（v5.3.9 新增）", parents=[json_parser])
     p_conflict_scan.add_argument("--category", help="只扫描指定类别")
     p_conflict_scan.add_argument("--limit", type=int, default=500, help="扫描最多多少条记忆")
     p_conflict_scan.add_argument("--apply-decay", action="store_true",
                                  help="应用衰减动作（降低重要性 + 打 conflict 标签）")
-    p_conflict_scan.add_argument("--json", action="store_true", help="以 JSON 格式输出完整结果")
 
-    p_skill_extract = sub.add_parser("skill-extract", help="从记忆抽取可复用技能模板（v5.3.9 新增）")
+    p_skill_extract = sub.add_parser("skill-extract", help="从记忆抽取可复用技能模板（v5.3.9 新增）", parents=[json_parser])
     p_skill_extract.add_argument("--category", help="只抽取指定类别")
     p_skill_extract.add_argument("--limit", type=int, default=2000, help="处理最多多少条记忆")
     p_skill_extract.add_argument("--min-cluster", type=int, default=2, help="最小聚类规模（2+）")
-    p_skill_extract.add_argument("--json", action="store_true", help="以 JSON 格式输出完整结果")
 
-    p_rerank_search = sub.add_parser("rerank-search", help="混合检索（查询扩展 + Cross-Encoder 重排）（v5.3.9 新增）")
+    p_rerank_search = sub.add_parser("rerank-search", help="混合检索（查询扩展 + Cross-Encoder 重排）（v5.3.9 新增）", parents=[json_parser])
     p_rerank_search.add_argument("query", help="查询文本")
     p_rerank_search.add_argument("--top", type=int, default=10, help="返回 Top N 条（默认 10）")
     p_rerank_search.add_argument("--no-expand", action="store_true", help="关闭查询扩展")
     p_rerank_search.add_argument("--no-rerank", action="store_true", help="关闭 Cross-Encoder 重排")
-    p_rerank_search.add_argument("--json", action="store_true", help="以 JSON 格式输出完整结果")
 
-    p_session_focus = sub.add_parser("session-focus", help="会话焦点聚类 + 漂移检测（v5.3.9 新增）")
+    p_session_focus = sub.add_parser("session-focus", help="会话焦点聚类 + 漂移检测（v5.3.9 新增）", parents=[json_parser])
     p_session_focus.add_argument("--messages", "-m", action="append", required=True,
                                   help='消息条目 "role:内容"，可多次传入')
     p_session_focus.add_argument("--window", type=int, default=40, help="滑动窗口大小（默认 40）")
     p_session_focus.add_argument("--augment", help="若指定，输出针对该 query 的增强查询")
-    p_session_focus.add_argument("--json", action="store_true", help="以 JSON 格式输出完整结果")
 
     # ===== v5.4.5 新增向量检索命令 =====
     p_rebuild_emb = sub.add_parser("rebuild-embeddings",

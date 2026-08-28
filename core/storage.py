@@ -1535,13 +1535,14 @@ class StorageEngine:
         now = time.time()
         try:
             row = conn.execute(
-                "SELECT tags, privacy FROM memories WHERE id = ? AND category != 'trash'",
+                "SELECT rowid, content, category, tags, privacy FROM memories "
+                "WHERE id = ? AND category != 'trash'",
                 (entry_id,)
             ).fetchone()
             if not row:
                 return False
 
-            existing_tags = self._safe_json_loads(row[0], [])
+            existing_tags = self._safe_json_loads(row[3], [])
             # v5.5.6 fix: 保序去重 + 大小写不敏感（原 list(set()) 打乱顺序）
             new_tags = list(existing_tags)
             seen_lower = {t.lower() for t in new_tags if isinstance(t, str)}
@@ -1552,11 +1553,29 @@ class StorageEngine:
             if len(new_tags) == len(existing_tags):
                 return False
 
+            new_tags_json = json.dumps(new_tags, ensure_ascii=False)
+            # v5.5.6 fix: contentless FTS5 必须先删旧索引再插新索引
+            if not self.encrypted:
+                try:
+                    conn.execute(
+                        "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                        "VALUES('delete', ?, ?, ?, ?)",
+                        (row[0], row[1] or "", row[2] or "", row[3] or "[]")
+                    )
+                except Exception:
+                    pass
             conn.execute(
                 "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
-                (json.dumps(new_tags, ensure_ascii=False), now, entry_id)
+                (new_tags_json, now, entry_id)
             )
-            self._refresh_fts(conn, entry_id)
+            if not self.encrypted:
+                try:
+                    conn.execute(
+                        "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
+                        (row[0], row[1] or "", row[2] or "", new_tags_json)
+                    )
+                except Exception:
+                    pass
             conn.commit()
             self._add_audit(
                 "update", entry_id, actor, session_id,
@@ -7698,7 +7717,7 @@ class StorageEngine:
             if not isinstance(mid, str) or not mid:
                 continue
             row = conn.execute(
-                "SELECT tags FROM memories WHERE id = ? AND category != 'trash'", (mid,)
+                "SELECT rowid, content, category, tags FROM memories WHERE id = ? AND category != 'trash'", (mid,)
             ).fetchone()
             if not row:
                 continue
@@ -7711,10 +7730,27 @@ class StorageEngine:
                     merged.append(t)
                     existing_lower.add(t.lower())
             if len(merged) != len(existing):
+                new_tags_json = json.dumps(merged, ensure_ascii=False)
+                # v5.5.6 fix: contentless FTS5 必须先删旧索引再插新索引
+                try:
+                    conn.execute(
+                        "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                        "VALUES('delete', ?, ?, ?, ?)",
+                        (row[0], row[1] or "", row[2] or "", row[3] or "[]")
+                    )
+                except Exception:
+                    pass
                 conn.execute(
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
-                    (json.dumps(merged, ensure_ascii=False), now, mid)
+                    (new_tags_json, now, mid)
                 )
+                try:
+                    conn.execute(
+                        "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
+                        (row[0], row[1] or "", row[2] or "", new_tags_json)
+                    )
+                except Exception:
+                    pass
                 updated += 1
         conn.commit()
         return updated
@@ -7745,17 +7781,34 @@ class StorageEngine:
             if not isinstance(mid, str) or not mid:
                 continue
             row = conn.execute(
-                "SELECT tags FROM memories WHERE id = ? AND category != 'trash'", (mid,)
+                "SELECT rowid, content, category, tags FROM memories WHERE id = ? AND category != 'trash'", (mid,)
             ).fetchone()
             if not row:
                 continue
             existing = self._safe_json_loads(row["tags"], [])
             filtered = [t for t in existing if isinstance(t, str) and t.lower() not in remove_lower]
             if len(filtered) != len(existing):
+                new_tags_json = json.dumps(filtered, ensure_ascii=False)
+                # v5.5.6 fix: contentless FTS5 必须先删旧索引再插新索引
+                try:
+                    conn.execute(
+                        "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                        "VALUES('delete', ?, ?, ?, ?)",
+                        (row[0], row[1] or "", row[2] or "", row[3] or "[]")
+                    )
+                except Exception:
+                    pass
                 conn.execute(
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
-                    (json.dumps(filtered, ensure_ascii=False), now, mid)
+                    (new_tags_json, now, mid)
                 )
+                try:
+                    conn.execute(
+                        "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
+                        (row[0], row[1] or "", row[2] or "", new_tags_json)
+                    )
+                except Exception:
+                    pass
                 updated += 1
         conn.commit()
         return updated
@@ -8139,6 +8192,23 @@ class StorageEngine:
         merged_forgetting = (source.forgetting_score + target.forgetting_score) / 2
 
         # 更新目标记忆
+        # v5.5.6 fix: contentless FTS5 必须先删旧索引再插新索引
+        target_old_fts = None
+        if not self.encrypted:
+            target_old_fts = conn.execute(
+                "SELECT rowid, content, category, tags FROM memories WHERE id = ?",
+                (target_id,)
+            ).fetchone()
+            if target_old_fts:
+                try:
+                    conn.execute(
+                        "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                        "VALUES('delete', ?, ?, ?, ?)",
+                        (target_old_fts[0], target_old_fts[1] or "", target_old_fts[2] or "", target_old_fts[3] or "[]")
+                    )
+                except Exception:
+                    pass
+        merged_tags_json = json.dumps(merged_tags, ensure_ascii=False)
         conn.execute(
             """UPDATE memories SET
                    content = ?, tags = ?, importance = ?, layer = ?,
@@ -8147,7 +8217,7 @@ class StorageEngine:
                WHERE id = ?""",
             (
                 merged_content,
-                json.dumps(merged_tags, ensure_ascii=False),
+                merged_tags_json,
                 merged_importance_val,
                 merged_layer.value,
                 merged_access_count,
@@ -8158,21 +8228,50 @@ class StorageEngine:
                 target_id,
             )
         )
+        if target_old_fts is not None:
+            try:
+                conn.execute(
+                    "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
+                    (target_old_fts[0], merged_content or "", target_old_fts[2] or "", merged_tags_json)
+                )
+            except Exception:
+                pass
 
         # 源记忆移入回收站
+        # v5.5.6 fix: 源记忆 category 变化也需要同步 FTS
+        source_old_fts = None
+        if not self.encrypted:
+            source_old_fts = conn.execute(
+                "SELECT rowid, content, category, tags FROM memories WHERE id = ?",
+                (source_id,)
+            ).fetchone()
+            if source_old_fts:
+                try:
+                    conn.execute(
+                        "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                        "VALUES('delete', ?, ?, ?, ?)",
+                        (source_old_fts[0], source_old_fts[1] or "", source_old_fts[2] or "", source_old_fts[3] or "[]")
+                    )
+                except Exception:
+                    pass
         conn.execute(
             "UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
             (now, source_id)
         )
+        if source_old_fts is not None:
+            try:
+                conn.execute(
+                    "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
+                    (source_old_fts[0], source_old_fts[1] or "", "trash", source_old_fts[3] or "[]")
+                )
+            except Exception:
+                pass
 
         # 审计日志
         self._add_audit("update", target_id, actor, session_id, target.privacy.value,
                          details={"action": "merge_from", "source_id": source_id})
         self._add_audit("delete", source_id, actor, session_id, source.privacy.value,
                          details={"reason": "merge_into", "target_id": target_id})
-
-        # v5.5.5 fix: 合并后刷新 FTS 索引，避免全文搜索返回过期数据
-        self._refresh_fts(conn, target_id)
 
         conn.commit()
 
@@ -8710,6 +8809,30 @@ class StorageEngine:
             layer_val = self._downgrade_enum(new_layer, MemoryLayer, MemoryLayer.SHORT_TERM).value
             privacy_val = self._downgrade_enum(new_privacy, PrivacyLevel, PrivacyLevel.INTERNAL).value
             imp_val = self._downgrade_enum(new_importance, Importance, Importance.MEDIUM).value
+            new_tags_json = json.dumps(new_entry_tags, ensure_ascii=False)
+
+            # v5.5.6 fix: contentless FTS5 必须先删旧索引再插新索引
+            # 判断是否有 FTS 相关字段变更（category 或 tags）
+            fts_dirty = (not self.encrypted and (
+                ("new_category" in updates and updates["new_category"] and new_category != entry.category) or
+                ("add_tags" in updates and updates["add_tags"]) or
+                ("remove_tags" in updates and updates["remove_tags"])
+            ))
+            old_fts_row = None
+            if fts_dirty:
+                old_fts_row = conn.execute(
+                    "SELECT rowid, content, category, tags FROM memories WHERE id = ?",
+                    (entry.id,)
+                ).fetchone()
+                if old_fts_row:
+                    try:
+                        conn.execute(
+                            "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                            "VALUES('delete', ?, ?, ?, ?)",
+                            (old_fts_row[0], old_fts_row[1] or "", old_fts_row[2] or "", old_fts_row[3] or "[]")
+                        )
+                    except Exception:
+                        pass
 
             conn.execute(
                 """UPDATE memories SET
@@ -8721,7 +8844,7 @@ class StorageEngine:
                     layer_val,
                     imp_val,
                     privacy_val,
-                    json.dumps(new_entry_tags, ensure_ascii=False),
+                    new_tags_json,
                     1 if new_starred else 0,
                     1 if new_pinned else 0,
                     json.dumps(new_metadata, ensure_ascii=False),
@@ -8730,11 +8853,18 @@ class StorageEngine:
                 )
             )
 
+            if old_fts_row is not None:
+                try:
+                    conn.execute(
+                        "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
+                        (old_fts_row[0], old_fts_row[1] or "", new_category or "", new_tags_json)
+                    )
+                except Exception:
+                    pass
+
             self._add_audit("update", entry.id, actor, session_id,
                              entry.privacy.value,
                              details={"action": "bulk_update", "changes": list(updates.keys())})
-            # v5.5.5 fix: 批量更新后刷新 FTS 索引，避免全文搜索返回过期数据
-            self._refresh_fts(conn, entry.id)
             count += 1
 
         conn.commit()
@@ -8938,13 +9068,14 @@ class StorageEngine:
 
         for entry_id in entry_ids:
             row = conn.execute(
-                "SELECT tags, privacy FROM memories WHERE id = ? AND category != 'trash'",
+                "SELECT rowid, content, category, tags, privacy FROM memories "
+                "WHERE id = ? AND category != 'trash'",
                 (entry_id,)
             ).fetchone()
             if not row:
                 continue
 
-            existing_tags = self._safe_json_loads(row["tags"], [])
+            existing_tags = self._safe_json_loads(row[3], [])
             # v5.5.6 fix: 保序去重（原 list(set()) 会打乱顺序），与 add_tags_to_ids 一致
             new_tags = list(existing_tags)
             seen_lower = {t.lower() for t in new_tags if isinstance(t, str)}
@@ -8953,12 +9084,29 @@ class StorageEngine:
                     new_tags.append(t)
                     seen_lower.add(t.lower())
             if new_tags != existing_tags:
+                new_tags_json = json.dumps(new_tags, ensure_ascii=False)
+                # v5.5.6 fix: contentless FTS5 必须先删旧索引再插新索引
+                if not self.encrypted:
+                    try:
+                        conn.execute(
+                            "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                            "VALUES('delete', ?, ?, ?, ?)",
+                            (row[0], row[1] or "", row[2] or "", row[3] or "[]")
+                        )
+                    except Exception:
+                        pass
                 conn.execute(
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
-                    (json.dumps(new_tags, ensure_ascii=False), now, entry_id)
+                    (new_tags_json, now, entry_id)
                 )
-                # v5.5.5 fix: 更新标签后刷新 FTS 索引
-                self._refresh_fts(conn, entry_id)
+                if not self.encrypted:
+                    try:
+                        conn.execute(
+                            "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
+                            (row[0], row[1] or "", row[2] or "", new_tags_json)
+                        )
+                    except Exception:
+                        pass
                 self._add_audit(
                     "batch_add_tags", entry_id, actor, session_id,
                     row["privacy"] if row["privacy"] else "",
@@ -8991,21 +9139,39 @@ class StorageEngine:
 
         for entry_id in entry_ids:
             row = conn.execute(
-                "SELECT tags, privacy FROM memories WHERE id = ? AND category != 'trash'",
+                "SELECT rowid, content, category, tags, privacy FROM memories "
+                "WHERE id = ? AND category != 'trash'",
                 (entry_id,)
             ).fetchone()
             if not row:
                 continue
 
-            existing_tags = self._safe_json_loads(row["tags"], [])
+            existing_tags = self._safe_json_loads(row[3], [])
             new_tags = [t for t in existing_tags if t not in tags]
             if new_tags != existing_tags:
+                new_tags_json = json.dumps(new_tags, ensure_ascii=False)
+                # v5.5.6 fix: contentless FTS5 必须先删旧索引再插新索引
+                if not self.encrypted:
+                    try:
+                        conn.execute(
+                            "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                            "VALUES('delete', ?, ?, ?, ?)",
+                            (row[0], row[1] or "", row[2] or "", row[3] or "[]")
+                        )
+                    except Exception:
+                        pass
                 conn.execute(
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
-                    (json.dumps(new_tags, ensure_ascii=False), now, entry_id)
+                    (new_tags_json, now, entry_id)
                 )
-                # v5.5.5 fix: 更新标签后刷新 FTS 索引
-                self._refresh_fts(conn, entry_id)
+                if not self.encrypted:
+                    try:
+                        conn.execute(
+                            "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
+                            (row[0], row[1] or "", row[2] or "", new_tags_json)
+                        )
+                    except Exception:
+                        pass
                 self._add_audit(
                     "batch_remove_tags", entry_id, actor, session_id,
                     row["privacy"] if row["privacy"] else "",
@@ -9037,11 +9203,11 @@ class StorageEngine:
         now = time.time()
 
         rows = conn.execute(
-            "SELECT id, tags, privacy FROM memories WHERE category != 'trash'"
+            "SELECT rowid, id, content, category, tags, privacy FROM memories WHERE category != 'trash'"
         ).fetchall()
 
         for row in rows:
-            tags = self._safe_json_loads(row["tags"], [])
+            tags = self._safe_json_loads(row[4], [])
             has_source = any(t in source_tags for t in tags)
             if not has_source:
                 continue
@@ -9051,15 +9217,32 @@ class StorageEngine:
                 new_tags.append(target_tag)
 
             if new_tags != tags:
+                new_tags_json = json.dumps(new_tags, ensure_ascii=False)
+                # v5.5.6 fix: contentless FTS5 必须先删旧索引再插新索引
+                if not self.encrypted:
+                    try:
+                        conn.execute(
+                            "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                            "VALUES('delete', ?, ?, ?, ?)",
+                            (row[0], row[2] or "", row[3] or "", row[4] or "[]")
+                        )
+                    except Exception:
+                        pass
                 conn.execute(
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
-                    (json.dumps(new_tags, ensure_ascii=False), now, row["id"])
+                    (new_tags_json, now, row[1])
                 )
-                # v5.5.5 fix: 更新标签后刷新 FTS 索引
-                self._refresh_fts(conn, row["id"])
+                if not self.encrypted:
+                    try:
+                        conn.execute(
+                            "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
+                            (row[0], row[2] or "", row[3] or "", new_tags_json)
+                        )
+                    except Exception:
+                        pass
                 self._add_audit(
-                    "merge_tags", row["id"], actor, session_id,
-                    row["privacy"] if row["privacy"] else "",
+                    "merge_tags", row[1], actor, session_id,
+                    row[5] if row[5] else "",
                     details={"source_tags": source_tags, "target_tag": target_tag}
                 )
                 count += 1
@@ -10571,9 +10754,9 @@ class StorageEngine:
             tags_json = target[3]
             importance = target[4]
 
-            # 获取当前记忆内容（保存为新版本）
+            # 获取当前记忆内容（保存为新版本 + FTS 旧值）
             current = conn.execute(
-                "SELECT content, category, tags, importance FROM memories WHERE id = ?",
+                "SELECT rowid, content, category, tags, importance FROM memories WHERE id = ?",
                 (memory_id,)
             ).fetchone()
             if not current:
@@ -10581,19 +10764,35 @@ class StorageEngine:
 
             # 保存当前状态为新版本
             save_result = self.save_version(
-                memory_id, current[0], current[1],
-                json.loads(current[2]) if current[2] and current[2].startswith("[") else current[2],
-                current[3], actor
+                memory_id, current[1], current[2],
+                json.loads(current[3]) if current[3] and current[3].startswith("[") else current[3],
+                current[4], actor
             )
 
             # 回滚：更新记忆为目标版本的内容
+            # v5.5.6 fix: contentless FTS5 必须先删旧索引再插新索引
+            if not self.encrypted:
+                try:
+                    conn.execute(
+                        "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                        "VALUES('delete', ?, ?, ?, ?)",
+                        (current[0], current[1] or "", current[2] or "", current[3] or "[]")
+                    )
+                except Exception:
+                    pass
             conn.execute(
                 """UPDATE memories SET content = ?, category = ?, tags = ?, importance = ?,
                    updated_at = ? WHERE id = ?""",
                 (content, category, tags_json, importance, time.time(), memory_id)
             )
-            # v5.5.5 fix: 回滚后刷新 FTS 索引，避免全文搜索返回过期数据
-            self._refresh_fts(conn, memory_id)
+            if not self.encrypted:
+                try:
+                    conn.execute(
+                        "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
+                        (current[0], content or "", category or "", tags_json or "[]")
+                    )
+                except Exception:
+                    pass
             conn.commit()
 
             return {

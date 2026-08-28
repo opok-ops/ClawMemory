@@ -629,3 +629,172 @@ class TestAppendTagsOrderPreserving:
         """不存在的记忆返回 False"""
         result = mf._storage.append_tags("fake-id", ["tag"])
         assert result is False
+
+
+class TestTagOpsFtsSync:
+    """P1 Bug: 标签操作后 FTS 索引不同步（contentless FTS5 幽灵标签问题）
+
+    v5.5.5 错误地在 UPDATE 后调用 _refresh_fts，导致 DELETE 用新值无法匹配旧索引条目。
+    v5.5.6 修复：所有标签/内容更新方法改为 UPDATE 前用旧值 DELETE FTS、UPDATE 后用新值 INSERT FTS。
+    """
+
+    def _fts_contains_tag(self, mf, memory_id: str, tag: str) -> bool:
+        """通过 FTS MATCH 查询验证某记忆的 tags 是否包含指定标签"""
+        conn = mf._storage._get_conn()
+        row = conn.execute(
+            "SELECT m.id FROM memory_fts JOIN memories m ON memory_fts.rowid = m.rowid "
+            "WHERE memory_fts MATCH ? AND m.id = ?",
+            (tag, memory_id)
+        ).fetchone()
+        return row is not None
+
+    def _fts_contains_content(self, mf, memory_id: str, keyword: str) -> bool:
+        """通过 FTS MATCH 查询验证某记忆的 content 是否包含指定关键词"""
+        conn = mf._storage._get_conn()
+        row = conn.execute(
+            "SELECT m.id FROM memory_fts JOIN memories m ON memory_fts.rowid = m.rowid "
+            "WHERE memory_fts MATCH ? AND m.id = ?",
+            (keyword, memory_id)
+        ).fetchone()
+        return row is not None
+
+    def test_add_tags_to_ids_syncs_fts(self, mf):
+        """add_tags_to_ids 添加标签后 FTS 索引同步更新"""
+        e = mf.add("测试记忆内容", tags=["initial"])
+        assert not self._fts_contains_tag(mf, e.id, "newtag")
+        count = mf.add_tags_to_memories([e.id], ["newtag"])
+        assert count == 1
+        assert self._fts_contains_tag(mf, e.id, "newtag")
+
+    def test_remove_tags_from_ids_syncs_fts(self, mf):
+        """remove_tags_from_ids 删除标签后 FTS 索引同步更新（无幽灵标签）"""
+        e = mf.add("测试记忆内容", tags=["oldtag", "other"])
+        assert self._fts_contains_tag(mf, e.id, "oldtag")
+        count = mf.remove_tags_from_memories([e.id], ["oldtag"])
+        assert count == 1
+        assert not self._fts_contains_tag(mf, e.id, "oldtag")
+        assert self._fts_contains_tag(mf, e.id, "other")
+
+    def test_batch_add_tags_syncs_fts(self, mf):
+        """batch_add_tags 添加标签后 FTS 索引同步更新"""
+        e = mf.add("测试记忆内容", tags=["initial"])
+        assert not self._fts_contains_tag(mf, e.id, "batchnew")
+        count = mf._storage.batch_add_tags([e.id], ["batchnew"])
+        assert count == 1
+        assert self._fts_contains_tag(mf, e.id, "batchnew")
+
+    def test_batch_remove_tags_syncs_fts(self, mf):
+        """batch_remove_tags 删除标签后 FTS 索引同步更新（无幽灵标签）"""
+        e = mf.add("测试记忆内容", tags=["removethis", "keepthis"])
+        assert self._fts_contains_tag(mf, e.id, "removethis")
+        count = mf._storage.batch_remove_tags([e.id], ["removethis"])
+        assert count == 1
+        assert not self._fts_contains_tag(mf, e.id, "removethis")
+        assert self._fts_contains_tag(mf, e.id, "keepthis")
+
+    def test_append_tags_syncs_fts(self, mf):
+        """append_tags 添加标签后 FTS 索引同步更新"""
+        e = mf.add("测试记忆内容", tags=["initial"])
+        assert not self._fts_contains_tag(mf, e.id, "appendnew")
+        result = mf._storage.append_tags(e.id, ["appendnew"])
+        assert result is True
+        assert self._fts_contains_tag(mf, e.id, "appendnew")
+
+    def test_merge_tags_syncs_fts(self, mf):
+        """merge_tags 合并标签后 FTS 索引同步更新（源标签消失，目标标签出现）"""
+        e = mf.add("测试记忆内容", tags=["oldtag1", "oldtag2", "other"])
+        assert self._fts_contains_tag(mf, e.id, "oldtag1")
+        assert self._fts_contains_tag(mf, e.id, "oldtag2")
+        assert not self._fts_contains_tag(mf, e.id, "mergedtag")
+        count = mf._storage.merge_tags(["oldtag1", "oldtag2"], "mergedtag")
+        assert count == 1
+        # 源标签应从 FTS 中消失
+        assert not self._fts_contains_tag(mf, e.id, "oldtag1")
+        assert not self._fts_contains_tag(mf, e.id, "oldtag2")
+        # 目标标签应出现在 FTS 中
+        assert self._fts_contains_tag(mf, e.id, "mergedtag")
+        # 其他标签不受影响
+        assert self._fts_contains_tag(mf, e.id, "other")
+
+    def test_bulk_update_add_tags_syncs_fts(self, mf):
+        """bulk_update_by_filter add_tags 后 FTS 索引同步更新"""
+        e = mf.add("测试记忆内容", category="testcat", tags=["initial"])
+        assert not self._fts_contains_tag(mf, e.id, "bulkadd")
+        count = mf.bulk_update_by_filter(
+            category="testcat",
+            updates={"add_tags": ["bulkadd"]}
+        )
+        assert count == 1
+        assert self._fts_contains_tag(mf, e.id, "bulkadd")
+
+    def test_bulk_update_remove_tags_syncs_fts(self, mf):
+        """bulk_update_by_filter remove_tags 后 FTS 索引同步更新（无幽灵标签）"""
+        e = mf.add("测试记忆内容", category="testcat", tags=["removeme", "keepme"])
+        assert self._fts_contains_tag(mf, e.id, "removeme")
+        count = mf.bulk_update_by_filter(
+            category="testcat",
+            updates={"remove_tags": ["removeme"]}
+        )
+        assert count == 1
+        assert not self._fts_contains_tag(mf, e.id, "removeme")
+        assert self._fts_contains_tag(mf, e.id, "keepme")
+
+    def test_bulk_update_category_syncs_fts(self, mf):
+        """bulk_update_by_filter 改 category 后 FTS 索引同步更新"""
+        e = mf.add("测试记忆内容", category="oldcat", tags=["test"])
+        assert self._fts_contains_content(mf, e.id, "测试记忆")
+        count = mf.bulk_update_by_filter(
+            category="oldcat",
+            updates={"new_category": "newcat"}
+        )
+        assert count == 1
+        # 内容仍然可搜索
+        assert self._fts_contains_content(mf, e.id, "测试记忆")
+        # category 已更新
+        assert mf.get(e.id).category == "newcat"
+
+    def test_merge_memories_syncs_fts(self, mf):
+        """merge_memories 合并后 FTS 索引同步更新"""
+        target = mf.add("目标记忆内容行A", tags=["tagA"])
+        source = mf.add("源记忆内容行B", tags=["tagB"])
+        # 合并前验证
+        assert self._fts_contains_tag(mf, target.id, "tagA")
+        assert not self._fts_contains_tag(mf, target.id, "tagB")
+        assert self._fts_contains_content(mf, source.id, "源记忆")
+        # 合并
+        result = mf._storage.merge_memories(source.id, target.id)
+        assert result is not None
+        # 目标记忆的 FTS 应包含合并后的内容和标签
+        assert self._fts_contains_content(mf, target.id, "目标记忆")
+        assert self._fts_contains_content(mf, target.id, "源记忆")
+        assert self._fts_contains_tag(mf, target.id, "tagA")
+        assert self._fts_contains_tag(mf, target.id, "tagB")
+        # 源记忆已移入回收站，category=trash
+        conn = mf._storage._get_conn()
+        src_row = conn.execute(
+            "SELECT category FROM memories WHERE id = ?", (source.id,)
+        ).fetchone()
+        assert src_row is not None
+        assert src_row[0] == "trash"
+
+
+class TestMemoryRecallLayerCase:
+    """P2 Bug: memory_recall layer 输出大写枚举名，与其他接口不一致"""
+
+    def test_memory_recall_layer_is_lowercase(self, mf):
+        """memory_recall 返回的 layer 应为小写 value 格式"""
+        mf.add("测试回忆内容", tags=["回忆", "测试"], layer="short_term")
+        result = mf._storage.memory_recall(
+            agent_id="cli",
+            query="测试回忆",
+            top_k=5
+        )
+        assert "recalled" in result
+        if result["recalled"]:
+            for item in result["recalled"]:
+                assert "layer" in item
+                # layer 应为小写（short_term / long_term 等），不是大写枚举名
+                assert item["layer"] == item["layer"].lower()
+                assert "_" in item["layer"] or item["layer"] in ("sensory", "permanent")
+                # 验证不是 SHORT_TERM / LONG_TERM 格式
+                assert item["layer"] not in ("SENSORY", "SHORT_TERM", "LONG_TERM", "PERMANENT")
