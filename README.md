@@ -526,7 +526,7 @@ context = adapter.get_context("database optimization")
 
 **必改修复**
 
-- `setup.py` / `pyproject.toml`：3 处 ClawMemory URL 残留 → 统一为 MindForge
+- `setup.py` / `pyproject.toml`：3 处旧项目名 URL 残留 → 统一为 MindForge
 - README Quick Start：`--importance high` → `--importance HIGH`（CLI 要求大写）
 - README 架构图版本号：v5.4.5 → v5.4.6
 
@@ -781,7 +781,7 @@ context = adapter.get_context("database optimization")
 - v5.1.3: 清理 + 批量添加 + URL 导入 + 相似度搜索
 - v5.1.2: 懒加载 + PBKDF2 调优 + UTF-8 BOM 统一清理
 - v5.1.1: get/update/delete/audit/recent/trash/restore 完整补全
-- v5.1.0: 项目重命名（ClawMemory → MindForge）+ HTML 导出
+- v5.1.0: 项目品牌升级 + HTML 导出
 
 ### v5.0.x
 
