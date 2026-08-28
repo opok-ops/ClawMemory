@@ -4396,9 +4396,13 @@ class MindForge:
             try:
                 entry = self._storage.get_memory(c.memory_id)
                 if entry is not None:
-                    meta["importance"] = getattr(entry, "importance", None)
+                    # v5.5.6 fix(P2-2): 透传元数据；枚举统一取 .value（layer 输出与 search 一致的小写）
+                    imp_v = getattr(entry, "importance", None)
+                    lay_v = getattr(entry, "layer", None)
+                    meta["importance"] = getattr(imp_v, "value", imp_v)
                     meta["category"] = getattr(entry, "category", None)
-                    meta["layer"] = getattr(entry, "layer", None)
+                    meta["layer"] = getattr(lay_v, "value", lay_v)
+                    meta["tags"] = getattr(entry, "tags", None)
             except Exception:
                 pass
             cands.append({

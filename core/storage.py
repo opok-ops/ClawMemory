@@ -10897,7 +10897,7 @@ class StorageEngine:
                 "starred": bool(starred),
                 "age_days": round(age_days, 1),
                 "category": category or "general",
-                "layer": (layer or "SHORT_TERM").upper(),
+                "layer": (layer or "short_term").lower(),
                 "content_preview": (content or "")[:100],
             })
 
@@ -11471,7 +11471,7 @@ class StorageEngine:
                 "content": content or "",
                 "importance": imp,
                 "category": category or "general",
-                "layer": (layer or "SHORT_TERM").upper(),
+                "layer": (layer or "short_term").lower(),
                 "matched_keywords": matched[:12],
             })
 

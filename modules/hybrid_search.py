@@ -107,6 +107,11 @@ class RerankResult:
     rank_after: int
     features: Dict[str, float] = field(default_factory=dict)
     content: str = ""
+    # v5.5.6 fix(P2-2): 保留候选元数据，供下游过滤/去重/展示
+    importance: str = ""
+    category: str = ""
+    layer: str = ""
+    tags: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -119,6 +124,10 @@ class RerankResult:
             "delta_rank": self.rank_before - self.rank_after,
             "features": {k: round(v, 4) for k, v in self.features.items()},
             "content": self.content[:120],
+            "importance": self.importance,
+            "category": self.category,
+            "layer": self.layer,
+            "tags": self.tags,
         }
 
 
@@ -529,6 +538,11 @@ class CrossEncoderReranker:
                     "length_penalty": length_penalty,
                 },
                 content=content,
+                # v5.5.6 fix(P2-2): 透传候选元数据
+                importance=str(_get_field(c, "importance", "") or ""),
+                category=str(_get_field(c, "category", "") or ""),
+                layer=str(_get_field(c, "layer", "") or ""),
+                tags=list(_get_field(c, "tags", []) or []),
             ))
         # 按 fused_score 排序
         scored.sort(key=lambda x: -x.fused_score)
