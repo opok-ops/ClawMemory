@@ -798,3 +798,51 @@ class TestMemoryRecallLayerCase:
                 assert "_" in item["layer"] or item["layer"] in ("sensory", "permanent")
                 # 验证不是 SHORT_TERM / LONG_TERM 格式
                 assert item["layer"] not in ("SENSORY", "SHORT_TERM", "LONG_TERM", "PERMANENT")
+
+
+# ===== v5.5.6 第二轮修复验证 =====
+
+class TestRerankMetadata:
+    """P2: search_enhanced 非重排模式的 chunks 应包含 category/layer/tags"""
+
+    def test_no_rerank_chunks_have_metadata(self, mf):
+        """非重排模式下，chunks 应包含 category/layer/tags"""
+        mf.add("测试重排元数据内容 hello world", category="test_cat", tags=["tag1", "tag2"], layer="short_term")
+        result = mf.search_enhanced(
+            query="测试重排元数据",
+            max_results=5,
+            expand=False,
+            rerank=False
+        )
+        assert result.get("rerank") is False
+        chunks = result.get("chunks", [])
+        assert len(chunks) > 0
+        for c in chunks:
+            assert "category" in c, "chunks 缺 category"
+            assert "layer" in c, "chunks 缺 layer"
+            assert "tags" in c, "chunks 缺 tags"
+            # layer 应为小写 value
+            assert c["layer"] == c["layer"].lower(), f"layer 应为小写: {c['layer']}"
+
+
+class TestAgentInsightLayerCase:
+    """P3: agent_insight 的 layer/importance/privacy 分布 key 应为小写"""
+
+    def test_insight_distribution_keys_lowercase(self, mf):
+        """layer_distribution / importance_distribution / privacy_distribution 的 key 应为小写"""
+        mf.add("测试洞察记忆1", source_agent="test_agent", layer="short_term", importance="high", privacy="internal")
+        mf.add("测试洞察记忆2", source_agent="test_agent", layer="long_term", importance="medium", privacy="public")
+        result = mf._storage.agent_insight(agent_id="test_agent", days=30)
+        assert "layer_distribution" in result
+        assert "importance_distribution" in result
+        assert "privacy_distribution" in result
+        # layer key 应为小写
+        for k in result["layer_distribution"].keys():
+            assert k == k.lower(), f"layer key 应为小写: {k}"
+            assert k not in ("SENSORY", "SHORT_TERM", "LONG_TERM", "PERMANENT"), f"layer key 不能是大写枚举名: {k}"
+        # importance key 应为小写
+        for k in result["importance_distribution"].keys():
+            assert k == k.lower(), f"importance key 应为小写: {k}"
+        # privacy key 应为小写
+        for k in result["privacy_distribution"].keys():
+            assert k == k.lower(), f"privacy key 应为小写: {k}"

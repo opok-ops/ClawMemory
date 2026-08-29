@@ -1587,36 +1587,6 @@ class StorageEngine:
             conn.rollback()
             return False
 
-    def _refresh_fts(self, conn: sqlite3.Connection, entry_id: str):
-        """刷新单条记忆的 FTS 索引（contentless FTS5：先 delete 旧条目再 insert 新条目）
-
-        v5.0.6 新增：辅助方法，读取当前 memories 表中的值来刷新 FTS。
-        注意：此方法用 memories 表的**当前值**做 delete 和 insert，仅适用于
-        memories 表尚未被更新的场景（如索引修复）。update_memory 中的 FTS
-        同步已内联实现（需在更新前读旧值），不调用此方法。
-        """
-        row = conn.execute(
-            "SELECT rowid, content, category, tags FROM memories WHERE id = ?",
-            (entry_id,)
-        ).fetchone()
-        if not row:
-            return
-        try:
-            conn.execute(
-                "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
-                "VALUES('delete', ?, ?, ?, ?)",
-                (row[0], row[1] or "", row[2] or "", row[3] or "[]")
-            )
-        except sqlite3.Error:
-            pass
-        try:
-            conn.execute(
-                "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
-                (row[0], row[1] or "", row[2] or "", row[3] or "[]")
-            )
-        except sqlite3.Error:
-            pass
-
     def rebuild_fts(self) -> dict:
         """重建 FTS 全文索引（v5.0.6 新增）
 
@@ -5395,6 +5365,10 @@ class StorageEngine:
             for t, c in top_tags
         ]
 
+        # v5.5.6 fix(P3): 统一输出小写 value 格式（与 memory_recall 等接口一致）
+        def _enum_key_lower(d: Dict[str, int]) -> Dict[str, int]:
+            return {k.lower(): v for k, v in d.items()}
+
         return {
             "agent_id": aid,
             "days": days,
@@ -5405,10 +5379,10 @@ class StorageEngine:
                 "avg_access_per_memory": avg_access,
                 "avg_content_length": round(avg_len, 1),
             },
-            "layer_distribution": layers,
-            "importance_distribution": importances,
+            "layer_distribution": _enum_key_lower(layers),
+            "importance_distribution": _enum_key_lower(importances),
             "category_distribution": categories,
-            "privacy_distribution": privacies,
+            "privacy_distribution": _enum_key_lower(privacies),
             "tag_preferences": tag_preferences,
             "insights": insights,
         }
@@ -7732,25 +7706,27 @@ class StorageEngine:
             if len(merged) != len(existing):
                 new_tags_json = json.dumps(merged, ensure_ascii=False)
                 # v5.5.6 fix: contentless FTS5 必须先删旧索引再插新索引
-                try:
-                    conn.execute(
-                        "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
-                        "VALUES('delete', ?, ?, ?, ?)",
-                        (row[0], row[1] or "", row[2] or "", row[3] or "[]")
-                    )
-                except Exception:
-                    pass
+                if not self.encrypted:
+                    try:
+                        conn.execute(
+                            "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                            "VALUES('delete', ?, ?, ?, ?)",
+                            (row[0], row[1] or "", row[2] or "", row[3] or "[]")
+                        )
+                    except Exception:
+                        pass
                 conn.execute(
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
                     (new_tags_json, now, mid)
                 )
-                try:
-                    conn.execute(
-                        "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
-                        (row[0], row[1] or "", row[2] or "", new_tags_json)
-                    )
-                except Exception:
-                    pass
+                if not self.encrypted:
+                    try:
+                        conn.execute(
+                            "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
+                            (row[0], row[1] or "", row[2] or "", new_tags_json)
+                        )
+                    except Exception:
+                        pass
                 updated += 1
         conn.commit()
         return updated
@@ -7790,25 +7766,27 @@ class StorageEngine:
             if len(filtered) != len(existing):
                 new_tags_json = json.dumps(filtered, ensure_ascii=False)
                 # v5.5.6 fix: contentless FTS5 必须先删旧索引再插新索引
-                try:
-                    conn.execute(
-                        "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
-                        "VALUES('delete', ?, ?, ?, ?)",
-                        (row[0], row[1] or "", row[2] or "", row[3] or "[]")
-                    )
-                except Exception:
-                    pass
+                if not self.encrypted:
+                    try:
+                        conn.execute(
+                            "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                            "VALUES('delete', ?, ?, ?, ?)",
+                            (row[0], row[1] or "", row[2] or "", row[3] or "[]")
+                        )
+                    except Exception:
+                        pass
                 conn.execute(
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
                     (new_tags_json, now, mid)
                 )
-                try:
-                    conn.execute(
-                        "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
-                        (row[0], row[1] or "", row[2] or "", new_tags_json)
-                    )
-                except Exception:
-                    pass
+                if not self.encrypted:
+                    try:
+                        conn.execute(
+                            "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
+                            (row[0], row[1] or "", row[2] or "", new_tags_json)
+                        )
+                    except Exception:
+                        pass
                 updated += 1
         conn.commit()
         return updated

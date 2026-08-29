@@ -2420,8 +2420,11 @@ def main():
     sub = parser.add_subparsers(dest="command", required=False)
 
     # 共享 --json 参数（统一 dest=json_output，所有子命令复用）
+    # default=SUPPRESS：子 parser 未显式指定 --json 时不覆盖主 parser 已解析的值
+    # （Python 3.13+ subparser 解析会重置 namespace，必须用 SUPPRESS 才能保留前置值）
     json_parser = argparse.ArgumentParser(add_help=False)
     json_parser.add_argument("--json", action="store_true", dest="json_output",
+                             default=argparse.SUPPRESS,
                              help="JSON 格式输出（供插件/脚本集成使用）")
 
     p_init = sub.add_parser("init", help="初始化 MindForge")
@@ -2429,7 +2432,7 @@ def main():
     p_init.add_argument("--password", default=None, help="直接指定密码（非交互式，CI/脚本场景）")
 
 
-    p_add = sub.add_parser("add", help="添加记忆")
+    p_add = sub.add_parser("add", help="添加记忆", parents=[json_parser])
     p_add.add_argument("content", help="记忆内容")
     p_add.add_argument("--category", "-c", help="分类")
     p_add.add_argument("--tags", "-t", nargs="+", help="标签")
@@ -2445,7 +2448,7 @@ def main():
     p_add.add_argument("--agent", default="cli", help="Agent ID")
     p_add.add_argument("--star", action="store_true", help="添加后直接收藏")
 
-    p_search = sub.add_parser("search", help="搜索记忆")
+    p_search = sub.add_parser("search", help="搜索记忆", parents=[json_parser])
     p_search.add_argument("query", help="搜索查询")
     p_search.add_argument("--limit", type=int, default=10, help="最大结果数")
     p_search.add_argument("--category", "-c", help="分类筛选")
@@ -2494,7 +2497,7 @@ def main():
     p_update.add_argument("--agent", default="cli", help="Agent ID")
     p_update.add_argument("--session", default="cli", help="会话 ID")
 
-    p_delete = sub.add_parser("delete", help="删除记忆（v5.1.1 补全）")
+    p_delete = sub.add_parser("delete", help="删除记忆（v5.1.1 补全）", parents=[json_parser])
     p_delete.add_argument("id", help="记忆 ID")
     p_delete.add_argument("--hard", action="store_true", help="彻底删除（不可恢复）")
     p_delete.add_argument("--force", action="store_true", help="确认删除")
@@ -2573,7 +2576,7 @@ def main():
     p_export_md.add_argument("--starred", action="store_true",
                              help="仅导出收藏的记忆")
 
-    p_health = sub.add_parser("health", help="数据库健康检查（v5.0.5 新增）")
+    p_health = sub.add_parser("health", help="数据库健康检查（v5.0.5 新增）", parents=[json_parser])
     p_health.add_argument("--dashboard", action="store_true",
                            help="输出记忆健康仪表盘 JSON 报告（v5.4.6 新增）")
     p_health.add_argument("--html", action="store_true",
@@ -2996,7 +2999,7 @@ def main():
     p_consolidate.add_argument("--agent", default="cli", help="Agent ID")
     p_consolidate.add_argument("--session", default="cli", help="会话 ID")
 
-    p_graph = sub.add_parser("graph", help="知识图谱")
+    p_graph = sub.add_parser("graph", help="知识图谱", parents=[json_parser])
     p_graph.add_argument("graph_action", choices=["stats", "related", "extract"], help="操作")
     p_graph.add_argument("--entity", help="实体名称")
     p_graph.add_argument("--depth", type=int, default=2, help="深度")
@@ -3180,7 +3183,7 @@ def main():
     p_mem_link.add_argument("--top-k", "-k", type=int, default=10, help="返回 Top-K 关联记忆（1-50）")
     p_mem_link.add_argument("--days", "-d", type=int, default=90, help="回溯窗口天数（1-365）")
 
-    p_mem_recall = sub.add_parser("memory-recall", help="智能记忆召回（v5.3.6 新增）")
+    p_mem_recall = sub.add_parser("memory-recall", help="智能记忆召回（v5.3.6 新增）", parents=[json_parser])
     p_mem_recall.add_argument("agent", help="Agent ID")
     p_mem_recall.add_argument("query", help="查询文本")
     p_mem_recall.add_argument("--top-k", "-k", type=int, default=10, help="返回 Top-K 召回记忆（1-50）")
@@ -3439,7 +3442,7 @@ def main():
     p_mem_importance.add_argument("agent", help="Agent ID")
     p_mem_importance.add_argument("--days", "-d", type=int, default=30, help="回溯窗口天数（1-365）")
 
-    p_mem_context = sub.add_parser("memory-context", help="上下文记忆注入（v5.3.7 新增）")
+    p_mem_context = sub.add_parser("memory-context", help="上下文记忆注入（v5.3.7 新增）", parents=[json_parser])
     p_mem_context.add_argument("agent", help="Agent ID")
     p_mem_context.add_argument("query", help="查询文本")
     p_mem_context.add_argument("--max-tokens", "-t", type=int, default=4000, help="token 预算上限（500-32000）")
@@ -3461,14 +3464,14 @@ def main():
     p_char_rel.add_argument("char2", help="角色 2 ID")
 
     # ===== v5.4.1 新增 Agent 记忆命令 =====
-    p_mem_reflection = sub.add_parser("memory-reflection", help="记忆反思（v5.4.1 新增）")
+    p_mem_reflection = sub.add_parser("memory-reflection", help="记忆反思（v5.4.1 新增）", parents=[json_parser])
     p_mem_reflection.add_argument("agent", help="Agent ID")
     p_mem_reflection.add_argument("--days", "-d", type=int, default=30, help="回溯窗口天数（1-365）")
 
-    p_mem_lineage = sub.add_parser("memory-lineage", help="记忆血缘溯源（v5.4.1 新增）")
+    p_mem_lineage = sub.add_parser("memory-lineage", help="记忆血缘溯源（v5.4.1 新增）", parents=[json_parser])
     p_mem_lineage.add_argument("memory_id", help="记忆 ID")
 
-    p_mem_reinforce = sub.add_parser("memory-reinforce", help="记忆强化候选（v5.4.1 新增）")
+    p_mem_reinforce = sub.add_parser("memory-reinforce", help="记忆强化候选（v5.4.1 新增）", parents=[json_parser])
     p_mem_reinforce.add_argument("agent", help="Agent ID")
     p_mem_reinforce.add_argument("--days", "-d", type=int, default=90, help="回溯窗口天数（1-365）")
     p_mem_reinforce.add_argument("--limit", "-l", type=int, default=10, help="返回候选上限（1-50）")

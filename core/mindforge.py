@@ -4385,7 +4385,10 @@ class MindForge:
                 "query_original": q,
                 "query_expansion": expansion.to_dict() if expansion else None,
                 "chunks": [{"memory_id": c.memory_id, "content": c.content,
-                            "relevance_score": float(c.relevance_score)}
+                            "relevance_score": float(c.relevance_score),
+                            "category": c.category,
+                            "layer": c.layer.value if hasattr(c.layer, 'value') else str(c.layer),
+                            "tags": list(c.tags) if c.tags else []}
                            for c in base.chunks[:max_results]],
                 "rerank": False,
             }
