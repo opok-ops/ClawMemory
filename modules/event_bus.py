@@ -252,8 +252,10 @@ class EventBus:
 
     def _deliver_webhook(self, config: WebhookConfig,
                          payload: Dict[str, Any]) -> bool:
-        """投递单个 Webhook（带重试）"""
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        """投递单个 Webhook（带重试）
+
+        P1-003: 改用 requests.post，设置连接超时 3 秒，读取超时 10 秒
+        """
         headers = {
             "Content-Type": "application/json; charset=utf-8",
             "User-Agent": "MindForge/5.4.9",
@@ -261,32 +263,40 @@ class EventBus:
         }
         if config.secret:
             sig = hmac.new(
-                config.secret.encode("utf-8"), body, hashlib.sha256
+                config.secret.encode("utf-8"),
+                json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8"),
+                hashlib.sha256
             ).hexdigest()
             headers["X-MindForge-Signature"] = f"sha256={sig}"
+
+        # P1-003: 连接超时 3 秒，读取超时 10 秒
+        timeout = (3, 10)
 
         last_error = ""
         for attempt in range(config.max_retries + 1):
             try:
-                req = urllib.request.Request(
-                    config.url, data=body, headers=headers, method="POST")
-                with urllib.request.urlopen(req, timeout=config.timeout) as resp:
-                    status = resp.getcode()
-                    success = 200 <= status < 300
-                    self._record_delivery(config.url, payload["event"],
-                                          status, success, attempt)
-                    if success:
-                        logger.debug("Webhook 投递成功 [%s] -> %s (status=%d)",
-                                     payload["event"], config.url, status)
-                        return True
-                    last_error = f"HTTP {status}"
-            except urllib.error.HTTPError as e:
-                last_error = f"HTTP {e.code}"
+                import requests
+                response = requests.post(
+                    config.url,
+                    json=payload,
+                    headers=headers,
+                    timeout=timeout,
+                )
+                status = response.status_code
+                success = 200 <= status < 300
                 self._record_delivery(config.url, payload["event"],
-                                      e.code, False, attempt)
-                # 4xx 不重试（客户端错误）
-                if 400 <= e.code < 500:
-                    break
+                                      status, success, attempt)
+                if success:
+                    logger.debug("Webhook 投递成功 [%s] -> %s (status=%d)",
+                                 payload["event"], config.url, status)
+                    return True
+                last_error = f"HTTP {status}"
+            except ImportError:
+                # requests 库不可用时降级到 urllib
+                last_error = self._deliver_webhook_urllib(config, payload, headers, attempt)
+                if last_error is True:
+                    return True
+                break
             except Exception as e:
                 last_error = str(e)
                 self._record_delivery(config.url, payload["event"],
@@ -299,6 +309,34 @@ class EventBus:
                        payload["event"], config.url, last_error,
                        config.max_retries)
         return False
+
+    def _deliver_webhook_urllib(self, config: WebhookConfig,
+                                payload: Dict[str, Any],
+                                headers: Dict[str, str],
+                                attempt: int) -> str:
+        """使用 urllib 的降级方案（requests 不可用时）"""
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        try:
+            req = urllib.request.Request(
+                config.url, data=body, headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=config.timeout) as resp:
+                status = resp.getcode()
+                success = 200 <= status < 300
+                self._record_delivery(config.url, payload["event"],
+                                      status, success, attempt)
+                if success:
+                    logger.debug("Webhook 投递成功 [%s] -> %s (status=%d)",
+                                 payload["event"], config.url, status)
+                    return True
+                return f"HTTP {status}"
+        except urllib.error.HTTPError as e:
+            self._record_delivery(config.url, payload["event"],
+                                  e.code, False, attempt)
+            return f"HTTP {e.code}"
+        except Exception as e:
+            self._record_delivery(config.url, payload["event"],
+                                  0, False, attempt)
+            return str(e)
 
     def _record_delivery(self, url: str, event: str,
                          status: int, success: bool, attempt: int) -> None:

@@ -61,7 +61,8 @@ class FederatedMemory:
     """联邦记忆管理器"""
 
     def __init__(self, storage=None, local_peer_id: str = "",
-                 acl=None, conflict_resolver=None):
+                 acl=None, conflict_resolver=None,
+                 config: Optional[Dict] = None):
         self.storage = storage
         self.local_peer_id = local_peer_id or str(uuid.uuid4())
         self.peers: Dict[str, FederatedPeer] = {}
@@ -74,6 +75,9 @@ class FederatedMemory:
         # 共享记忆冲突解析器（modules/share_conflict.py），均可选注入
         self.acl = acl
         self.conflict_resolver = conflict_resolver
+        # P1-004: 安全加固 - 无签名节点默认拒绝（fail-closed）
+        config = config or {}
+        self.allow_unsigned_peers = config.get("allow_unsigned_peers", False)
 
     def register_peer(self, peer_id: str, name: str,
                       trust_level: float = 0.5,
@@ -379,18 +383,23 @@ class FederatedMemory:
     def _verify_signature(self, data: Dict, signature: str, peer_id: str) -> bool:
         """验证 HMAC-SHA256 签名
 
-        v5.4.2 安全修复：替代此前"任意非空 signature 都返回 True"的占位实现。
-        使用 peer 的 public_key 作为 HMAC 密钥验证签名，防止伪造记忆注入。
+        P1-004: fail-closed 安全策略
+        - 无签名时：默认拒绝，仅当 allow_unsigned_peers=True 且节点已注册时允许
+        - 未注册节点：直接拒绝
+        - 无公钥节点：直接拒绝
+        - 签名不匹配：拒绝
         """
-        if not signature:
-            # 无签名时仅允许已注册 peer 的非敏感操作（保持向后兼容）
-            return peer_id in self.peers
         peer = self.peers.get(peer_id)
         if not peer:
-            return False
+            return False  # fail-closed: 未注册节点直接拒绝
+
+        if not signature:
+            # 无签名时仅允许显式配置的未签名节点
+            return self.allow_unsigned_peers
+
         if not peer.public_key:
-            # peer 未配置公钥，拒绝签名验证（fail-closed）
-            return False
+            return False  # fail-closed: 无公钥节点直接拒绝
+
         expected = self._compute_signature(data, peer_id)
         if not expected:
             return False

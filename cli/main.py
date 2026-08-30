@@ -390,12 +390,30 @@ def cmd_init(args):
 
 
 def _get_memory(args) -> MindForge:
+    # P0-001: key_file 单独存在时也启用加密
+    key_file_path = Path(args.key_file)
+    encrypted = key_file_path.exists()
+
     config = MemoryConfig(
         db_path=args.db_path,
         key_file=args.key_file,
-        encrypted=False,
+        encrypted=encrypted,
     )
-    return MindForge(config=config)
+    mf = MindForge(config=config)
+
+    # 加密模式下需要密码初始化
+    if encrypted:
+        import os
+        password = os.environ.get("MINDFORGE_PASSWORD", "")
+        if not password and sys.stdin.isatty():
+            try:
+                password = getpass.getpass("请输入加密密码：")
+            except (EOFError, OSError):
+                password = ""
+        if password:
+            mf.init_with_password(password)
+
+    return mf
 
 
 def cmd_add(args):

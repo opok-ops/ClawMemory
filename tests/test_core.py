@@ -1275,8 +1275,10 @@ class TestFederatedShareFiltering(unittest.TestCase):
         from modules.share_conflict import SharedConflictResolver
         storage = StorageEngine(db_path=self.db_path)
         resolver = SharedConflictResolver(storage)
+        # P1-004: 测试聚焦于冲突解决功能，显式启用未签名节点以隔离测试范围
         fed = FederatedMemory(storage=storage, local_peer_id="local",
-                              conflict_resolver=resolver)
+                              conflict_resolver=resolver,
+                              config={"allow_unsigned_peers": True})
         local_entry = storage.add_memory(content="本地版本")
         fed.register_peer("peerA", "节点A", trust_level=0.9)
         ok = fed.receive_memory("peerA", {

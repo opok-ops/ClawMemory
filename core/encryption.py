@@ -44,7 +44,7 @@ class EncryptedBlob:
     nonce: bytes
     salt: bytes
     tag: Optional[bytes] = None
-    algorithm: str = "AES-256-GCM"  # v5.4.2：标记加密算法，降级时为 EXPERIMENTAL_HMAC_XOR
+    algorithm: str = "AES-256-GCM"  # 加密算法标识
 
     def to_dict(self) -> dict:
         return {
@@ -71,11 +71,15 @@ class EncryptionEngine:
 
     def __init__(self, key: bytes):
         self._key = key
-        self._aesgcm = None
         crypto = _get_crypto()
-        if crypto:
-            AESGCM = crypto[0]
-            self._aesgcm = AESGCM(key)
+        if not crypto:
+            # P1-008: 移除 HMAC-XOR fallback，cryptography 缺失时直接拒绝初始化
+            raise SecurityError(
+                "cryptography library is required for encryption. "
+                "Install with: pip install cryptography"
+            )
+        AESGCM = crypto[0]
+        self._aesgcm = AESGCM(key)
 
     @classmethod
     def from_password(cls, password: str, salt: Optional[bytes] = None) -> Tuple["EncryptionEngine", bytes]:
@@ -84,18 +88,20 @@ class EncryptionEngine:
             salt = os.urandom(16)
 
         crypto = _get_crypto()
-        if crypto:
-            _, PBKDF2HMAC, hashes = crypto
-            kdf = PBKDF2HMAC(
-                algorithm=hashes.SHA256(),
-                length=32,
-                salt=salt,
-                iterations=_PBKDF2_ITERATIONS,
+        if not crypto:
+            # P1-008: 移除 fallback，cryptography 缺失时直接拒绝
+            raise SecurityError(
+                "cryptography library is required for encryption. "
+                "Install with: pip install cryptography"
             )
-            key = kdf.derive(password.encode())
-        else:
-            dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, _PBKDF2_ITERATIONS, dklen=32)
-            key = dk
+        _, PBKDF2HMAC, hashes = crypto
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=_PBKDF2_ITERATIONS,
+        )
+        key = kdf.derive(password.encode())
 
         return cls(key), salt
 
@@ -105,76 +111,16 @@ class EncryptionEngine:
         nonce = os.urandom(12)
         salt = os.urandom(16)
 
-        if self._aesgcm is not None:
-            ciphertext = self._aesgcm.encrypt(nonce, plaintext_bytes, None)
-            return EncryptedBlob(ciphertext=ciphertext, nonce=nonce, salt=salt, algorithm="AES-256-GCM")
-        else:
-            # v5.4.8 安全修复：弱加密回退时记录警告
-            if not getattr(self.__class__, '_weak_cipher_warned', False):
-                import logging
-                logging.getLogger(__name__).warning(
-                    "cryptography library not available — using EXPERIMENTAL_HMAC_XOR cipher. "
-                    "This cipher has not undergone peer review. "
-                    "Install cryptography package for AES-256-GCM: pip install cryptography"
-                )
-                self.__class__._weak_cipher_warned = True
-            ciphertext = self._simple_encrypt(plaintext_bytes, nonce)
-            return EncryptedBlob(ciphertext=ciphertext, nonce=nonce, salt=salt, algorithm="EXPERIMENTAL_HMAC_XOR")
+        ciphertext = self._aesgcm.encrypt(nonce, plaintext_bytes, None)
+        return EncryptedBlob(ciphertext=ciphertext, nonce=nonce, salt=salt, algorithm="AES-256-GCM")
 
     def decrypt(self, blob: EncryptedBlob) -> str:
         """解密文本"""
-        if self._aesgcm is not None:
-            try:
-                plaintext = self._aesgcm.decrypt(blob.nonce, blob.ciphertext, None)
-                return plaintext.decode("utf-8")
-            except (ValueError, TypeError) as e:
-                raise SecurityError(f"解密失败：{e}")
-        else:
-            plaintext = self._simple_decrypt(blob.ciphertext, blob.nonce)
+        try:
+            plaintext = self._aesgcm.decrypt(blob.nonce, blob.ciphertext, None)
             return plaintext.decode("utf-8")
-
-    def _simple_encrypt(self, data: bytes, nonce: bytes) -> bytes:
-        """简易加密（无 cryptography 库时的降级方案）
-
-        v5.3.3 安全加固：改用 HMAC-SHA256 计数器模式生成密钥流，
-        替代此前固定 32 字节重复 XOR 的弱方案。每 32 字节使用不同密钥流块，
-        消除密钥流重复导致的明文泄露风险。
-        """
-        result = bytearray()
-        block_idx = 0
-        for i, b in enumerate(data):
-            if i % 32 == 0:
-                # v5.3.3：计数器模式，每块使用不同密钥流
-                counter = block_idx.to_bytes(8, "big")
-                derived = hmac.new(
-                    self._key, nonce + counter, hashlib.sha256
-                ).digest()
-                block_idx += 1
-            result.append(b ^ derived[i % 32])
-        tag = hmac.new(self._key, bytes(result), hashlib.sha256).digest()
-        return bytes(result) + tag
-
-    def _simple_decrypt(self, data: bytes, nonce: bytes) -> bytes:
-        """简易解密
-
-        v5.3.3 安全加固：与 _simple_encrypt 对称的计数器模式解密。
-        """
-        tag = data[-32:]
-        ciphertext = data[:-32]
-        expected_tag = hmac.new(self._key, ciphertext, hashlib.sha256).digest()
-        if not hmac.compare_digest(tag, expected_tag):
-            raise SecurityError("完整性校验失败")
-        result = bytearray()
-        block_idx = 0
-        for i, b in enumerate(ciphertext):
-            if i % 32 == 0:
-                counter = block_idx.to_bytes(8, "big")
-                derived = hmac.new(
-                    self._key, nonce + counter, hashlib.sha256
-                ).digest()
-                block_idx += 1
-            result.append(b ^ derived[i % 32])
-        return bytes(result)
+        except Exception as e:
+            raise SecurityError(f"解密失败：{e}")
 
     def hash(self, data: str) -> str:
         """计算数据哈希"""

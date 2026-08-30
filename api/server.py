@@ -33,7 +33,7 @@ import time
 import hmac
 import threading
 from pathlib import Path
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 from collections import defaultdict
 from MindForge import __version__ as MF_VERSION
@@ -73,6 +73,60 @@ class _RateLimiter:
 
 
 _rate_limiter = _RateLimiter(max_requests=100, window_seconds=60)
+
+
+# P0-003: 限制最大并发线程数的 HTTP 服务器
+class BoundedThreadingHTTPServer(ThreadingHTTPServer):
+    """带最大并发线程数限制的 HTTP 服务器
+
+    防止大量并发请求耗尽服务器资源（线程、内存、文件描述符）。
+    超过限制时返回 503 Service Unavailable。
+    """
+    max_threads = 50
+    daemon_threads = True
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._active_threads = 0
+        self._thread_lock = threading.Lock()
+        self._max_threads = self.__class__.max_threads
+
+    def process_request(self, request, client_address):
+        """覆盖 process_request 以限制并发线程数"""
+        with self._thread_lock:
+            if self._active_threads >= self._max_threads:
+                # 超过并发限制，返回 503
+                try:
+                    request.sendall(
+                        b"HTTP/1.1 503 Service Unavailable\r\n"
+                        b"Content-Type: application/json\r\n"
+                        b"Content-Length: 48\r\n"
+                        b"\r\n"
+                        b'{"error": "Too many concurrent requests"}'
+                    )
+                except Exception:
+                    pass
+                request.close()
+                return
+            self._active_threads += 1
+
+        # 在新线程中处理请求
+        t = threading.Thread(
+            target=self._process_request_thread,
+            args=(request, client_address),
+            daemon=True,
+        )
+        t.start()
+
+    def _process_request_thread(self, request, client_address):
+        try:
+            self.finish_request(request, client_address)
+        except Exception:
+            self.handle_error(request, client_address)
+        finally:
+            self.shutdown_request(request)
+            with self._thread_lock:
+                self._active_threads -= 1
 
 
 def _safe_int(value, default=10, min_val=1, max_val=10000):
@@ -184,7 +238,7 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
             elif path == "/api/tags":
                 conn = self.mindforge.storage._get_conn()
                 rows = conn.execute(
-                    "SELECT tags FROM memories WHERE tags IS NOT NULL AND tags != '' AND tags != '[]'"
+                    "SELECT tags FROM memories WHERE tags IS NOT NULL AND tags != '' AND tags != '[]' LIMIT 10000"  # P1-002: 限制查询行数
                 ).fetchall()
                 tag_counts = {}
                 for row in rows:
@@ -247,7 +301,8 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                     self._send_json({"error": "Memory not found"}, 404)
 
             elif path == "/api/export":
-                entries = self.mindforge.list(limit=100000)
+                max_export_limit = 5000  # P1-001: 导出上限 5000 条
+                entries = self.mindforge.list(limit=max_export_limit)
                 memories = [e.to_dict() if hasattr(e, "to_dict") else vars(e) for e in entries]
                 self._send_json({"version": MF_VERSION, "total": len(memories), "memories": memories})
 
@@ -401,8 +456,10 @@ def start_api_server(mindforge_instance, host="127.0.0.1", port=8080):
     """
     MindForgeAPIHandler.mindforge = mindforge_instance
 
-    server = HTTPServer((host, port), MindForgeAPIHandler)
+    # P0-003: 使用带并发限制的多线程服务器
+    server = BoundedThreadingHTTPServer((host, port), MindForgeAPIHandler)
     print(f"MindForge REST API serving on http://{host}:{port}")
+    print(f"  Max concurrent threads: {BoundedThreadingHTTPServer.max_threads}")
     print(f"  Endpoints: /api/memories, /api/search, /api/stats, /api/health, ...")
     print(f"  Press Ctrl+C to stop")
 

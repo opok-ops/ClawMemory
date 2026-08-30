@@ -236,7 +236,7 @@ class IntentRouter:
             )
 
         # cache key (ignore whitespace)
-        cache_key = hashlib.md5(re.sub(r"\s+", "", src).encode("utf-8")).hexdigest()
+        cache_key = hashlib.sha256(re.sub(r"\s+", "", src).encode("utf-8")).hexdigest()  # P1-007: MD5→SHA-256
         if cache_key in self._cache:
             intent, conf, cands = self._cache[cache_key]
             return IntentResult(
