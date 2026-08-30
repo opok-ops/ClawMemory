@@ -36,6 +36,42 @@ from .types import (
 from .encryption import EncryptionEngine, EncryptedBlob, SecurityError
 
 
+# v5.5.7: 检测数据库路径是否位于网络文件系统
+# SQLite 官方不支持网络 FS 上的 WAL 模式，可能导致 SIGBUS 崩溃
+def _is_network_fs(path: Path) -> bool:
+    """检测给定路径是否位于网络文件系统"""
+    try:
+        resolved = path.resolve()
+        path_str = str(resolved)
+
+        if os.name == 'nt':
+            # Windows: 检测 UNC 路径和网络驱动器
+            if path_str.startswith('\\\\') or path_str.startswith('//'):
+                return True
+            import ctypes
+            drive = resolved.drive or (path_str[:2] if len(path_str) >= 2 else '')
+            if drive:
+                drive_root = drive + '\\'
+                drive_type = ctypes.windll.kernel32.GetDriveTypeW(drive_root)
+                # DRIVE_REMOTE = 4
+                return drive_type == 4
+        else:
+            # Unix: 检查 /proc/mounts 中的文件系统类型
+            import subprocess
+            result = subprocess.run(
+                ['stat', '-f', '-c', '%T', path_str],
+                capture_output=True, text=True, timeout=2
+            )
+            fs_type = result.stdout.strip().lower()
+            network_types = {'nfs', 'nfs4', 'cifs', 'smb', 'smb2', 'smb3',
+                             'fuse.sshfs', 'fuse.gvfs-fuse-daemon', '9p'}
+            if fs_type in network_types:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 # ===== 路径安全校验（v5.2.9 新增：存储层统一防护）=====
 
 # v5.3.5 安全加固：检测 Windows 短文件名（8.3）绕过尝试
@@ -583,9 +619,20 @@ class StorageEngine:
         if conn is None:
             conn = sqlite3.connect(str(self.db_path), timeout=10.0)
             conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
+            # v5.5.7 安全加固：网络文件系统不支持 WAL，检测后降级
+            if _is_network_fs(self.db_path):
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Database path appears to be on a network filesystem; "
+                    "using DELETE journal mode (WAL not supported on network FS, "
+                    "may cause SIGBUS crashes). Place the database on a local disk "
+                    "for optimal performance and stability."
+                )
+                conn.execute("PRAGMA journal_mode=DELETE")
+            else:
+                conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA foreign_keys=ON")
-            conn.execute("PRAGMA busy_timeout=5000")  # v5.4.7 修复 L-4：并发写入时等待 5 秒
+            conn.execute("PRAGMA busy_timeout=5000")
             self._conn_local.conn = conn
         return conn
 

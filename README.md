@@ -176,6 +176,12 @@ for chunk in results.chunks:
 > 100K 条下的 P95 延迟采用混合兜底策略：TF-IDF 未命中则触发模糊子串扫描，然后按分数合并去重。
 > Cross-Encoder 重排为 CPU 版多特征融合（token overlap / phrase hit / ngram overlap / 属性匹配 / 重要度加权），无 GPU 依赖。
 
+> **⚠️ WAL 模式与网络文件系统**
+>
+> SQLite 默认启用 WAL（Write-Ahead Logging）日志模式以获得更好的并发读写性能。但 **SQLite 官方不支持在网络文件系统（NFS、SMB/CIFS、SSHFS 等）上使用 WAL 模式**，可能导致 SIGBUS 崩溃。
+>
+> MindForge v5.5.7+ 会自动检测数据库路径是否位于网络文件系统，如检测到则自动降级为 DELETE 模式。建议将数据库文件放置在本地磁盘上以获得最佳性能和稳定性。
+
 ### Retrieval Quality（检索精度）
 
 测试数据集：500 条多领域记忆（技术 / 产品 / 日常 / Infra / DevOps），50 条标注查询。

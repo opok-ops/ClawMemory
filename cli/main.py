@@ -138,6 +138,8 @@ COLORS = {
     "bold": "\033[1m",
 }
 
+_json_mode = False
+
 
 def c(text: str, color: str) -> str:
     return f"{COLORS.get(color, '')}{text}{COLORS['reset']}"
@@ -310,6 +312,8 @@ def _safe_import_path(input_path, max_size=100 * 1024 * 1024):
 
 
 def print_banner():
+    if _json_mode:
+        return
     banner = f"""
 {COLORS['cyan']}╔══════════════════════════════════════════════════════╗
 ║        {COLORS['bold']}MindForge v{__version__} - AI Agent 终身记忆系统{COLORS['reset']}{COLORS['cyan']}        ║
@@ -2123,6 +2127,8 @@ def cmd_diff(args):
 # ===== 多 Agent 记忆空间命令（v5.2.8 实验性 — v6.0.0 全量推送预览）=====
 
 def _print_experimental_banner():
+    if _json_mode:
+        return
     print(c("🧪 实验性功能：多 Agent 记忆空间（v6.0.0 全量推送预览，API 可能变化）", "yellow"))
 
 
@@ -3181,7 +3187,7 @@ def main():
     p_mem_cluster.add_argument("--days", "-d", type=int, default=30, help="回溯天数（1-365）")
     p_mem_cluster.add_argument("--max-clusters", "-k", type=int, default=10, help="最大聚类数（1-50）")
 
-    p_agent_insight = sub.add_parser("agent-insight", help="Agent 行为洞察（v5.3.5 新增）")
+    p_agent_insight = sub.add_parser("agent-insight", help="Agent 行为洞察（v5.3.5 新增）", parents=[json_parser])
     p_agent_insight.add_argument("agent", help="Agent ID")
     p_agent_insight.add_argument("--days", "-d", type=int, default=30, help="回溯天数（1-365）")
 
@@ -3621,6 +3627,9 @@ def main():
                                   help="查看嵌入向量状态（v5.4.5 新增）")
 
     args = parser.parse_args()
+
+    global _json_mode
+    _json_mode = getattr(args, 'json_output', False)
 
     # v5.4.6 Shell 自动补全安装
     if getattr(args, 'install_completion', None):
@@ -8527,22 +8536,31 @@ def cmd_memory_cluster(args):
 def cmd_agent_insight(args):
     """Agent 行为洞察（v5.3.5 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🧠 Agent 行为洞察（v5.3.5）", "bold"))
-    print("=" * 60)
-    print(f"  Agent ID:   {args.agent}")
-    print(f"  回溯天数:   {args.days}")
 
     try:
         result = cm.agent_insight(args.agent, args.days)
     except (ValueError, TypeError) as e:
-        print(c(f"\n❌ 失败: {e}", "red"))
+        if getattr(args, 'json_output', False):
+            _json_out({"error": str(e)})
+        else:
+            print(c(f"\n❌ 失败: {e}", "red"))
         cm.close()
         return 1
+
+    if getattr(args, 'json_output', False):
+        _json_out(result)
+        cm.close()
+        return 0
 
     if result.get("error"):
         print(c(f"\n❌ {result['error']}", "red"))
         cm.close()
         return 1
+
+    print(c(f"\n🧠 Agent 行为洞察（v5.3.5）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:   {args.agent}")
+    print(f"  回溯天数:   {args.days}")
 
     total = result["total_memories"]
     if total == 0:
@@ -8588,7 +8606,7 @@ def cmd_agent_insight(args):
 
     insights = result.get("insights", [])
     if insights:
-        print(c(f"\n💡 智能洞察", "bold", "green"))
+        print(c(f"\n💡 智能洞察", "green"))
         for s in insights:
             print(f"  ✨ {s}")
 
