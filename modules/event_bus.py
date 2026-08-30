@@ -254,8 +254,13 @@ class EventBus:
                          payload: Dict[str, Any]) -> bool:
         """投递单个 Webhook（带重试）
 
-        P1-003: 改用 requests.post，设置连接超时 3 秒，读取超时 10 秒
+        P1 修复：签名与发送体必须一致 — 统一序列化一次 body，
+        签名计算用同一个字节串，发送用 data=body 而非 json=payload。
+        P3-2 修复：尊重 config.timeout，4xx 不重试。
         """
+        # 统一序列化：签名和发送共用同一个 body 字节串
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
         headers = {
             "Content-Type": "application/json; charset=utf-8",
             "User-Agent": "MindForge/5.4.9",
@@ -264,13 +269,16 @@ class EventBus:
         if config.secret:
             sig = hmac.new(
                 config.secret.encode("utf-8"),
-                json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8"),
+                body,
                 hashlib.sha256
             ).hexdigest()
             headers["X-MindForge-Signature"] = f"sha256={sig}"
 
-        # P1-003: 连接超时 3 秒，读取超时 10 秒
-        timeout = (3, 10)
+        # P3-2: 尊重用户配置的 timeout，requests 需要 (connect, read) 元组
+        if isinstance(config.timeout, (tuple, list)):
+            timeout = tuple(config.timeout)
+        else:
+            timeout = (3, config.timeout)
 
         last_error = ""
         for attempt in range(config.max_retries + 1):
@@ -278,7 +286,7 @@ class EventBus:
                 import requests
                 response = requests.post(
                     config.url,
-                    json=payload,
+                    data=body,
                     headers=headers,
                     timeout=timeout,
                 )
@@ -291,9 +299,12 @@ class EventBus:
                                  payload["event"], config.url, status)
                     return True
                 last_error = f"HTTP {status}"
+                # P3-2: 4xx 客户端错误不重试
+                if 400 <= status < 500:
+                    break
             except ImportError:
                 # requests 库不可用时降级到 urllib
-                last_error = self._deliver_webhook_urllib(config, payload, headers, attempt)
+                last_error = self._deliver_webhook_urllib(config, body, headers, attempt)
                 if last_error is True:
                     return True
                 break
@@ -311,30 +322,33 @@ class EventBus:
         return False
 
     def _deliver_webhook_urllib(self, config: WebhookConfig,
-                                payload: Dict[str, Any],
+                                body: bytes,
                                 headers: Dict[str, str],
                                 attempt: int) -> str:
-        """使用 urllib 的降级方案（requests 不可用时）"""
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        """使用 urllib 的降级方案（requests 不可用时）
+
+        P1 修复：body 已在调用方序列化好，签名也基于同一字节串，
+        不再重复序列化。
+        """
         try:
             req = urllib.request.Request(
                 config.url, data=body, headers=headers, method="POST")
             with urllib.request.urlopen(req, timeout=config.timeout) as resp:
                 status = resp.getcode()
                 success = 200 <= status < 300
-                self._record_delivery(config.url, payload["event"],
+                self._record_delivery(config.url, headers.get("X-MindForge-Event", "unknown"),
                                       status, success, attempt)
                 if success:
-                    logger.debug("Webhook 投递成功 [%s] -> %s (status=%d)",
-                                 payload["event"], config.url, status)
+                    logger.debug("Webhook 投递成功 -> %s (status=%d)",
+                                 config.url, status)
                     return True
                 return f"HTTP {status}"
         except urllib.error.HTTPError as e:
-            self._record_delivery(config.url, payload["event"],
+            self._record_delivery(config.url, headers.get("X-MindForge-Event", "unknown"),
                                   e.code, False, attempt)
             return f"HTTP {e.code}"
         except Exception as e:
-            self._record_delivery(config.url, payload["event"],
+            self._record_delivery(config.url, headers.get("X-MindForge-Event", "unknown"),
                                   0, False, attempt)
             return str(e)
 

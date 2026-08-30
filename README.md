@@ -253,6 +253,21 @@ for chunk in results.chunks:
 | XSS / SSRF | 导出 HTML 统一消毒，URL 导入 DNS 重绑定防护 |
 | 审计 | 全操作审计日志，链式防篡改 |
 
+### 集成注意事项
+
+> **🔐 dsh-mindforge bridge 用户必读**
+>
+> 配置了 `keyFile` 的用户升级到 v5.5.7+ 后，CLI 调用需要密码才能访问加密数据库。请确保：
+> 1. 在宿主环境中 `export MINDFORGE_PASSWORD="你的密码"`
+> 2. bridge spawn 使用的 `{...process.env}` 会自动透传该环境变量
+> 3. 若未设置密码，CLI 会输出清晰的错误提示并退出（而非裸 AttributeError 崩溃）
+
+> **⚠️ 降级加密迁移提醒（v5.5.7）**
+>
+> v5.5.7 移除了 HMAC-XOR 降级加密路径（P1-008 安全加固）。如果在此前的版本中 `cryptography` 库不可用时曾创建过加密记忆，这些 `EXPERIMENTAL_HMAC_XOR` blob 将**永久不可解密**。
+> - **升级前请先备份数据**：如怀疑使用过降级加密，升级前执行 `mindforge export --json > backup.json` 导出明文数据
+> - 暴露面极小：仅在 `cryptography` 缺失期间触发过，正常安装环境下不会产生降级 blob
+
 ---
 
 ## CLI Reference

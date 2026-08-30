@@ -97,12 +97,13 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
             if self._active_threads >= self._max_threads:
                 # 超过并发限制，返回 503
                 try:
+                    body = b'{"error": "Too many concurrent requests"}'
                     request.sendall(
                         b"HTTP/1.1 503 Service Unavailable\r\n"
                         b"Content-Type: application/json\r\n"
-                        b"Content-Length: 48\r\n"
+                        b"Content-Length: " + str(len(body)).encode() + b"\r\n"
                         b"\r\n"
-                        b'{"error": "Too many concurrent requests"}'
+                        + body
                     )
                 except Exception:
                     pass
@@ -304,7 +305,15 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
                 max_export_limit = 5000  # P1-001: 导出上限 5000 条
                 entries = self.mindforge.list(limit=max_export_limit)
                 memories = [e.to_dict() if hasattr(e, "to_dict") else vars(e) for e in entries]
-                self._send_json({"version": MF_VERSION, "total": len(memories), "memories": memories})
+                # P3-3: 截断时添加 truncated 标志
+                truncated = len(entries) >= max_export_limit
+                self._send_json({
+                    "version": MF_VERSION,
+                    "total": len(memories),
+                    "truncated": truncated,
+                    "max_limit": max_export_limit if truncated else None,
+                    "memories": memories,
+                })
 
             elif path == "/":
                 self._send_json({
