@@ -91,7 +91,7 @@ from core import (
 try:
     from MindForge import __version__
 except ImportError:
-    __version__ = "5.5.6"
+    __version__ = "5.5.7"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
