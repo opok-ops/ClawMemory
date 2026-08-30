@@ -488,10 +488,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
     {
         "name": "embedding_status",
         "description": "查看嵌入向量引擎状态：是否可用、模型名、维度、向量数量。",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-        },
+        "inputSchema": {"type": "object", "properties": {}},
     },
 ]
 
@@ -923,7 +920,7 @@ def _handle_initialize(request: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "protocolVersion": "2024-11-05",
         "capabilities": {"tools": {}, "logging": {}},
-        "serverInfo": {"name": "mindforge", "version": "5.5.6"},
+        "serverInfo": {"name": "mindforge", "version": "5.5.7"},
     }
 
 
