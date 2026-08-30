@@ -349,7 +349,9 @@ class MemoryCore:
 
     def _init_db(self):
         """初始化数据库"""
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
 
         # 检测网络文件系统，决定是否启用 WAL
         use_wal = not _is_network_fs(self.db_path)
