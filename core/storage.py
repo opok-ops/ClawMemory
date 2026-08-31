@@ -1212,6 +1212,8 @@ class StorageEngine:
         except Exception:
             pass
 
+        # v5.5.7 fix: 加密分支入库用空串，但返回值应保留明文 content（与 combined 版本对齐）
+        entry.content = content
         return entry
 
     def get_memory(self, memory_id: str,

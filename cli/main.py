@@ -439,12 +439,14 @@ def cmd_add(args):
     category = args.category
     if not category:
         category = taxonomy.suggest_category(content)
-        print(f"  建议分类：{c(category, 'cyan')}")
+        if not _json_mode:
+            print(f"  建议分类：{c(category, 'cyan')}")
 
     tags = args.tags
     if not tags:
         tags = taxonomy.suggest_tags(content)
-        print(f"  建议标签：{', '.join(tags) if tags else '无'}")
+        if not _json_mode:
+            print(f"  建议标签：{', '.join(tags) if tags else '无'}")
 
     privacy = PrivacyLevel.from_string(args.privacy)
     layer = MemoryLayer.from_string(args.layer)
@@ -625,14 +627,16 @@ def cmd_delete(args):
 
     entry = cm.get(args.id, actor=args.agent, session_id=args.session)
     if not entry:
-        print(c("❌ 记忆不存在", "red"))
+        if not _json_mode:
+            print(c("❌ 记忆不存在", "red"))
         return 1
 
     if not args.force:
-        print(c(f"\n⚠️  将删除记忆：", "yellow"))
-        print(f"   [{entry.category}] {entry.preview[:60]}...")
-        print(c(f"\n确认删除？加 --force 执行（软删除，可在回收站恢复）", "yellow"))
-        print(c(f"彻底删除请加 --hard", "yellow"))
+        if not _json_mode:
+            print(c(f"\n⚠️  将删除记忆：", "yellow"))
+            print(f"   [{entry.category}] {entry.preview[:60]}...")
+            print(c(f"\n确认删除？加 --force 执行（软删除，可在回收站恢复）", "yellow"))
+            print(c(f"彻底删除请加 --hard", "yellow"))
         return 1
 
     success = cm.delete(
@@ -1175,11 +1179,16 @@ def cmd_health(args):
         cm.close()
         return 0
 
+    result = cm.health_check()
+
+    if getattr(args, 'json_output', False):
+        _json_out(result)
+        cm.close()
+        return 0 if result["status"] == "healthy" else (1 if result["status"] == "warning" else 2)
+
     print_banner()
     print(c("🩺 MindForge 健康检查", "bold"))
     print("=" * 50)
-
-    result = cm.health_check()
 
     status = result["status"]
     status_color = {
@@ -1204,10 +1213,6 @@ def cmd_health(args):
     print(f"   孤立 FTS 记录：    {c(str(result['fts_orphans']), 'yellow' if result['fts_orphans'] else 'green')}")
     print(f"   孤立审计日志：    {c(str(result['audit_orphans']), 'yellow' if result['audit_orphans'] else 'green')}")
     print(f"   加密不一致条目：  {c(str(result['encrypted_inconsistent']), 'red' if result['encrypted_inconsistent'] else 'green')}")
-
-    if getattr(args, 'json_output', False):
-        _json_out(result)
-        return 0 if status == "healthy" else (1 if status == "warning" else 2)
 
     print(f"\n💡 建议：")
     for rec in result["recommendations"]:
@@ -3736,12 +3741,6 @@ def cmd_memory_importance(args):
 def cmd_memory_context(args):
     """上下文记忆注入（v5.3.7 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n📥 上下文记忆注入（v5.3.7）", "bold"))
-    print("=" * 60)
-    print(f"  Agent ID:    {args.agent}")
-    print(f"  查询:        {args.query}")
-    print(f"  Token 上限:  {args.max_tokens}")
-
     try:
         result = cm.memory_context(args.agent, args.query, args.max_tokens)
     except (ValueError, TypeError) as e:
@@ -3754,14 +3753,25 @@ def cmd_memory_context(args):
         cm.close()
         return 1
 
-    print(f"  包含记忆:    {result['included_count']}")
-    print(f"  排除记忆:    {result['excluded_count']}")
-    print(f"  Token 估计:  {result['token_estimate']}")
-
     if getattr(args, 'json_output', False):
         _json_out(result)
         cm.close()
         return 0
+
+    print(c(f"\n📥 上下文记忆注入（v5.3.7）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:    {args.agent}")
+    print(f"  查询:        {args.query}")
+    print(f"  Token 上限:  {args.max_tokens}")
+    print(f"  包含记忆:    {result['included_count']}")
+    print(f"  排除记忆:    {result['excluded_count']}")
+    print(f"  Token 估计:  {result['token_estimate']}")
+    print("=" * 60)
+    print(f"  Agent ID:    {args.agent}")
+    print(f"  查询:        {args.query}")
+    print(f"  Token 上限:  {args.max_tokens}")
+
+    
 
     context = result.get("context", "")
     if not context:
@@ -4015,11 +4025,6 @@ def cmd_char_relationship(args):
 def cmd_memory_reflection(args):
     """记忆反思（v5.4.1 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🪞 记忆反思（v5.4.1）", "bold"))
-    print("=" * 60)
-    print(f"  Agent ID:    {args.agent}")
-    print(f"  回溯天数:    {args.days}")
-
     try:
         result = cm.memory_reflection(args.agent, args.days)
     except (ValueError, TypeError) as e:
@@ -4037,6 +4042,13 @@ def cmd_memory_reflection(args):
         _json_out(result)
         cm.close()
         return 0
+
+    print(c(f"\n🪞 记忆反思（v5.4.1）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:    {args.agent}")
+    print(f"  回溯天数:    {args.days}")
+
+    
 
     if result["total_memories"] == 0:
         print(c("\n窗口内暂无记忆可供反思。", "yellow"))
@@ -4074,10 +4086,6 @@ def cmd_memory_reflection(args):
 def cmd_memory_lineage(args):
     """记忆血缘溯源（v5.4.1 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🧬 记忆血缘溯源（v5.4.1）", "bold"))
-    print("=" * 60)
-    print(f"  记忆 ID:    {args.memory_id}")
-
     try:
         result = cm.memory_lineage(args.memory_id)
     except (ValueError, TypeError) as e:
@@ -4095,6 +4103,12 @@ def cmd_memory_lineage(args):
         _json_out(result)
         cm.close()
         return 0
+
+    print(c(f"\n🧬 记忆血缘溯源（v5.4.1）", "bold"))
+    print("=" * 60)
+    print(f"  记忆 ID:    {args.memory_id}")
+
+    
 
     basic = result.get("basic", {})
     stats = result.get("stats", {})
@@ -4126,11 +4140,6 @@ def cmd_memory_lineage(args):
 def cmd_memory_reinforce(args):
     """记忆强化候选（v5.4.1 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n💪 记忆强化候选（v5.4.1）", "bold"))
-    print("=" * 60)
-    print(f"  Agent ID:    {args.agent}")
-    print(f"  回溯天数:    {args.days}  |  候选上限: {args.limit}")
-
     try:
         result = cm.memory_reinforce(args.agent, args.days, args.limit)
     except (ValueError, TypeError) as e:
@@ -4148,6 +4157,13 @@ def cmd_memory_reinforce(args):
         _json_out(result)
         cm.close()
         return 0
+
+    print(c(f"\n💪 记忆强化候选（v5.4.1）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:    {args.agent}")
+    print(f"  回溯天数:    {args.days}  |  候选上限: {args.limit}")
+
+    
 
     if result["total_scanned"] == 0:
         print(c("\n窗口内暂无记忆。", "yellow"))
@@ -4611,8 +4627,6 @@ def cmd_skill_extract(args):
 def cmd_rerank_search(args):
     """混合检索增强（查询扩展 + Cross-Encoder 重排）CLI 入口"""
     cm = _get_memory(args)
-    print(c(f"\n🔍 混合检索增强（查询扩展 + Cross-Encoder 重排）（v5.3.9）", "bold"))
-    print("=" * 60)
     try:
         result = cm.search_enhanced(
             query=args.query,
@@ -8562,6 +8576,10 @@ def cmd_agent_insight(args):
         cm.close()
         return 0
 
+    print(c(f"\n🔍 混合检索增强（查询扩展 + Cross-Encoder 重排）（v5.3.9）", "bold"))
+    print("=" * 60)
+    
+
     if result.get("error"):
         print(c(f"\n❌ {result['error']}", "red"))
         cm.close()
@@ -8840,13 +8858,6 @@ def cmd_memory_link(args):
 def cmd_memory_recall(args):
     """智能记忆召回（v5.3.6 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🔎 智能记忆召回（v5.3.6）", "bold"))
-    print("=" * 60)
-    print(f"  Agent ID:    {args.agent}")
-    print(f"  查询:        {args.query}")
-    print(f"  Top-K:       {args.top_k}")
-    print(f"  回溯天数:    {args.days}")
-
     try:
         result = cm.memory_recall(args.agent, args.query, args.top_k, args.days)
     except (ValueError, TypeError) as e:
@@ -8863,6 +8874,15 @@ def cmd_memory_recall(args):
         _json_out(result)
         cm.close()
         return 0
+
+    print(c(f"\n🔎 智能记忆召回（v5.3.6）", "bold"))
+    print("=" * 60)
+    print(f"  Agent ID:    {args.agent}")
+    print(f"  查询:        {args.query}")
+    print(f"  Top-K:       {args.top_k}")
+    print(f"  回溯天数:    {args.days}")
+
+    
 
     qk = result.get("query_keywords", [])
     if qk:
