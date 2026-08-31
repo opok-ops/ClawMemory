@@ -227,6 +227,31 @@ def _validate_content_len(content: Optional[str]) -> None:
         raise ValueError(f"content exceeds {MAX_CONTENT_LEN} chars (got {len(content)})")
 
 
+# v5.5.7 安全加固：写操作事务回滚装饰器
+# 异常时自动 rollback 线程级连接，防止脏事务影响同线程后续操作
+import functools as _functools
+
+def _with_rollback(method):
+    """写方法事务保护装饰器：异常时自动 rollback 线程级连接后重新抛出。
+
+    适用于所有调用 conn.commit() 的写方法。SQLite 默认隔离级别下，
+    DML 异常会留下未完成事务在线程级连接上，导致同线程后续操作失败。
+    """
+    @_functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return method(self, *args, **kwargs)
+        except Exception:
+            conn = getattr(self._conn_local, 'conn', None)
+            if conn is not None:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            raise
+    return wrapper
+
+
 # v5.3.3 安全加固：LIKE 通配符转义，防止 % 和 _ 被解释为 SQL LIKE 通配符
 def _escape_like(value: str) -> str:
     """转义 LIKE 模式中的通配符 % 和 _，防止通配符注入"""
@@ -1057,6 +1082,7 @@ class StorageEngine:
             pass
         return default
 
+    @_with_rollback
     def add_memory(self,
                    content: str,
                    category: str = "general",
@@ -1319,6 +1345,7 @@ class StorageEngine:
         rows = conn.execute(query, params).fetchall()
         return [self._row_to_entry(row) for row in rows]
 
+    @_with_rollback
     def update_memory(self,
                       entry_id: str,
                       content: Optional[str] = None,
@@ -1345,8 +1372,11 @@ class StorageEngine:
         now = time.time()
 
         # v5.4.0 安全加固：长度限制
+        # v5.5.7 fix: 与 add_memory 一致，拒绝空内容/空白内容
         MAX_CONTENT_LEN = 50000
         if content is not None:
+            if isinstance(content, str) and not content.strip():
+                raise ValueError("content cannot be empty or whitespace-only")
             if isinstance(content, str) and len(content) > MAX_CONTENT_LEN:
                 raise ValueError(f"content exceeds {MAX_CONTENT_LEN} chars (got {len(content)})")
             content = self._strip_control(content)
@@ -1430,7 +1460,7 @@ class StorageEngine:
                         (old_fts_row[0], old_fts_row[1] or "", old_fts_row[2] or "", old_fts_row[3] or "[]")
                     )
                 except sqlite3.OperationalError:
-                    pass
+                    logger.warning("FTS operation failed", exc_info=True)
 
         # v5.2.7: 更新前读取旧内容，用于保存历史版本
         old_entry = None
@@ -1468,7 +1498,7 @@ class StorageEngine:
                         (new_row[0], new_row[1] or "", new_row[2] or "", new_row[3] or "[]")
                     )
                 except sqlite3.OperationalError:
-                    pass
+                    logger.warning("FTS operation failed", exc_info=True)
 
         # v5.2.7: 保存历史版本（仅当 content 变更时）
         if content is not None and old_entry:
@@ -1578,6 +1608,10 @@ class StorageEngine:
         """
         if not entry_id or not tags:
             return False
+        # v5.5.7 fix: tags 经 _sanitize_tags 消毒（控制字符 + XSS + 长度 + 去重）
+        tags = self._sanitize_tags(tags)
+        if not tags:
+            return False
         conn = self._get_conn()
         now = time.time()
         try:
@@ -1610,7 +1644,7 @@ class StorageEngine:
                         (row[0], row[1] or "", row[2] or "", row[3] or "[]")
                     )
                 except Exception:
-                    pass
+                    logger.warning("FTS operation failed", exc_info=True)
             conn.execute(
                 "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
                 (new_tags_json, now, entry_id)
@@ -1622,7 +1656,7 @@ class StorageEngine:
                         (row[0], row[1] or "", row[2] or "", new_tags_json)
                     )
                 except Exception:
-                    pass
+                    logger.warning("FTS operation failed", exc_info=True)
             conn.commit()
             self._add_audit(
                 "update", entry_id, actor, session_id,
@@ -1677,7 +1711,7 @@ class StorageEngine:
                 )
                 indexed += 1
             except sqlite3.OperationalError:
-                pass
+                logger.warning("FTS operation failed", exc_info=True)
 
         conn.commit()
         elapsed = (_time.time() - start) * 1000
@@ -1724,7 +1758,7 @@ class StorageEngine:
                     (row[1], row[2] or "", row[3] or "", row[4] or "[]")
                 )
             except sqlite3.OperationalError:
-                pass
+                logger.warning("FTS operation failed", exc_info=True)
 
         conn.commit()
         # v5.5.5 fix: 审计日志记录真实隐私级别
@@ -1734,6 +1768,7 @@ class StorageEngine:
 
         return len(ids)
 
+    @_with_rollback
     def delete_memory(self, entry_id: str,
                       actor: str = "", session_id: str = "",
                       hard_delete: bool = False) -> bool:
@@ -1790,10 +1825,17 @@ class StorageEngine:
                         (row[0], row[1] or "", row[2] or "", row[3] or "[]")
                     )
                 except sqlite3.OperationalError:
-                    pass
+                    logger.warning("FTS operation failed", exc_info=True)
         else:
             now = time.time()
             # v5.1.1 修复：软删除时保存原分类到 metadata，便于恢复
+            # v5.5.7 fix: 软删除时同步从 FTS 移除（搜索 JOIN 过滤 trash，但 FTS 索引应保持一致）
+            fts_row = None
+            if not self.encrypted:
+                fts_row = conn.execute(
+                    "SELECT rowid, content, category, tags FROM memories WHERE id = ?",
+                    (entry_id,)
+                ).fetchone()
             row = conn.execute(
                 "SELECT category, metadata FROM memories WHERE id = ?",
                 (entry_id,)
@@ -1811,12 +1853,23 @@ class StorageEngine:
             else:
                 conn.execute("UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
                              (now, entry_id))
+            # v5.5.7 fix: 从 FTS 索引中移除软删除的记忆
+            if fts_row:
+                try:
+                    conn.execute(
+                        "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                        "VALUES('delete', ?, ?, ?, ?)",
+                        (fts_row[0], fts_row[1] or "", fts_row[2] or "", fts_row[3] or "[]")
+                    )
+                except sqlite3.OperationalError:
+                    logger.warning("FTS operation failed", exc_info=True)
 
         conn.commit()
         # v5.5.5 fix: 审计日志记录真实隐私级别
         self._add_audit("delete", entry_id, actor, session_id, privacy_val)
         return True
 
+    @_with_rollback
     def batch_delete(self,
                      category: Optional[str] = None,
                      layer: Optional[MemoryLayer] = None,
@@ -1906,7 +1959,7 @@ class StorageEngine:
                         (row[1], row[2] or "", row[3] or "", row[4] or "[]")
                     )
                 except sqlite3.OperationalError:
-                    pass
+                    logger.warning("FTS operation failed", exc_info=True)
         else:
             # v5.1.1 修复：批量软删除时也保存原分类到 metadata
             for row in rows:
@@ -1928,6 +1981,7 @@ class StorageEngine:
 
         return len(ids)
 
+    @_with_rollback
     def restore_memory(self, entry_id: str,
                        actor: str = "", session_id: str = "") -> bool:
         """从回收站恢复记忆（v5.1.1 新增）
@@ -4109,7 +4163,7 @@ class StorageEngine:
                     (rid, "", "", "[]")
                 )
             except Exception:
-                pass
+                logger.warning("FTS operation failed", exc_info=True)
 
         conn.execute(f"DELETE FROM memories WHERE id IN ({placeholders})", ids)
 
@@ -6121,11 +6175,12 @@ class StorageEngine:
 
                 deleted_count += 1
             except (sqlite3.OperationalError, sqlite3.IntegrityError):
-                pass
+                logger.warning("FTS operation failed", exc_info=True)
 
         conn.commit()
         return deleted_count
 
+    @_with_rollback
     def batch_add(self, entries: List[Dict[str, Any]]) -> int:
         """批量添加记忆（v5.1.3 新增，v5.5.6 增强：支持 expires_at/pinned/metadata）
 
@@ -6198,7 +6253,7 @@ class StorageEngine:
                 added_count += 1
             except (sqlite3.OperationalError, sqlite3.IntegrityError, ValueError):
                 # v5.4.1：ValueError（内容超长等校验失败）按单条失败处理，不中断批量
-                pass
+                logger.warning("FTS operation failed", exc_info=True)
 
         conn.commit()
         return added_count
@@ -6368,6 +6423,7 @@ class StorageEngine:
 
         return results
 
+    @_with_rollback
     def rename_tag(self, old_tag: str, new_tag: str) -> int:
         """重命名标签（v5.1.7 新增，v5.5.6 修复：大小写不敏感 + 空值防御）
 
@@ -6417,6 +6473,7 @@ class StorageEngine:
         conn.commit()
         return count
 
+    @_with_rollback
     def rename_category(self, old_cat: str, new_cat: str) -> int:
         """重命名分类（v5.1.7 新增）
 
@@ -6430,12 +6487,37 @@ class StorageEngine:
         conn = self._get_conn()
         now = time.time()
 
+        # v5.5.7 fix: 重命名分类前先读取受影响记录的 FTS 字段，用于同步 FTS 索引
+        fts_rows = []
+        if not self.encrypted:
+            fts_rows = conn.execute(
+                "SELECT rowid, content, category, tags FROM memories "
+                "WHERE category = ? AND category != 'trash' AND encrypted = 0",
+                (old_cat,)
+            ).fetchall()
+
         cursor = conn.execute("""
             UPDATE memories SET category = ?, updated_at = ?
             WHERE category = ? AND category != 'trash'
         """, (new_cat, now, old_cat))
 
         count = cursor.rowcount
+
+        # v5.5.7 fix: 同步更新 FTS 索引中的 category 字段（FTS5 不支持 UPDATE，先删后插）
+        for fts_row in fts_rows:
+            try:
+                conn.execute(
+                    "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
+                    "VALUES('delete', ?, ?, ?, ?)",
+                    (fts_row[0], fts_row[1] or "", fts_row[2] or "", fts_row[3] or "[]")
+                )
+                conn.execute(
+                    "INSERT INTO memory_fts (rowid, content, category, tags) VALUES (?, ?, ?, ?)",
+                    (fts_row[0], fts_row[1] or "", new_cat, fts_row[3] or "[]")
+                )
+            except sqlite3.OperationalError:
+                logger.warning("FTS operation failed", exc_info=True)
+
         conn.commit()
         return count
 
@@ -6658,7 +6740,7 @@ class StorageEngine:
                           max_size=500 * 1024 * 1024)
 
         entries = []
-        _MAX_CONTENT = 1000000
+        _MAX_CONTENT = 50000  # v5.5.7 fix: 与 add_memory 的 50K 限制一致
         _MAX_CAT = 256
         _MAX_TAG = 128
         _MAX_TAGS = 64
@@ -7712,6 +7794,7 @@ class StorageEngine:
         results.sort(key=lambda x: x["similarity"], reverse=True)
         return results[:limit]
 
+    @_with_rollback
     def add_tags_to_ids(self, memory_ids: List[str], tags: List[str],
                         actor: str = "", session_id: str = "") -> int:
         """按 ID 列表批量添加标签（v5.5.6 新增）
@@ -7761,7 +7844,7 @@ class StorageEngine:
                             (row[0], row[1] or "", row[2] or "", row[3] or "[]")
                         )
                     except Exception:
-                        pass
+                        logger.warning("FTS operation failed", exc_info=True)
                 conn.execute(
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
                     (new_tags_json, now, mid)
@@ -7773,11 +7856,12 @@ class StorageEngine:
                             (row[0], row[1] or "", row[2] or "", new_tags_json)
                         )
                     except Exception:
-                        pass
+                        logger.warning("FTS operation failed", exc_info=True)
                 updated += 1
         conn.commit()
         return updated
 
+    @_with_rollback
     def remove_tags_from_ids(self, memory_ids: List[str], tags: List[str],
                              actor: str = "", session_id: str = "") -> int:
         """按 ID 列表批量移除标签（v5.5.6 新增）
@@ -7821,7 +7905,7 @@ class StorageEngine:
                             (row[0], row[1] or "", row[2] or "", row[3] or "[]")
                         )
                     except Exception:
-                        pass
+                        logger.warning("FTS operation failed", exc_info=True)
                 conn.execute(
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
                     (new_tags_json, now, mid)
@@ -7833,7 +7917,7 @@ class StorageEngine:
                             (row[0], row[1] or "", row[2] or "", new_tags_json)
                         )
                     except Exception:
-                        pass
+                        logger.warning("FTS operation failed", exc_info=True)
                 updated += 1
         conn.commit()
         return updated
@@ -8070,7 +8154,7 @@ class StorageEngine:
         now = time.time()
         rows = conn.execute(
             "SELECT id, privacy, tags FROM memories WHERE tags LIKE ? AND category != 'trash'",
-            (f'%"{tag}"%',)
+            (f'%"{_escape_like(tag)}"%',)
         ).fetchall()
         if not rows:
             return 0
@@ -8113,7 +8197,7 @@ class StorageEngine:
         conn = self._get_conn()
         rows = conn.execute(
             "SELECT id, tags FROM memories WHERE tags LIKE ? AND category != 'trash'",
-            (f'%"{tag}"%',)
+            (f'%"{_escape_like(tag)}"%',)
         ).fetchall()
         result = []
         for row in rows:
@@ -8232,7 +8316,7 @@ class StorageEngine:
                         (target_old_fts[0], target_old_fts[1] or "", target_old_fts[2] or "", target_old_fts[3] or "[]")
                     )
                 except Exception:
-                    pass
+                    logger.warning("FTS operation failed", exc_info=True)
         merged_tags_json = json.dumps(merged_tags, ensure_ascii=False)
         conn.execute(
             """UPDATE memories SET
@@ -8260,7 +8344,7 @@ class StorageEngine:
                     (target_old_fts[0], merged_content or "", target_old_fts[2] or "", merged_tags_json)
                 )
             except Exception:
-                pass
+                logger.warning("FTS operation failed", exc_info=True)
 
         # 源记忆移入回收站
         # v5.5.6 fix: 源记忆 category 变化也需要同步 FTS
@@ -8278,7 +8362,7 @@ class StorageEngine:
                         (source_old_fts[0], source_old_fts[1] or "", source_old_fts[2] or "", source_old_fts[3] or "[]")
                     )
                 except Exception:
-                    pass
+                    logger.warning("FTS operation failed", exc_info=True)
         conn.execute(
             "UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
             (now, source_id)
@@ -8290,7 +8374,7 @@ class StorageEngine:
                     (source_old_fts[0], source_old_fts[1] or "", "trash", source_old_fts[3] or "[]")
                 )
             except Exception:
-                pass
+                logger.warning("FTS operation failed", exc_info=True)
 
         # 审计日志
         self._add_audit("update", target_id, actor, session_id, target.privacy.value,
@@ -8754,7 +8838,7 @@ class StorageEngine:
             params.append(category)
         if tag:
             query += " AND tags LIKE ?"
-            params.append(f'%"{tag}"%')
+            params.append(f'%"{_escape_like(tag)}"%')
 
         rows = conn.execute(query, params).fetchall()
         if not rows:
@@ -8857,7 +8941,7 @@ class StorageEngine:
                             (old_fts_row[0], old_fts_row[1] or "", old_fts_row[2] or "", old_fts_row[3] or "[]")
                         )
                     except Exception:
-                        pass
+                        logger.warning("FTS operation failed", exc_info=True)
 
             conn.execute(
                 """UPDATE memories SET
@@ -8885,7 +8969,7 @@ class StorageEngine:
                         (old_fts_row[0], old_fts_row[1] or "", new_category or "", new_tags_json)
                     )
                 except Exception:
-                    pass
+                    logger.warning("FTS operation failed", exc_info=True)
 
             self._add_audit("update", entry.id, actor, session_id,
                              entry.privacy.value,
@@ -9066,11 +9150,12 @@ class StorageEngine:
                     (row[0], row[1] or "", row[2] or "", row[3] or "[]")
                 )
             except sqlite3.OperationalError:
-                pass
+                logger.warning("FTS operation failed", exc_info=True)
         conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
 
     # ===== 标签批量管理（v5.2.0 新增）=====
 
+    @_with_rollback
     def batch_add_tags(self,
                        entry_ids: List[str],
                        tags: List[str],
@@ -9087,6 +9172,10 @@ class StorageEngine:
         Returns:
             受影响的记忆条数
         """
+        # v5.5.7 fix: tags 经 _sanitize_tags 消毒
+        tags = self._sanitize_tags(tags)
+        if not tags:
+            return 0
         conn = self._get_conn()
         count = 0
         now = time.time()
@@ -9119,7 +9208,7 @@ class StorageEngine:
                             (row[0], row[1] or "", row[2] or "", row[3] or "[]")
                         )
                     except Exception:
-                        pass
+                        logger.warning("FTS operation failed", exc_info=True)
                 conn.execute(
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
                     (new_tags_json, now, entry_id)
@@ -9131,7 +9220,7 @@ class StorageEngine:
                             (row[0], row[1] or "", row[2] or "", new_tags_json)
                         )
                     except Exception:
-                        pass
+                        logger.warning("FTS operation failed", exc_info=True)
                 self._add_audit(
                     "batch_add_tags", entry_id, actor, session_id,
                     row["privacy"] if row["privacy"] else "",
@@ -9142,6 +9231,7 @@ class StorageEngine:
         conn.commit()
         return count
 
+    @_with_rollback
     def batch_remove_tags(self,
                           entry_ids: List[str],
                           tags: List[str],
@@ -9184,7 +9274,7 @@ class StorageEngine:
                             (row[0], row[1] or "", row[2] or "", row[3] or "[]")
                         )
                     except Exception:
-                        pass
+                        logger.warning("FTS operation failed", exc_info=True)
                 conn.execute(
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
                     (new_tags_json, now, entry_id)
@@ -9196,7 +9286,7 @@ class StorageEngine:
                             (row[0], row[1] or "", row[2] or "", new_tags_json)
                         )
                     except Exception:
-                        pass
+                        logger.warning("FTS operation failed", exc_info=True)
                 self._add_audit(
                     "batch_remove_tags", entry_id, actor, session_id,
                     row["privacy"] if row["privacy"] else "",
@@ -9207,6 +9297,7 @@ class StorageEngine:
         conn.commit()
         return count
 
+    @_with_rollback
     def merge_tags(self,
                    source_tags: List[str],
                    target_tag: str,
@@ -9223,6 +9314,12 @@ class StorageEngine:
         Returns:
             受影响的记忆条数
         """
+        # v5.5.7 fix: source_tags / target_tag 经 _sanitize_tags 消毒
+        source_tags = self._sanitize_tags(source_tags)
+        target_tag_clean = self._sanitize_tags([target_tag])
+        if not source_tags or not target_tag_clean:
+            return 0
+        target_tag = target_tag_clean[0]
         conn = self._get_conn()
         count = 0
         now = time.time()
@@ -9252,7 +9349,7 @@ class StorageEngine:
                             (row[0], row[2] or "", row[3] or "", row[4] or "[]")
                         )
                     except Exception:
-                        pass
+                        logger.warning("FTS operation failed", exc_info=True)
                 conn.execute(
                     "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
                     (new_tags_json, now, row[1])
@@ -9264,7 +9361,7 @@ class StorageEngine:
                             (row[0], row[2] or "", row[3] or "", new_tags_json)
                         )
                     except Exception:
-                        pass
+                        logger.warning("FTS operation failed", exc_info=True)
                 self._add_audit(
                     "merge_tags", row[1], actor, session_id,
                     row[5] if row[5] else "",
@@ -10423,6 +10520,7 @@ class StorageEngine:
         conn.commit()
         return {"success": True, "template_id": template_id, "name": row["name"]}
 
+    @_with_rollback
     def batch_update(self, memory_ids: Optional[List[str]] = None,
                      category: Optional[str] = None,
                      tags: Optional[List[str]] = None,
@@ -10442,6 +10540,24 @@ class StorageEngine:
         """
         if not memory_ids:
             return {"success": False, "error": "未指定记忆 ID", "updated": 0}
+
+        # v5.5.7 fix: tags 消毒 / importance layer 降级 / category 控制字符过滤
+        if tags is not None:
+            tags = self._sanitize_tags(tags)
+        if importance is not None:
+            importance = self._downgrade_enum(importance, Importance, Importance.MEDIUM)
+            importance_val = importance.value
+        else:
+            importance_val = None
+        if layer is not None:
+            layer = self._downgrade_enum(layer, MemoryLayer, MemoryLayer.SHORT_TERM)
+            layer_val = layer.value
+        else:
+            layer_val = None
+        if category is not None:
+            category = self._strip_control(category)
+            if isinstance(category, str) and len(category) > 128:
+                category = category[:128]
 
         conn = self._get_conn()
         now = time.time()
@@ -10463,12 +10579,12 @@ class StorageEngine:
             if tags is not None:
                 updates.append("tags = ?")
                 params.append(json.dumps(tags, ensure_ascii=False))
-            if importance is not None:
+            if importance_val is not None:
                 updates.append("importance = ?")
-                params.append(importance)
-            if layer is not None:
+                params.append(importance_val)
+            if layer_val is not None:
                 updates.append("layer = ?")
-                params.append(layer)
+                params.append(layer_val)
             if starred is not None:
                 updates.append("starred = ?")
                 params.append(1 if starred else 0)
@@ -10804,7 +10920,7 @@ class StorageEngine:
                         (current[0], current[1] or "", current[2] or "", current[3] or "[]")
                     )
                 except Exception:
-                    pass
+                    logger.warning("FTS operation failed", exc_info=True)
             conn.execute(
                 """UPDATE memories SET content = ?, category = ?, tags = ?, importance = ?,
                    updated_at = ? WHERE id = ?""",
@@ -10817,7 +10933,7 @@ class StorageEngine:
                         (current[0], content or "", category or "", tags_json or "[]")
                     )
                 except Exception:
-                    pass
+                    logger.warning("FTS operation failed", exc_info=True)
             conn.commit()
 
             return {

@@ -1532,11 +1532,20 @@ class MindForge:
         ]:
             if key in config_data:
                 if key == "default_privacy":
-                    config_kwargs[key] = PrivacyLevel(config_data[key])
+                    try:
+                        config_kwargs[key] = PrivacyLevel(config_data[key])
+                    except ValueError:
+                        logger.warning("Invalid default_privacy in config %r: %r, using default", config_path, config_data[key])
                 elif key == "default_importance":
-                    config_kwargs[key] = Importance(config_data[key])
+                    try:
+                        config_kwargs[key] = Importance(config_data[key])
+                    except ValueError:
+                        logger.warning("Invalid default_importance in config %r: %r, using default", config_path, config_data[key])
                 elif key == "default_layer":
-                    config_kwargs[key] = MemoryLayer(config_data[key])
+                    try:
+                        config_kwargs[key] = MemoryLayer(config_data[key])
+                    except ValueError:
+                        logger.warning("Invalid default_layer in config %r: %r, using default", config_path, config_data[key])
                 else:
                     config_kwargs[key] = config_data[key]
 
