@@ -275,13 +275,16 @@ class EventBus:
             headers["X-MindForge-Signature"] = f"sha256={sig}"
 
         # P3-2: 尊重用户配置的 timeout，requests 需要 (connect, read) 元组
+        # v5.5.7 fix: connect 超时也受 config.timeout 控制（之前硬编码 3s）
         if isinstance(config.timeout, (tuple, list)):
             timeout = tuple(config.timeout)
         else:
-            timeout = (3, config.timeout)
+            timeout = (config.timeout, config.timeout)
 
         last_error = ""
+        actual_attempts = 0
         for attempt in range(config.max_retries + 1):
+            actual_attempts = attempt + 1
             try:
                 import requests
                 response = requests.post(
@@ -316,9 +319,10 @@ class EventBus:
             if attempt < config.max_retries:
                 time.sleep(config.retry_delay * (attempt + 1))
 
-        logger.warning("Webhook 投递失败 [%s] -> %s: %s (after %d retries)",
+        # v5.5.7 fix: 日志写实际尝试次数（4xx break 时只请求了 1 次）
+        logger.warning("Webhook 投递失败 [%s] -> %s: %s (after %d attempts)",
                        payload["event"], config.url, last_error,
-                       config.max_retries)
+                       actual_attempts)
         return False
 
     def _deliver_webhook_urllib(self, config: WebhookConfig,

@@ -418,11 +418,17 @@ def _get_memory(args) -> MindForge:
             mf.init_with_password(password)
         else:
             # P2 修复：非交互且无密码时给出清晰错误，而非裸 AttributeError
-            print(c("\n❌ 加密数据库需要密码才能操作", "red"))
-            print(c("   请通过以下方式之一提供密码：", "yellow"))
-            print(c("   1. 设置环境变量：export MINDFORGE_PASSWORD=\"你的密码\"", "yellow"))
-            print(c("   2. 在交互式终端中运行（会提示输入密码）", "yellow"))
-            print(c("   3. 如使用 dsh-mindforge bridge，在宿主环境中 export MINDFORGE_PASSWORD", "yellow"))
+            # v5.5.7 fix: --json 模式下输出合法 JSON 错误到 stdout，
+            # 非 JSON 模式下错误走 stderr（不污染 stdout，bridge parseOutput 不会挂）
+            error_msg = "加密数据库需要密码才能操作。请通过以下方式之一提供密码："                         "1. 设置环境变量 MINDFORGE_PASSWORD；"                         "2. 在交互式终端中运行（会提示输入密码）；"                         "3. 如使用 dsh-mindforge bridge，在宿主环境中 export MINDFORGE_PASSWORD。"
+            if _json_mode:
+                print(json.dumps({"error": error_msg}, ensure_ascii=False))
+            else:
+                print(c("\n❌ 加密数据库需要密码才能操作", "red"), file=sys.stderr)
+                print(c("   请通过以下方式之一提供密码：", "yellow"), file=sys.stderr)
+                print(c("   1. 设置环境变量：export MINDFORGE_PASSWORD=\"你的密码\"", "yellow"), file=sys.stderr)
+                print(c("   2. 在交互式终端中运行（会提示输入密码）", "yellow"), file=sys.stderr)
+                print(c("   3. 如使用 dsh-mindforge bridge，在宿主环境中 export MINDFORGE_PASSWORD", "yellow"), file=sys.stderr)
             if hasattr(mf, 'close'):
                 mf.close()
             sys.exit(1)

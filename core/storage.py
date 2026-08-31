@@ -64,8 +64,11 @@ def _is_network_fs(path: Path) -> bool:
             )
             fs_type = result.stdout.strip().lower()
             network_types = {'nfs', 'nfs4', 'cifs', 'smb', 'smb2', 'smb3',
-                             'fuse.sshfs', 'fuse.gvfs-fuse-daemon', '9p'}
-            if fs_type in network_types:
+                             'fuse.sshfs', 'fuse.gvfs-fuse-daemon', '9p',
+                             'fuseblk'}
+            # v5.5.7 fix: any FUSE mount is unreliable for SQLite WAL
+            # (Coze Drive etc. report 'fuseblk' or 'fuse.<type>')
+            if fs_type in network_types or fs_type.startswith('fuse.'):
                 return True
     except Exception:
         pass
