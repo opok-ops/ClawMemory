@@ -1831,13 +1831,12 @@ class StorageEngine:
         else:
             now = time.time()
             # v5.1.1 修复：软删除时保存原分类到 metadata，便于恢复
-            # v5.5.7 fix: 软删除时同步从 FTS 移除（搜索 JOIN 过滤 trash，但 FTS 索引应保持一致）
-            fts_row = None
-            if not self.encrypted:
-                fts_row = conn.execute(
-                    "SELECT rowid, content, category, tags FROM memories WHERE id = ?",
-                    (entry_id,)
-                ).fetchone()
+            # v5.5.7 revert: 软删除不再同步 FTS delete。
+            #   原因1：搜索 SQL 已用 JOIN memories m ... WHERE m.category != 'trash' 过滤，
+            #          FTS 中保留软删除条目对搜索结果无影响。
+            #   原因2：contentless FTS5 的 'delete' 命令要求 content/category/tags 精确匹配
+            #          已索引内容，空白/编码差异会导致 FTS 内部结构损坏
+            #          （实测 purge_trash 触发 database disk image is malformed）。
             row = conn.execute(
                 "SELECT category, metadata FROM memories WHERE id = ?",
                 (entry_id,)
@@ -1855,17 +1854,6 @@ class StorageEngine:
             else:
                 conn.execute("UPDATE memories SET category = 'trash', updated_at = ? WHERE id = ?",
                              (now, entry_id))
-            # v5.5.7 fix: 从 FTS 索引中移除软删除的记忆
-            if fts_row:
-                try:
-                    conn.execute(
-                        "INSERT INTO memory_fts(memory_fts, rowid, content, category, tags) "
-                        "VALUES('delete', ?, ?, ?, ?)",
-                        (fts_row[0], fts_row[1] or "", fts_row[2] or "", fts_row[3] or "[]")
-                    )
-                except sqlite3.OperationalError:
-                    logger.warning("FTS operation failed", exc_info=True)
-
         conn.commit()
         # v5.5.5 fix: 审计日志记录真实隐私级别
         self._add_audit("delete", entry_id, actor, session_id, privacy_val)
