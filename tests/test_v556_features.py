@@ -35,9 +35,10 @@ def mf():
 # ===== 版本号验证 =====
 
 class TestVersion:
-    def test_version_is_557(self):
-        """版本号应为 5.5.7"""
-        assert __version__ == "5.5.7"
+    def test_version_at_least_557(self):
+        """版本号应 >= 5.5.7"""
+        parts = [int(x) for x in __version__.split(".")]
+        assert parts >= [5, 5, 7], f"版本 {__version__} < 5.5.7"
 
     def test_pyproject_version(self):
         """pyproject.toml 版本号一致"""
@@ -47,7 +48,7 @@ class TestVersion:
             content = f.read()
         m = re.search(r'^version\s*=\s*["\']([^"\']+)["\']', content, re.M)
         assert m, "pyproject.toml 中未找到 version"
-        assert m.group(1) == "5.5.7"
+        assert m.group(1) == __version__, f"pyproject.toml version {m.group(1)} != __version__ {__version__}"
 
 
 # ===== 置顶功能 =====

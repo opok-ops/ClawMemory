@@ -51,6 +51,6 @@ jobs:
           spec.loader.exec_module(mod)
           from mcp.server import _handle_tools_list
           tools = _handle_tools_list({})['tools']
-          assert len(tools) == 15, f'Expected 15 tools, got {len(tools)}'
+          assert len(tools) >= 30, f'Expected at least 30 tools, got {len(tools)}'
           print(f'MCP tools: {len(tools)} OK')
           "

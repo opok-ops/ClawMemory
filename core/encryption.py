@@ -1,5 +1,5 @@
 """
-MindForge v5.0 加密引擎
+MindForge v5.5.8 加密引擎
 AES-256-GCM + PBKDF2 密钥派生
 """
 
@@ -107,6 +107,8 @@ class EncryptionEngine:
 
     def encrypt(self, plaintext: str) -> EncryptedBlob:
         """加密文本"""
+        if not isinstance(plaintext, str):
+            raise SecurityError("encrypt() 要求 str 类型输入")
         plaintext_bytes = plaintext.encode("utf-8")
         nonce = os.urandom(12)
         salt = os.urandom(16)
@@ -116,6 +118,10 @@ class EncryptionEngine:
 
     def decrypt(self, blob: EncryptedBlob) -> str:
         """解密文本"""
+        if not isinstance(blob, EncryptedBlob):
+            raise SecurityError("decrypt() 要求 EncryptedBlob 类型输入")
+        if not blob.nonce or not blob.ciphertext:
+            raise SecurityError("EncryptedBlob 缺少 nonce 或 ciphertext 字段")
         try:
             plaintext = self._aesgcm.decrypt(blob.nonce, blob.ciphertext, None)
             return plaintext.decode("utf-8")
@@ -124,6 +130,8 @@ class EncryptionEngine:
 
     def hash(self, data: str) -> str:
         """计算数据哈希"""
+        if not isinstance(data, str):
+            raise SecurityError("hash() 要求 str 类型输入")
         return hashlib.sha256(data.encode()).hexdigest()
 
     def verify_hash(self, data: str, hash_value: str) -> bool:

@@ -30,7 +30,7 @@ from pathlib import Path
 # 配置与常量
 # ============================================================
 
-VERSION = "5.5.7"
+VERSION = "5.5.8"
 DEFAULT_DB_PATH = os.path.expanduser("~/.mindforge/memory.db")
 DEFAULT_CONFIG_PATH = os.path.expanduser("~/.mindforge/config.json")
 

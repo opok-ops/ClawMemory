@@ -6,7 +6,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.5.7-green.svg)](https://github.com/opok-ops/MindForge)
+[![Version](https://img.shields.io/badge/version-5.5.8-green.svg)](https://github.com/opok-ops/MindForge)
 [![CI](https://github.com/opok-ops/MindForge/actions/workflows/ci.yml/badge.svg)](https://github.com/opok-ops/MindForge/actions/workflows/ci.yml)
 
 ---
@@ -110,7 +110,7 @@ for chunk in results.chunks:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      MindForge v5.5.6                          │
+│                      MindForge v5.5.8                          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  ┌─────────────────────────────────────────────────────────┐ │
@@ -181,6 +181,7 @@ for chunk in results.chunks:
 > SQLite 默认启用 WAL（Write-Ahead Logging）日志模式以获得更好的并发读写性能。但 **SQLite 官方不支持在网络文件系统（NFS、SMB/CIFS、SSHFS 等）上使用 WAL 模式**，可能导致 SIGBUS 崩溃。
 >
 > MindForge v5.5.7+ 会自动检测数据库路径是否位于网络文件系统，如检测到则自动降级为 DELETE 模式。建议将数据库文件放置在本地磁盘上以获得最佳性能和稳定性。
+> MindForge v5.5.8 修复了多个安全与稳定性问题，新增记忆版本差异对比功能。
 
 ### Retrieval Quality（检索精度）
 

@@ -1,5 +1,5 @@
 """
-MindForge v5.5.4 REST API Server
+MindForge v5.5.8 REST API Server
 ================================
 
 标准 REST API，让非 Python 应用（JS、Go、移动端）也能直接调用 MindForge。
@@ -348,6 +348,10 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
             if body is None:
                 self._send_json({"error": "Invalid JSON body"}, 400)
                 return
+            # v5.5.8: 校验 JSON body 必须是 dict（非数组/字符串/数字）
+            if not isinstance(body, dict):
+                self._send_json({"error": "Request body must be a JSON object"}, 400)
+                return
 
             if path == "/api/memories":
                 content = body.get("content", "")
@@ -406,6 +410,10 @@ class MindForgeAPIHandler(BaseHTTPRequestHandler):
             body = self._read_body()
             if body is None:
                 self._send_json({"error": "Invalid JSON body"}, 400)
+                return
+            # v5.5.8: 校验 JSON body 必须是 dict
+            if not isinstance(body, dict):
+                self._send_json({"error": "Request body must be a JSON object"}, 400)
                 return
 
             if path.startswith("/api/memories/"):

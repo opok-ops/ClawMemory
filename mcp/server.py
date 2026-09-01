@@ -490,6 +490,18 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "description": "查看嵌入向量引擎状态：是否可用、模型名、维度、向量数量。",
         "inputSchema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "memory_diff",
+        "description": "对比两个记忆版本的差异（v5.5.8 新增）。返回内容、分类、标签和重要度的结构化差异报告。",
+        "inputSchema": {
+            "type": "object",
+            "required": ["version_a", "version_b"],
+            "properties": {
+                "version_a": {"type": "string", "description": "版本 A 的 ID"},
+                "version_b": {"type": "string", "description": "版本 B 的 ID"},
+            },
+        },
+    },
 ]
 
 
@@ -517,6 +529,15 @@ def _to_list_str(v) -> List[str]:
     if isinstance(v, str):
         return [t.strip() for t in v.split(",") if t.strip()]
     return [str(x) for x in v]
+
+
+# v5.5.8: 必需参数校验装饰器
+def _require_args(args: Dict[str, Any], *required: str) -> Optional[Dict[str, Any]]:
+    """检查必需参数是否存在，返回 error dict 或 None（校验通过）"""
+    missing = [k for k in required if k not in args or args[k] is None or args[k] == ""]
+    if missing:
+        return {"ok": False, "error": f"Missing required parameter(s): {', '.join(missing)}"}
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -591,6 +612,9 @@ def _entry_to_dict(m) -> Dict[str, Any]:
 
 def h_memory_add(mf, args: Dict[str, Any]) -> Dict[str, Any]:
     from MindForge import Importance, MemoryLayer, PrivacyLevel
+    err = _require_args(args, "content")
+    if err:
+        return err
     try:
         entry = mf.add(
             content=str(args["content"]),
@@ -607,6 +631,9 @@ def h_memory_add(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def h_memory_search(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "query")
+    if err:
+        return err
     categories = [args["category"]] if args.get("category") else None
     use_emb = args.get("use_embedding", True)
     if not isinstance(use_emb, bool):
@@ -649,11 +676,17 @@ def h_memory_stats(mf, _args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def h_memory_importance(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "agent_id")
+    if err:
+        return err
     agent_id = str(args["agent_id"])
     return {"agent_id": agent_id, "result": _clean(mf.storage.memory_importance(agent_id))}
 
 
 def h_memory_context(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "agent_id", "query")
+    if err:
+        return err
     agent_id = str(args["agent_id"])
     query = str(args["query"])
     token_budget = _safe_int(args.get("token_budget", 4000), 4000, 256, 128000)
@@ -666,6 +699,9 @@ def h_memory_context(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def h_agent_emotion(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "agent_id")
+    if err:
+        return err
     agent_id = str(args["agent_id"])
     days = _safe_int(args.get("days", 30), 30, 1, 3650)
     return {"agent_id": agent_id, "days": days,
@@ -673,6 +709,9 @@ def h_agent_emotion(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def h_char_relationship(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "drama_id")
+    if err:
+        return err
     drama_id = str(args["drama_id"])
     char1_id = str(args.get("char1_id") or "")
     char2_id = str(args.get("char2_id") or "")
@@ -692,6 +731,9 @@ def h_drama_genre_trend(mf, _args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def h_drama_binge_score(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "drama_id")
+    if err:
+        return err
     drama_id = str(args["drama_id"])
     return {"drama_id": drama_id, "result": _clean(mf.storage.drama_binge_score(drama_id))}
 
@@ -699,6 +741,9 @@ def h_drama_binge_score(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 # ===== v5.4.1 六大能力 MCP handlers =====
 
 def h_memory_reflection(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "agent_id")
+    if err:
+        return err
     agent_id = str(args["agent_id"])
     days = _safe_int(args.get("days", 30), 30, 1, 365)
     return {"agent_id": agent_id, "days": days,
@@ -706,12 +751,18 @@ def h_memory_reflection(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def h_memory_lineage(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "memory_id")
+    if err:
+        return err
     memory_id = str(args["memory_id"])
     return {"memory_id": memory_id,
             "result": _clean(mf.storage.memory_lineage(memory_id))}
 
 
 def h_memory_reinforce(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "agent_id")
+    if err:
+        return err
     agent_id = str(args["agent_id"])
     days = _safe_int(args.get("days", 90), 90, 1, 365)
     limit = _safe_int(args.get("limit", 10), 10, 1, 50)
@@ -720,16 +771,25 @@ def h_memory_reinforce(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def h_drama_plot_thread(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "drama_id")
+    if err:
+        return err
     drama_id = str(args["drama_id"])
     return {"drama_id": drama_id, "result": _clean(mf.storage.drama_plot_thread(drama_id))}
 
 
 def h_drama_episode_curve(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "drama_id")
+    if err:
+        return err
     drama_id = str(args["drama_id"])
     return {"drama_id": drama_id, "result": _clean(mf.storage.drama_episode_curve(drama_id))}
 
 
 def h_drama_screen_time(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "drama_id")
+    if err:
+        return err
     drama_id = str(args["drama_id"])
     return {"drama_id": drama_id, "result": _clean(mf.storage.drama_screen_time(drama_id))}
 
@@ -737,6 +797,9 @@ def h_drama_screen_time(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 # ===== v5.4.2 两大能力 MCP handlers =====
 
 def h_fed_acl_add(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "principal", "resource")
+    if err:
+        return err
     expires_hours = args.get("expires_hours")
     try:
         expires_hours = float(expires_hours) if expires_hours is not None else None
@@ -755,6 +818,9 @@ def h_fed_acl_add(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def h_fed_acl_remove(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "rule_id")
+    if err:
+        return err
     return _clean(mf.federated_acl.remove_rule(str(args["rule_id"])))
 
 
@@ -767,6 +833,9 @@ def h_fed_acl_list(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def h_fed_acl_check(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "peer_id", "memory_id")
+    if err:
+        return err
     peer_trust = args.get("peer_trust")
     try:
         peer_trust = float(peer_trust) if peer_trust is not None else None
@@ -797,12 +866,18 @@ def h_share_conflict_list(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def h_share_conflict_resolve(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "conflict_id", "strategy")
+    if err:
+        return err
     return _clean(mf.share_conflict.resolve(
         str(args["conflict_id"]), str(args["strategy"]),
         actor=str(args.get("actor", ""))))
 
 
 def h_share_conflict_dismiss(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "conflict_id")
+    if err:
+        return err
     return _clean(mf.share_conflict.dismiss(
         str(args["conflict_id"]), actor=str(args.get("actor", ""))))
 
@@ -814,6 +889,9 @@ def h_share_conflict_stats(mf, _args: Dict[str, Any]) -> Dict[str, Any]:
 # ===== v5.3.9 五大能力 MCP handlers =====
 
 def h_intent_router(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "text")
+    if err:
+        return err
     result = mf.classify_intent(str(args["text"]), force=args.get("force"))
     return _clean(result)
 
@@ -835,6 +913,9 @@ def h_skill_extract(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def h_rerank_search(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "query")
+    if err:
+        return err
     return _clean(mf.search_enhanced(
         query=str(args["query"]),
         max_results=min(50, max(1, _safe_int(args.get("max_results", 10), 10, 1, 50))),
@@ -869,6 +950,16 @@ def h_rebuild_embeddings(mf, args: Dict[str, Any]) -> Dict[str, Any]:
 
 def h_embedding_status(mf, _args: Dict[str, Any]) -> Dict[str, Any]:
     return _clean(mf.get_embedding_status())
+
+
+def h_memory_diff(mf, args: Dict[str, Any]) -> Dict[str, Any]:
+    err = _require_args(args, "version_a", "version_b")
+    if err:
+        return err
+    return _clean(mf.memory_diff(
+        str(args["version_a"]),
+        str(args["version_b"]),
+    ))
 
 
 HANDLERS: Dict[str, Any] = {
@@ -908,6 +999,8 @@ HANDLERS: Dict[str, Any] = {
     # v5.4.5 新增向量检索
     "rebuild_embeddings": h_rebuild_embeddings,
     "embedding_status": h_embedding_status,
+    # v5.5.8 新增
+    "memory_diff": h_memory_diff,
 }
 
 
@@ -920,7 +1013,7 @@ def _handle_initialize(request: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "protocolVersion": "2024-11-05",
         "capabilities": {"tools": {}, "logging": {}},
-        "serverInfo": {"name": "mindforge", "version": "5.5.7"},
+        "serverInfo": {"name": "mindforge", "version": "5.5.8"},
     }
 
 
@@ -930,8 +1023,12 @@ def _handle_tools_list(_request: Dict[str, Any]) -> Dict[str, Any]:
 
 def _handle_tools_call(mf, request: Dict[str, Any]) -> Dict[str, Any]:
     params = request.get("params") or {}
+    if not isinstance(params, dict):
+        raise ValueError("Invalid params: expected object")
     name = params.get("name")
     arguments = params.get("arguments") or {}
+    if not isinstance(arguments, dict):
+        arguments = {}
     if name not in HANDLERS:
         raise ValueError(f"Unknown tool: {name}")
     result = HANDLERS[name](mf, arguments)

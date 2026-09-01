@@ -2,6 +2,33 @@
 
 All notable changes to MindForge will be documented in this file.
 
+## [5.5.8] - 2026-09-01
+
+### Added
+- **Memory Version Diff (记忆版本差异对比)**: `memory_diff(version_a, version_b)` — compare two historical versions of a memory, returning structured diff for content (unified diff), category, tags (added/removed), and importance changes
+  - API: `mf.memory_diff(version_id_a, version_id_b)`
+  - CLI: `MindForge memory-diff <version_a> <version_b> [--json]`
+  - MCP: `memory_diff` tool with `version_a` / `version_b` parameters
+- **MCP Parameter Validation**: All 32 MCP tool handlers now validate required parameters before execution, returning clear `{"ok": false, "error": "Missing required parameter(s): ..."}` instead of crashing with `KeyError`
+
+### Fixed
+- **P0: storage.py `__version__` NameError**: `export_agent_memories()` referenced undefined `__version__` variable, causing crash when exporting agent memories. Added `__version__` import with fallback.
+- **P1: Falsy enum values silently overridden in `add()`**: `privacy or default` pattern caused valid falsy values like `PrivacyLevel.NONE` to be replaced by config defaults. Changed to explicit `is not None` checks for `privacy`, `importance`, `layer`, and `memory_type` parameters.
+- **P1: CLI error message string concatenation**: Multi-line password error message was concatenated without spaces, producing mangled output. Fixed with proper string formatting.
+- **P1: `cmd_list` showed global total instead of filtered count**: When using category/layer/starred/date filters, the displayed total was always the global database count instead of the filtered result count.
+- **P2: REST API JSON body type validation**: `POST /api/memories`, `POST /api/import`, and `PUT /api/memories/{id}` now validate that the request body is a JSON object (dict), returning 400 error for arrays/strings/numbers instead of crashing with `AttributeError`.
+- **P2: Encryption engine input validation**: `encrypt()`, `decrypt()`, and `hash()` now validate input types, raising `SecurityError` for non-string / non-EncryptedBlob inputs instead of bare `AttributeError`.
+- **P2: MCP `_handle_tools_call` params type validation**: JSON-RPC `params` and `arguments` fields are now validated as dicts before accessing nested keys, preventing `AttributeError` on malformed requests.
+- **P2: Stale docstrings**: Updated version strings in `core/storage.py`, `core/mindforge.py`, `core/encryption.py`, `cli/main.py`, `api/server.py` docstrings from stale versions to v5.5.8.
+
+### Tests
+- Added `tests/test_v558_features.py` with test cases covering:
+  - `memory_diff` basic diff, identical versions, nonexistent version, content/category/tags/importance changes
+  - MCP parameter validation: missing required params for memory_add, memory_search, memory_context
+  - Falsy enum fix: `PrivacyLevel.NONE` preserved through `add()`
+  - CLI `cmd_list` filtered total count
+  - Version verification: `__version__` and `pyproject.toml` consistency
+
 ## [5.5.6] - 2026-08-26
 
 ### Added

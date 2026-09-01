@@ -1,5 +1,5 @@
 """
-MindForge v5.5.3 存储引擎
+MindForge v5.5.8 存储引擎
 支持四层记忆架构：感官记忆 → 短期记忆 → 长期记忆 → 永久记忆
 """
 
@@ -34,6 +34,12 @@ from .types import (
     DramaCharacter, DramaLine,
 )
 from .encryption import EncryptionEngine, EncryptedBlob, SecurityError
+
+# v5.5.8: 修复 export_agent_memories() 中 __version__ 未定义的 NameError
+try:
+    from .. import __version__
+except (ImportError, ValueError):
+    __version__ = "5.5.8"
 
 
 # v5.5.7: 检测数据库路径是否位于网络文件系统

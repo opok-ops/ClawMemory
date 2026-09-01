@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MindForge v5.5.4 CLI - 命令行工具
+MindForge v5.5.8 CLI - 命令行工具
 =================================
 
 Usage:
@@ -91,7 +91,7 @@ from core import (
 try:
     from MindForge import __version__
 except ImportError:
-    __version__ = "5.5.7"
+    __version__ = "5.5.8"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -420,7 +420,12 @@ def _get_memory(args) -> MindForge:
             # P2 修复：非交互且无密码时给出清晰错误，而非裸 AttributeError
             # v5.5.7 fix: --json 模式下输出合法 JSON 错误到 stdout，
             # 非 JSON 模式下错误走 stderr（不污染 stdout，bridge parseOutput 不会挂）
-            error_msg = "加密数据库需要密码才能操作。请通过以下方式之一提供密码："                         "1. 设置环境变量 MINDFORGE_PASSWORD；"                         "2. 在交互式终端中运行（会提示输入密码）；"                         "3. 如使用 dsh-mindforge bridge，在宿主环境中 export MINDFORGE_PASSWORD。"
+            error_msg = (
+                "加密数据库需要密码才能操作。请通过以下方式之一提供密码："
+                " 1. 设置环境变量 MINDFORGE_PASSWORD；"
+                " 2. 在交互式终端中运行（会提示输入密码）；"
+                " 3. 如使用 dsh-mindforge bridge，在宿主环境中 export MINDFORGE_PASSWORD。"
+            )
             if _json_mode:
                 print(json.dumps({"error": error_msg}, ensure_ascii=False))
             else:
@@ -802,7 +807,11 @@ def cmd_list(args):
         sort_order=args.order,
     )
 
-    total = cm.stats()["total"]
+    # v5.5.8: 修复 cmd_list 显示全局总数而非筛选后的总数
+    if args.category or args.layer or starred is not None or args.after or args.before:
+        total = len(entries)
+    else:
+        total = cm.stats()["total"]
     filter_desc = ""
     if starred is not None:
         filter_desc += " [⭐ 收藏]" if starred else " [未收藏]"
@@ -842,7 +851,8 @@ def cmd_list(args):
         print(f"预览: {star_mark}{entry.preview[:80]}...")
 
     if total > args.limit + args.offset:
-        print(f"\n... 还有 {total - args.limit - args.offset} 条"
+        remaining = total - args.limit - args.offset
+        print(f"\n... 还有 {remaining} 条"
               f"（使用 --offset {args.offset + args.limit} 查看更多）")
 
     cm.close()
@@ -3521,6 +3531,11 @@ def main():
     p_mem_reinforce.add_argument("--days", "-d", type=int, default=90, help="回溯窗口天数（1-365）")
     p_mem_reinforce.add_argument("--limit", "-l", type=int, default=10, help="返回候选上限（1-50）")
 
+    # ===== v5.5.8 新增 memory-diff 命令 =====
+    p_mem_diff = sub.add_parser("memory-diff", help="对比两个记忆版本的差异（v5.5.8 新增）", parents=[json_parser])
+    p_mem_diff.add_argument("version_a", help="版本 A 的 ID")
+    p_mem_diff.add_argument("version_b", help="版本 B 的 ID")
+
     # ===== v5.4.1 新增 AI 短剧命令 =====
     p_plot_thread = sub.add_parser("drama-plot-thread", help="剧情伏笔线索追踪（v5.4.1 新增）")
     p_plot_thread.add_argument("drama_id", help="短剧 ID")
@@ -4138,6 +4153,74 @@ def cmd_memory_lineage(args):
         print(c(f"\n📜 版本历史（{len(versions)}）", "cyan"))
         for v in versions[:10]:
             print(f"  v{v['version_number']}  {v['content_preview']}")
+
+    cm.close()
+    return 0
+
+
+def cmd_memory_diff(args):
+    """对比两个记忆版本的差异（v5.5.8 新增）"""
+    cm = _get_memory(args)
+    try:
+        result = cm.memory_diff(args.version_a, args.version_b)
+    except (ValueError, TypeError) as e:
+        print(c(f"\n❌ 失败: {e}", "red"))
+        cm.close()
+        return 1
+
+    if result.get("error"):
+        print(c(f"\n❌ {result['error']}", "red"))
+        cm.close()
+        return 1
+
+    if getattr(args, 'json_output', False):
+        _json_out(result)
+        cm.close()
+        return 0
+
+    print(c(f"\n🔄 记忆版本差异对比（v5.5.8）", "bold"))
+    print("=" * 60)
+    ver_a = result["version_a"]
+    ver_b = result["version_b"]
+    print(f"  版本 A:  v{ver_a['version_number']}  (ID: {ver_a['version_id']})")
+    print(f"  版本 B:  v{ver_b['version_number']}  (ID: {ver_b['version_id']})")
+
+    changed = result.get("changed_fields", [])
+    if not changed:
+        print(c("\n  ✅ 两个版本完全相同，无差异。", "green"))
+        cm.close()
+        return 0
+
+    print(c(f"\n  变更字段: {', '.join(changed)}", "yellow"))
+
+    changes = result.get("changes", {})
+    if changes.get("content", {}).get("changed"):
+        diff = changes["content"].get("diff", "")
+        print(c(f"\n  📝 内容差异:", "cyan"))
+        for line in diff.splitlines():
+            if line.startswith("+"):
+                print(c(f"  {line}", "green"))
+            elif line.startswith("-"):
+                print(c(f"  {line}", "red"))
+            elif line.startswith("@@"):
+                print(c(f"  {line}", "purple"))
+            else:
+                print(f"  {line}")
+
+    if changes.get("category", {}).get("changed"):
+        cat = changes["category"]
+        print(f"\n  📂 分类变更: {cat['from']} → {cat['to']}")
+
+    if changes.get("tags", {}).get("changed"):
+        tags = changes["tags"]
+        if tags.get("added"):
+            print(c(f"  🏷️  新增标签: {', '.join(tags['added'])}", "green"))
+        if tags.get("removed"):
+            print(c(f"  🏷️  移除标签: {', '.join(tags['removed'])}", "red"))
+
+    if changes.get("importance", {}).get("changed"):
+        imp = changes["importance"]
+        print(f"  ⚡ 重要度变更: {imp['from']} → {imp['to']}")
 
     cm.close()
     return 0
@@ -4927,6 +5010,8 @@ def _main_dispatch(args):
         "memory-reflection": cmd_memory_reflection,
         "memory-lineage": cmd_memory_lineage,
         "memory-reinforce": cmd_memory_reinforce,
+        # v5.5.8 新增
+        "memory-diff": cmd_memory_diff,
         "drama-plot-thread": cmd_drama_plot_thread,
         "drama-episode-curve": cmd_drama_episode_curve,
         "drama-screen-time": cmd_drama_screen_time,

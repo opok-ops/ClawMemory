@@ -1,5 +1,5 @@
 """
-MindForge v5.5.3 主入口类
+MindForge v5.5.8 主入口类
 统一的 API 接口，集成所有核心功能
 """
 
@@ -36,7 +36,7 @@ from .embedding import EmbeddingEngine
 try:
     from .. import __version__
 except (ImportError, ValueError):
-    __version__ = "5.5.7"
+    __version__ = "5.5.8"
 
 
 # ===== 路径安全校验（v5.2.9 新增：核心层统一防护，防止路径遍历 / 符号链接攻击）=====
@@ -336,10 +336,12 @@ class MindForge:
             print(entry.id)          # 自动生成的 UUID
             print(entry.created_at)  # 创建时间戳
         """
-        privacy = privacy or self.config.default_privacy
-        importance = importance or self.config.default_importance
-        layer = layer or self.config.default_layer
-        memory_type = memory_type or MemoryType.TEXT
+        # v5.5.8: 修复 falsy 枚举值被默认值覆盖的 bug
+        # 之前用 `or` 导致 PrivacyLevel.NONE 等有效 falsy 值被 default 替换
+        privacy = privacy if privacy is not None else self.config.default_privacy
+        importance = importance if importance is not None else self.config.default_importance
+        layer = layer if layer is not None else self.config.default_layer
+        memory_type = memory_type if memory_type is not None else MemoryType.TEXT
 
         entry = self._storage.add_memory(
             content=content,
@@ -4194,6 +4196,92 @@ class MindForge:
     def rollback_to_version(self, version_id: str, actor: str = "") -> Dict[str, Any]:
         """回滚记忆到指定历史版本（v5.2.7 新增）"""
         return self._storage.rollback_to_version(version_id, actor)
+
+    def memory_diff(self, version_id_a: str, version_id_b: str) -> Dict[str, Any]:
+        """对比两个记忆版本的差异（v5.5.8 新增）
+
+        比较两个历史版本的内容、分类、标签和重要度，
+        返回结构化差异报告。
+
+        Args:
+            version_id_a: 版本 A 的 ID
+            version_id_b: 版本 B 的 ID
+
+        Returns:
+            差异字典：version_a, version_b, changes (content/category/tags/importance)
+        """
+        ver_a = self._storage.get_version(version_id_a)
+        ver_b = self._storage.get_version(version_id_b)
+        if not ver_a:
+            return {"error": f"版本 {version_id_a} 不存在"}
+        if not ver_b:
+            return {"error": f"版本 {version_id_b} 不存在"}
+
+        changes: Dict[str, Any] = {}
+
+        # 内容差异
+        content_a = ver_a.get("content", "")
+        content_b = ver_b.get("content", "")
+        if content_a != content_b:
+            import difflib
+            diff_lines = list(difflib.unified_diff(
+                content_a.splitlines(keepends=True),
+                content_b.splitlines(keepends=True),
+                fromfile=f"v{ver_a.get('version_number', '?')}",
+                tofile=f"v{ver_b.get('version_number', '?')}",
+                lineterm=""
+            ))
+            changes["content"] = {
+                "changed": True,
+                "diff": "".join(diff_lines) if diff_lines else "",
+                "length_a": len(content_a),
+                "length_b": len(content_b),
+            }
+        else:
+            changes["content"] = {"changed": False}
+
+        # 分类差异
+        cat_a = ver_a.get("category", "")
+        cat_b = ver_b.get("category", "")
+        if cat_a != cat_b:
+            changes["category"] = {"changed": True, "from": cat_a, "to": cat_b}
+        else:
+            changes["category"] = {"changed": False}
+
+        # 标签差异
+        tags_a = set(ver_a.get("tags", []) if isinstance(ver_a.get("tags"), list) else [])
+        tags_b = set(ver_b.get("tags", []) if isinstance(ver_b.get("tags"), list) else [])
+        added_tags = sorted(tags_b - tags_a)
+        removed_tags = sorted(tags_a - tags_b)
+        if added_tags or removed_tags:
+            changes["tags"] = {"changed": True, "added": added_tags, "removed": removed_tags}
+        else:
+            changes["tags"] = {"changed": False}
+
+        # 重要度差异
+        imp_a = ver_a.get("importance", "")
+        imp_b = ver_b.get("importance", "")
+        if imp_a != imp_b:
+            changes["importance"] = {"changed": True, "from": imp_a, "to": imp_b}
+        else:
+            changes["importance"] = {"changed": False}
+
+        changed_fields = [k for k, v in changes.items() if v.get("changed")]
+
+        return {
+            "version_a": {
+                "version_id": ver_a["version_id"],
+                "version_number": ver_a["version_number"],
+                "changed_at": ver_a["changed_at"],
+            },
+            "version_b": {
+                "version_id": ver_b["version_id"],
+                "version_number": ver_b["version_number"],
+                "changed_at": ver_b["changed_at"],
+            },
+            "changed_fields": changed_fields,
+            "changes": changes,
+        }
 
     # ===== 多 Agent 记忆空间（v5.2.8 实验性 — v6.0.0 全量推送预览）=====
 
