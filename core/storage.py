@@ -1752,9 +1752,30 @@ class StorageEngine:
         ids = [row[0] for row in rows]
         placeholders = ",".join(["?"] * len(ids))
 
+        # v5.5.7 fix: 先清理带外键的从表，避免 FOREIGN KEY 约束失败
+        # 与 delete_memory 硬删除路径对齐
+        conn.execute(f"DELETE FROM memory_versions WHERE memory_id IN ({placeholders})", ids)
+        conn.execute(f"DELETE FROM review_schedules WHERE memory_id IN ({placeholders})", ids)
+        conn.execute(f"DELETE FROM memory_links WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders})", ids + ids)
+        conn.execute(f"DELETE FROM memory_notes WHERE memory_id IN ({placeholders})", ids)
+        try:
+            conn.execute(f"DELETE FROM memory_embeddings WHERE memory_id IN ({placeholders})", ids)
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute(f"DELETE FROM memory_templates WHERE memory_id IN ({placeholders})", ids)
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute(f"DELETE FROM kg_edges WHERE source IN ({placeholders}) OR target IN ({placeholders})", ids + ids)
+        except sqlite3.OperationalError:
+            pass
+
         conn.execute(f"DELETE FROM memories WHERE id IN ({placeholders})", ids)
 
         # 同步清理 FTS（contentless FTS5 用 'delete' 命令）
+        # v5.5.7 fix: 扩大异常捕获范围。FTS5 在短字符串 + trigram tokenizer 边界下
+        # 可能误报 "database disk image is malformed"，但 integrity_check 实际为 ok。
         for row in rows:
             try:
                 conn.execute(
@@ -1762,7 +1783,7 @@ class StorageEngine:
                     "VALUES('delete', ?, ?, ?, ?)",
                     (row[1], row[2] or "", row[3] or "", row[4] or "[]")
                 )
-            except sqlite3.OperationalError:
+            except Exception:
                 logger.warning("FTS operation failed", exc_info=True)
 
         conn.commit()
@@ -7803,7 +7824,8 @@ class StorageEngine:
         """
         if not memory_ids or not tags:
             return 0
-        clean_tags = [t for t in tags if isinstance(t, str) and t.strip()]
+        # v5.5.7 fix: 使用 _sanitize_tags 做 XSS 消毒，与 batch_add_tags 对齐
+        clean_tags = self._sanitize_tags(tags)
         if not clean_tags:
             return 0
 
