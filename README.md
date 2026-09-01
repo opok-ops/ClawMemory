@@ -136,7 +136,7 @@ for chunk in results.chunks:
 │  ┌───────────────────────────┴─────────────────────────────┐ │
 │  │  Adapter Layer（适配层）                                   │ │
 │  │  OpenClaw · Claude Code · Generic API · CLI / SDK       │ │
-│  │  MCP Server (tools: intent_router, conflict_scan, ...) │ │
+│  │  MCP Server (33 tools: intent_router, conflict_scan)    │ │
 │  └─────────────────────────────────────────────────────────┘ │
 │                                                               │
 └─────────────────────────────────────────────────────────────┘
@@ -207,7 +207,7 @@ for chunk in results.chunks:
 | 搜索策略 | 向量 + FTS5 + TF-IDF + Fuzzy + 查询扩展 + Cross-Encoder 六路融合 | 纯向量 | 纯向量 | 纯向量 |
 | 检索精度 NDCG@10 | 0.84 | — | — | — |
 | 云端依赖 | 零（纯本地） | 强依赖 | 强依赖 | 强依赖 |
-| 接入方式 | CLI 70+命令 + SDK + MCP Server 32工具 + REST API | 仅 SDK | 仅 SDK | 仅 SDK |
+| 接入方式 | CLI 200+命令 + SDK + MCP Server 33工具 + REST API | 仅 SDK | 仅 SDK | 仅 SDK |
 | 智能导入去重 | 语义相似度去重（v5.4.6） | 无 | 无 | 无 |
 | Embedding 多后端 | sentence-transformers / OpenAI / Ollama / HTTP | 仅 OpenAI | 仅 OpenAI | 仅 OpenAI |
 | 记忆健康仪表盘 | JSON/HTML 报告（v5.4.6） | 无 | 无 | 无 |
@@ -377,8 +377,8 @@ MindForge/
 │   ├── claude_adapter.py      # Claude Code 集成
 │   └── generic_api.py         # 通用 REST API
 ├── cli/                       # 命令行界面
-│   └── main.py                # 基于 argparse 的 60+ 命令 CLI
-├── tests/                     # 测试套件（105 个用例）
+│   └── main.py                # 基于 argparse 的 200+ 命令 CLI
+├── tests/                     # 测试套件（373 个用例）
 ├── website/                   # 官方网站
 └── examples/                  # 用法示例
 ```
@@ -413,6 +413,118 @@ context = adapter.get_context("database optimization")
 ---
 
 ## Changelog（版本记录）
+
+### v5.5.8 (2026-09-01)
+
+**记忆版本对比 + 全量参数校验 + 多项 Bug 修复**
+
+**新增：**
+
+1. **记忆版本差异对比 `memory_diff(a, b)`** — 对比同一记忆的两个历史版本，输出内容 unified diff，以及分类、标签（新增/移除）、重要度的结构化差异。同时接入 Python API、CLI `memory-diff` 与 MCP `memory_diff` 工具。
+2. **MCP 全量参数校验** — 33 个工具 handler 统一在执行前校验必需参数，返回 `{"ok": false, "error": "Missing required parameter(s): ..."}`，不再抛出 `KeyError`。
+
+**Bug 修复：**
+
+3. **P0：`storage.py` 的 `__version__` NameError** — `export_agent_memories()` 引用了未定义的 `__version__`，导出 Agent 记忆时崩溃，已补充导入与兜底。
+4. **P1：falsy 枚举值被默认值覆盖** — `add()` 中的 `privacy or default` 写法会导致 `PrivacyLevel.NONE` 等合法假值被配置默认值替换，改为显式 `is not None` 判断。
+5. **P1：CLI 密码错误消息拼接缺空格** — 多行错误信息被粘连成一行，改为规范化字符串格式化。
+6. **P1：`cmd_list` 计数错误** — 使用分类/层级/星标/日期筛选时，显示的仍是数据库全局总数而非筛选结果数。
+7. **P2：REST API JSON body 类型校验** — `POST /api/memories`、`POST /api/import`、`PUT /api/memories/{id}` 现在校验请求体为 JSON 对象，数组/字符串/数字返回 400。
+8. **P2：加密引擎输入类型校验** — `encrypt()` / `decrypt()` / `hash()` 校验入参类型，抛出 `SecurityError` 而非裸 `AttributeError`。
+9. **P2：MCP `params` 类型校验** — JSON-RPC `params` 与 `arguments` 在使用前校验为 dict，避免畸形请求触发 `AttributeError`。
+10. **P2：过期 docstring 版本号** — `core/storage.py`、`core/mindforge.py`、`core/encryption.py`、`cli/main.py`、`api/server.py` 的文档字符串版本同步至 v5.5.8。
+
+**本次审计补充修复（2026-09-01，全面修复）：**
+
+11. **P0：`storage.py` 角色关系网络 NameError** — `get_character_network()` 构建角色共现关系图时引用了未定义的 `a` / `b` 变量（应为循环变量 `primary_char` / `partner_char`），导致角色关系网功能直接抛出 `NameError` 崩溃，已修正变量引用。
+12. **P1：CLI `sqlite3` 未导入** — 多处 `except sqlite3.Error` 异常处理分支引用了未导入的 `sqlite3` 模块，真实数据库错误会被 `NameError` 掩盖而无法排查，已在 `cli/main.py` 顶部补充 `import sqlite3`。
+13. **P1：CLI 未知命令崩溃** — `_main_dispatch()` 在命令不存在时调用了 `main()` 的局部变量 `parser`，触发 `NameError`；改为基于 `commands` 字典与规范化退出码，未知命令输出帮助并以退出码 1 结束。
+14. **P2：CLI 类型注解缺导入** — 多个函数内的 `Dict` / `List` / `Any` 注解缺少 `typing` 导入，静态检查（`pyflakes`）报 undefined name；已补充 `from typing import Any, Dict, List`。
+15. **P1：意图路由层级失效** — `IntentResult.level` 的表达式 `2 if self.fallback else 2` 两支相同，兜底路由与正常 LLM 路由无法区分，导致路由分级失效；改为 `3 if self.fallback else 2`（0=规则 / 1=关键词 / 2=LLM / 3=兜底）。
+16. **P1：召回引擎污染原始记忆** — 上下文裁剪时 `truncated = chunk` 仅为别名而非拷贝，随后对 `truncated.content` 的截断会原地修改调用方持有的 `MemoryChunk`，导致记忆内容被永久截断（缓存/复用场景尤其危险）；改为 `copy.copy(chunk)`。
+17. **P1：REST API 并发槽位泄漏** — 工作线程 `t.start()` 失败时并发计数未回退，槽位逐步泄漏直至服务永久返回 503；已加入 `try/except` 回退与规范的 503 响应。
+
+### v5.5.7 (2026-08-30)
+
+**安全加固：加密 fail-closed · 并发限制 · Webhook 签名 · WAL 降级**
+
+1. **加密 fail-closed** — 移除 HMAC-XOR 降级加密路径（P1-008）。此前 `cryptography` 不可用时曾创建的 `EXPERIMENTAL_HMAC_XOR` blob 将**永久不可解密**，升级前请先 `mindforge export --json > backup.json` 备份。
+2. **并发请求限制** — REST API 增加并发上限，超出返回 503，防止资源耗尽。
+3. **Webhook 签名一致性** — 统一签名计算方式，超时策略遵循 `config.timeout`。
+4. **WAL 网络文件系统降级** — 自动检测数据库路径是否位于网络文件系统（含 fuseblk / fuse.\*），检测到则降级为 DELETE 日志模式，避免 SIGBUS 崩溃。
+5. **Banner 纯净** — 修复输出前缀污染；`--json` 模式下密码错误输出合法 JSON 到 stdout。
+6. **其他修复** — `agent-insight` 崩溃、`add_tags_to_ids` 的 XSS 消毒、`purge_trash` 外键约束、4xx 日志记录、`actual_attempts` 统计。
+7. **集成提醒** — 使用 `dsh-mindforge` bridge 时需 `export MINDFORGE_PASSWORD="你的密码"`，否则 CLI 会报错退出。
+
+### v5.5.6 (2026-08-26)
+
+**记忆置顶 + 批量获取 + 时间线视图 + 搜索建议 + 批量标签操作**
+
+**新增：**
+
+1. **记忆置顶** — `add(..., pinned=True)`、`pin()` / `unpin()`、`list(pinned=True/False)`、`list_pinned()`，置顶记忆始终排在最前。
+2. **批量获取 `batch_get(ids)`** — 单次 `IN` 查询取回多条记忆，保持输入顺序，自动去重并过滤过期项，消除 N+1 查询。
+3. **时间线视图 `timeline()`** — 按今天/昨天/本周/本月/更早分组。
+4. **搜索建议 `search_suggestions(prefix)`** — 基于已有标签与分类的前缀补全（大小写不敏感）。
+5. **添加前去重检测 `check_duplicates(content, threshold)`** — Jaccard + SequenceMatcher 混合相似度。
+6. **按 ID 批量标签操作** — `add_tags_to_memories()` / `remove_tags_from_memories()`。
+7. **`stats()` 新增 `pinned_count`**。
+
+**Bug 修复：**
+
+8. **P1：冲突衰减静默失败** — `StorageEngine` 补齐 `adjust_importance()` 与 `append_tags()`，此前被冲突解决模块调用但从未实现。
+9. **P1：pytest 包命名冲突** — 移除根目录 `__init__.py`，修复枚举类被双重导入导致 `isinstance()` 返回 `False` 的问题；`setup.py` 改为从 `MindForge.py` 读取版本。
+10. **`fuzzy_search` 空查询崩溃** — 对 `None` / 非字符串 / 纯空白查询返回 `[]`。
+11. **`rename_tag` 大小写敏感** — 改为大小写不敏感匹配，并在重命名后去重。
+12. **`batch_add` 丢字段** — 现在支持 `pinned`、`expires_at`、`metadata`。
+13. **Facade 层 `list()` / `update()` 缺失 `pinned` 参数透传**。
+
+### v5.5.5 (2026-08-25)
+
+**记忆分层架构 + 硬件自适应 + 冲突检测 + 前置过滤**
+
+1. **四层记忆分层架构** — Sensory / Short-term / Long-term / Permanent 各层独立容量与保留策略，基于 Ebbinghaus 遗忘曲线向上传播。
+2. **硬件自适应** — `HardwareProfiler` 检测硬件性能，动态调整缓存容量与推荐检索条数。
+3. **冲突检测** — 反义词 / 属性值 / 时间线三类矛盾检测与自动衰减。
+4. **前置过滤** — 查询引擎引入 entry 缓存，减少重复取数。
+5. **FTS 索引同步系统性修复** — 修复 7 个方法中软删除后索引未清理导致已删除记忆仍可搜索的缺陷。
+6. 修复枚举双重导入、向量阈值融合、审计参数、同义词扩展、软删除过滤等 20+ 项 P0/P1/P2 问题。
+
+### v5.5.4 (2026-08-24)
+
+**记忆合并 + 访问统计 + 批量更新 + 索引一致性检查**
+
+1. **记忆合并 `merge_memories()`** — 将多条记忆合并为一条，保留来源溯源。
+2. **最常访问 / 最近访问** — `most_accessed()` / `recently_accessed()`。
+3. **按筛选批量更新** — `bulk_update_by_filter()` 采用 storage 层 SQL 过滤，替代全表加载，修复大数据量性能问题。
+4. **标签统计 `tag_stats()`**。
+5. **索引一致性检查 `check_index_consistency()`** — 检测并修复索引与存储层不一致。
+
+### v5.5.3 (2026-08-24)
+
+**索引清理与 API 可靠性关键修复**
+
+1. **过期记忆仍可搜索** — `purge_expired()` 后未清理索引，改为同步清理。
+2. **批量删除后索引残留** — `batch_delete_by_category()` / `batch_delete_by_tag()` 删除后清理索引，避免搜索返回已删除记忆。
+3. **API 可靠性** — 修复 `api/server.py` 返回 `None` 导致的双重写入问题。
+4. **嵌入引擎参数校验** — 参数不一致时记录警告而非静默覆盖。
+5. 移除 v5.5.3 引入的 BOM 并修复 `embedding.py` 语法错误。
+
+### v5.5.2 (2026-08-23)
+
+**Memory TTL 过期机制 + 多关键词高亮 + 批量删除 + 关键 Bug 修复**
+
+**新增：**
+
+1. **记忆 TTL / 过期机制** — 新增 `expires_at` 字段：`add(..., expires_at=)`、`set_ttl()`、`list_expired()`、`purge_expired()`，`get()` 自动将过期记忆移入回收站。
+2. **多关键词搜索高亮** — `highlight()` 支持空格分隔多关键词、中文关键词，大小写不敏感且保留原始大小写，支持自定义高亮标签。
+3. **按分类 / 标签批量删除** — `batch_delete_by_category()` / `batch_delete_by_tag()`，支持软删除与永久删除（含级联清理）。
+
+**Bug 修复：**
+
+4. **关键：`pyproject.toml` 的 UTF-8 BOM** — 导致 `tomllib.TOMLDecodeError`，`pytest` 收集与 `pip install` 全部失败；同时清理另外 7 个源文件的 BOM。
+5. **FTS5 bm25 分数溢出** — `math.exp()` 前加入 `max(-50, min(50, score))` 截断，避免 `OverflowError`。
+6. **查询引擎重复取数** — 加入 entry 缓存，过滤类查询的数据库访问最多减少一半。
 
 ### v5.5.1 (2026-08-23)
 

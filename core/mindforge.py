@@ -21,10 +21,6 @@ from .types import (
     MemoryConfig,
     DramaGenre,
     DramaStatus,
-    DramaSeries,
-    DramaScene,
-    DramaCharacter,
-    DramaLine,
 )
 from .storage import StorageEngine, MemoryEntry
 from .encryption import EncryptionEngine, init_engine as _init_engine
@@ -183,7 +179,6 @@ class MindForge:
         修复后：根据 key_file 是否存在决定新建或加载加密引擎。
         v5.4.7 修复 M-9：当 encrypted=True 但无密码时记录警告日志。
         """
-        from .encryption import init_engine as _init_engine
 
         key_file = Path(self.config.key_file)
         key_file.parent.mkdir(parents=True, exist_ok=True)

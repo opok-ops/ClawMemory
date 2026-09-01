@@ -5,10 +5,8 @@ MindForge v5.0 记忆演化引擎
 
 import math
 import time
-import random
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple
-from collections import defaultdict
+from typing import List, Dict, Tuple
 
 from core.types import MemoryLayer, Importance
 from core.storage import StorageEngine, MemoryEntry

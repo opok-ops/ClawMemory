@@ -85,7 +85,7 @@ class TestStorageEngine(unittest.TestCase):
 
     def test_list_memories(self):
         from core.storage import StorageEngine
-        from core.types import MemoryLayer, PrivacyLevel, Importance, MemoryType
+        from core.types import MemoryLayer
 
         storage = StorageEngine(db_path=self.db_path)
 
@@ -104,7 +104,7 @@ class TestStorageEngine(unittest.TestCase):
 
     def test_update_memory(self):
         from core.storage import StorageEngine
-        from core.types import MemoryLayer, PrivacyLevel, Importance, MemoryType
+        from core.types import MemoryLayer
 
         storage = StorageEngine(db_path=self.db_path)
 
@@ -128,7 +128,7 @@ class TestStorageEngine(unittest.TestCase):
 
     def test_delete_memory(self):
         from core.storage import StorageEngine
-        from core.types import MemoryLayer, PrivacyLevel, Importance, MemoryType
+        from core.types import MemoryLayer
 
         storage = StorageEngine(db_path=self.db_path)
 
@@ -146,7 +146,7 @@ class TestStorageEngine(unittest.TestCase):
 
     def test_stats(self):
         from core.storage import StorageEngine
-        from core.types import MemoryLayer, PrivacyLevel, Importance, MemoryType
+        from core.types import MemoryLayer
 
         storage = StorageEngine(db_path=self.db_path)
 

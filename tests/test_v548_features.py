@@ -3,18 +3,16 @@
 
 覆盖：Agent 记忆强化、跨 Agent 共享、知识领域分析、AI 短剧场景生成、情感时间线
 """
-import json
 import os
 import sys
 import tempfile
 
-import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from core.mindforge import MindForge
-from core.types import Importance, MemoryLayer
+from core.types import Importance
 
 
 class TestAgentMemoryReinforce:

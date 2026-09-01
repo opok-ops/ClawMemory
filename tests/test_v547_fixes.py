@@ -3,14 +3,12 @@ import sys
 import os
 import struct
 import tempfile
-import sqlite3
 
 # 确保导入路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.storage import StorageEngine
 from core.indexer import IndexEngine
-from core.embedding import EmbeddingEngine
 
 PASS = 0
 FAIL = 0

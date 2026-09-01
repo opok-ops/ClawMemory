@@ -57,7 +57,7 @@
   <div class="hero-inner">
     <div class="hero-badge">
       <span class="badge-dot"></span>
-      <span>v5.5.5 全新升级 · 自动记忆分层 · 硬件适配 · 冲突检测</span>
+      <span>v5.5.8 全新升级 · 记忆版本对比 · 全量参数校验 · 8 项 Bug 修复</span>
     </div>
     <h1 class="hero-title">
       让 AI Agent
@@ -379,9 +379,58 @@
     <div class="changelog-list">
       <div class="cl-item">
         <div class="cl-left">
+          <span class="cl-ver">v5.5.8</span>
+          <span class="cl-date">2026-09-01</span>
+          <span class="cl-badge latest">最新</span>
+        </div>
+        <div class="cl-body">
+          <h4>🔍 记忆版本对比 + 全量参数校验 + 8 项 Bug 修复</h4>
+          <ul>
+            <li><strong>记忆版本对比</strong>：<code>memory_diff(a, b)</code> 输出内容 unified diff 及分类/标签/重要度差异，同时接入 API / CLI / MCP</li>
+            <li><strong>MCP 参数校验</strong>：33 个工具 handler 统一校验必需参数，返回明确错误而非 KeyError 崩溃</li>
+            <li><strong>P0 修复</strong>：<code>export_agent_memories()</code> 的 <code>__version__</code> NameError</li>
+            <li><strong>P1 修复</strong>：<code>add()</code> 中 falsy 枚举值（如 <code>PrivacyLevel.NONE</code>）被默认值覆盖</li>
+            <li><strong>P1 修复</strong>：<code>cmd_list</code> 筛选时显示全局总数而非筛选结果数</li>
+            <li><strong>P2 修复</strong>：REST API / 加密引擎 / MCP 入参类型校验，过期 docstring 版本号同步</li>
+          </ul>
+        </div>
+      </div>
+      <div class="cl-item">
+        <div class="cl-left">
+          <span class="cl-ver">v5.5.7</span>
+          <span class="cl-date">2026-08-31</span>
+        </div>
+        <div class="cl-body">
+          <h4>🔒 安全加固与稳定性</h4>
+          <ul>
+            <li><strong>加密 fail-closed</strong>：移除 HMAC-XOR 降级路径，<code>cryptography</code> 不可用时拒绝加密</li>
+            <li><strong>WAL 网络文件系统降级</strong>：自动检测 fuseblk / fuse.*，降级为 DELETE 模式避免 SIGBUS 崩溃</li>
+            <li><strong>Webhook 签名一致性</strong>：签名计算与超时策略统一</li>
+            <li><strong>并发限制</strong>：REST API 增加并发请求上限，防止资源耗尽</li>
+            <li>修复：<code>--json</code> 模式密码错误输出合法 JSON、4xx 日志记录、WAL 连接超时</li>
+          </ul>
+        </div>
+      </div>
+      <div class="cl-item">
+        <div class="cl-left">
+          <span class="cl-ver">v5.5.6</span>
+          <span class="cl-date">2026-08-26</span>
+        </div>
+        <div class="cl-body">
+          <h4>📌 记忆置顶与批量操作</h4>
+          <ul>
+            <li><strong>记忆置顶</strong>：<code>pin()</code> / <code>unpin()</code> 完整生命周期，置顶项在 <code>list()</code> 中优先返回</li>
+            <li><strong>批量获取</strong>：按 ID 列表一次性取出多条记忆</li>
+            <li><strong>时间线视图</strong>：按时间轴聚合展示记忆演进</li>
+            <li><strong>搜索建议</strong>：基于历史查询的补全推荐</li>
+            <li><strong>批量标签操作</strong>：<code>batch_add_tags</code> / <code>batch_remove_tags</code></li>
+          </ul>
+        </div>
+      </div>
+      <div class="cl-item">
+        <div class="cl-left">
           <span class="cl-ver">v5.5.5</span>
           <span class="cl-date">2026-08-26</span>
-          <span class="cl-badge latest">最新</span>
         </div>
         <div class="cl-body">
           <h4>🚀 智能导入去重 + REST API + 多后端嵌入适配器</h4>

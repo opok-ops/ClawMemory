@@ -4,7 +4,6 @@ MindForge v5.0 隐私引擎
 """
 
 import re
-import json
 import hashlib
 import hmac
 import time
@@ -13,7 +12,6 @@ import sqlite3
 import logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple, Any
-from datetime import datetime
 
 from core.storage import StorageEngine, MemoryEntry
 from core.types import PrivacyLevel

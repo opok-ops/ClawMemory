@@ -14,7 +14,7 @@ from pathlib import Path
 # 添加项目根目录到 path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core import MindForge, MemoryConfig, PrivacyLevel, Importance, MemoryLayer
+from core import MindForge, MemoryConfig, Importance
 
 
 def main():
@@ -50,7 +50,7 @@ def main():
         result = cm.deduplicate(dry_run=True, similarity_threshold=0.85)
         print(f"   发现重复组：{result['duplicates_found']}")
         print(f"   将删除：    {result['would_remove']} 条")
-        print(f"   详情：")
+        print("   详情：")
         for i, d in enumerate(result["details"], 1):
             print(f"     [{i}] 分类={d['category']} 相似度={d['similarity']}")
             print(f"         保留: {d['keeper_preview'][:50]}")
@@ -76,7 +76,7 @@ def main():
         size = out.stat().st_size
         print(f"   导出文件：{out}")
         print(f"   文件大小：{size} 字节")
-        print(f"   内容预览（前 500 字）：")
+        print("   内容预览（前 500 字）：")
         print("-" * 60)
         print(content[:500])
         print("-" * 60)
@@ -88,7 +88,7 @@ def main():
         content2 = out2.read_text(encoding="utf-8")
         print(f"   导出文件：{out2}")
         print(f"   文件大小：{out2.stat().st_size} 字节")
-        print(f"   内容预览：")
+        print("   内容预览：")
         print("-" * 60)
         print(content2[:400])
         print("-" * 60)

@@ -9,7 +9,7 @@ All notable changes to MindForge will be documented in this file.
   - API: `mf.memory_diff(version_id_a, version_id_b)`
   - CLI: `MindForge memory-diff <version_a> <version_b> [--json]`
   - MCP: `memory_diff` tool with `version_a` / `version_b` parameters
-- **MCP Parameter Validation**: All 32 MCP tool handlers now validate required parameters before execution, returning clear `{"ok": false, "error": "Missing required parameter(s): ..."}` instead of crashing with `KeyError`
+- **MCP Parameter Validation**: All 33 MCP tool handlers now validate required parameters before execution, returning clear `{"ok": false, "error": "Missing required parameter(s): ..."}` instead of crashing with `KeyError`
 
 ### Fixed
 - **P0: storage.py `__version__` NameError**: `export_agent_memories()` referenced undefined `__version__` variable, causing crash when exporting agent memories. Added `__version__` import with fallback.
@@ -21,6 +21,15 @@ All notable changes to MindForge will be documented in this file.
 - **P2: MCP `_handle_tools_call` params type validation**: JSON-RPC `params` and `arguments` fields are now validated as dicts before accessing nested keys, preventing `AttributeError` on malformed requests.
 - **P2: Stale docstrings**: Updated version strings in `core/storage.py`, `core/mindforge.py`, `core/encryption.py`, `cli/main.py`, `api/server.py` docstrings from stale versions to v5.5.8.
 
+### Fixed (Comprehensive Audit, 2026-09-01)
+- **P0: `storage.py` character network NameError**: `get_character_network()` referenced undefined `a` / `b` variables (should be loop variables `primary_char` / `partner_char`) when building the co-occurrence edge list, crashing the character relationship network feature with `NameError`. Fixed variable references.
+- **P1: CLI `sqlite3` not imported**: Several `except sqlite3.Error` branches referenced the unimported `sqlite3` module, so real database errors were masked by a secondary `NameError`. Added `import sqlite3` to `cli/main.py`.
+- **P1: CLI crash on unknown command**: `_main_dispatch()` called `parser`, a local variable of `main()`, when the command was not found, raising `NameError`. Replaced with `commands`-dict lookup and a clean exit code 1.
+- **P2: CLI missing typing imports**: `Dict` / `List` / `Any` used in local function annotations without `from typing import ...`, failing static checks. Added `from typing import Any, Dict, List`.
+- **P1: Intent router level broken**: `IntentResult.level` used `2 if self.fallback else 2` (both branches identical), so fallback routing was indistinguishable from normal LLM routing. Changed to `3 if self.fallback else 2` (0=rule / 1=keyword / 2=LLM / 3=fallback).
+- **P1: Recall engine mutated original memory**: Context trimming did `truncated = chunk` (alias, not copy), so truncating `truncated.content` mutated the caller's `MemoryChunk` in place, permanently truncating stored memory content. Changed to `copy.copy(chunk)`.
+- **P1: REST API concurrency slot leak**: When a worker thread `t.start()` failed, the concurrency counter was not decremented, leaking slots until the server permanently returned 503. Added `try/except` rollback with a proper 503 response.
+
 ### Tests
 - Added `tests/test_v558_features.py` with test cases covering:
   - `memory_diff` basic diff, identical versions, nonexistent version, content/category/tags/importance changes
@@ -28,6 +37,29 @@ All notable changes to MindForge will be documented in this file.
   - Falsy enum fix: `PrivacyLevel.NONE` preserved through `add()`
   - CLI `cmd_list` filtered total count
   - Version verification: `__version__` and `pyproject.toml` consistency
+
+## [5.5.7] - 2026-08-30
+
+### Added
+- **Single-file combined CLI**: `MindForge_combined.py` — all-in-one build bundling core, modules, adapters and CLI with AI drama features
+- **REST API concurrency limit**: configurable cap on in-flight requests, returning 503 when exceeded to prevent resource exhaustion
+
+### Security
+- **Encryption fail-closed (P1-008)**: Removed the HMAC-XOR fallback encryption path. If `cryptography` was unavailable in an earlier version and encrypted memories were created, those `EXPERIMENTAL_HMAC_XOR` blobs are now **permanently undecryptable**. Back up with `mindforge export --json > backup.json` before upgrading.
+- **WAL network-filesystem downgrade**: `_get_conn()` now detects network filesystems (including `fuseblk` / `fuse.*`) and falls back to `journal_mode=DELETE`, avoiding SIGBUS crashes on network-mounted databases.
+- **Webhook signature consistency**: unified HMAC signature computation; request timeout now honours `config.timeout`
+- **`add_tags_to_ids` XSS sanitization**: tag values sanitized before being persisted and rendered
+
+### Fixed
+- **P0/P1 security hardening batch**: fail-closed encryption, concurrency limiting, and audit coverage gaps
+- **P2: `agent-insight` crash**: fixed case-sensitivity mismatch that raised on some agent identifiers
+- **P2: banner pollution**: CLI banner no longer leaks into `--json` output; password errors emit valid JSON on stdout in JSON mode
+- **P2: `purge_trash` FK constraint**: purge order corrected to satisfy foreign key constraints
+- **P3: 4xx logging**: failed webhook attempts now log `actual_attempts`
+- **P3: JSON password error**: `--json` mode emits a well-formed JSON error object instead of raw text
+
+### Integration Notes
+- When using the `dsh-mindforge` bridge, `MINDFORGE_PASSWORD` must be exported (`export MINDFORGE_PASSWORD="your-password"`), otherwise the CLI exits with an error on encrypted databases.
 
 ## [5.5.6] - 2026-08-26
 
@@ -76,6 +108,39 @@ All notable changes to MindForge will be documented in this file.
   - Bug fixes (12 tests): fuzzy_search None/empty/whitespace, rename_tag case/empty/dedup, batch_add pinned/expires/metadata, stats pinned_count
   - Version verification (3 tests): semver format, exact 5.5.6 match, pyproject.toml consistency
 - Full suite: **260+ passed**
+
+## [5.5.5] - 2026-08-25
+
+### Added
+- **Four-tier memory layering**: Sensory / Short-term / Long-term / Permanent layers with independent capacity and retention policies, propagating upward via the Ebbinghaus forgetting curve
+- **Hardware-adaptive tuning**: `HardwareProfiler` detects machine capability and dynamically sizes the memory cache and recommended retrieval limits
+- **Conflict detection**: antonym, attribute-value, and timeline contradiction detection with automatic confidence decay
+- **Query pre-filtering**: `QueryEngine` entry cache to avoid redundant fetches
+
+### Fixed
+- **FTS index sync defect (7 methods)**: soft-deleted memories remained searchable because the index was not pruned after deletion; all seven call sites now clean up the index
+- **Enum double-import**: enum classes loaded from two module paths broke `isinstance()` checks
+- **Vector threshold fusion**: similarity thresholds no longer double-applied across fusion stages
+- **Audit parameter plumbing**: corrected misrouted audit arguments
+- **Synonym expansion / soft-delete filtering**: 20+ P0/P1/P2 issues resolved in the hardening pass
+
+## [5.5.4] - 2026-08-24
+
+### Added
+- **Memory merging**: `merge_memories()` consolidates several memories into one, preserving provenance
+- **Access analytics**: `most_accessed()` and `recently_accessed()`
+- **Bulk update by filter**: `bulk_update_by_filter()` pushes filtering down to SQL instead of loading the full table, fixing a large-dataset performance problem
+- **Tag statistics**: `tag_stats()`
+- **Index consistency check**: `check_index_consistency()` detects and repairs drift between the index and storage layers
+
+## [5.5.3] - 2026-08-24
+
+### Fixed
+- **Expired memories stayed searchable**: `purge_expired()` did not prune the index
+- **Stale index after batch delete**: `batch_delete_by_category()` and `batch_delete_by_tag()` now clean up the index so deleted memories cannot be returned by search
+- **API double-write**: `api/server.py` returned `None` on error, causing the caller to write a second response body
+- **Embedding parameter mismatch**: warn instead of silently overriding when parameters differ
+- Removed a BOM accidentally introduced in v5.5.3 that broke `core/embedding.py` parsing
 
 ## [5.5.2] - 2026-08-23
 

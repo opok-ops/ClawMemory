@@ -10,13 +10,11 @@ MindForge v5.5.7 P1/P2/P3 第二轮修复验证
 - P3-3: 导出截断 truncated 标志
 """
 
-import os
 import sys
 import json
 import hmac
 import hashlib
 import inspect
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -52,7 +50,7 @@ class TestP1WebhookSignatureConsistency(unittest.TestCase):
 
     def test_signature_matches_body(self):
         """实证：签名计算用同一字节串"""
-        from modules.event_bus import EventBus, WebhookConfig
+        from modules.event_bus import EventBus
 
         bus = EventBus()
         secret = "test_secret"

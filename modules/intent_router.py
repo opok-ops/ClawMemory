@@ -143,7 +143,10 @@ class IntentResult:
             "label": self.label,
             "confidence": round(self.confidence, 4),
             "routing": self.routing,
-            "level": 0 if self.matched_rules else (1 if self.keyword_hits else 2 if self.fallback else 2),
+            # 路由层级：0=规则正则  1=关键词加权  2=LLM 路由  3=兜底
+            # v5.5.8 修复：原表达式 `2 if self.fallback else 2` 两支相同，
+            # 导致兜底与正常 LLM 路由无法区分，level 分级失效。
+            "level": 0 if self.matched_rules else (1 if self.keyword_hits else (3 if self.fallback else 2)),
             "matched_rules": self.matched_rules,
             "keyword_hits": self.keyword_hits,
             "top_keywords_hits": [(k, w) for k, w in list(self.keyword_hits.items())[:5]],

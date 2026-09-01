@@ -66,12 +66,14 @@ Commands:
 
 import sys
 import json
+import sqlite3
 import argparse
 import getpass
 import html
 import time
 import socket
 import ipaddress
+from typing import Any, Dict, List
 from pathlib import Path
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -490,7 +492,7 @@ def cmd_add(args):
     print(f"   隐私: {entry.privacy.value}")
     print(f"   重要性: {args.importance}")
     if entry.starred:
-        print(f"   ⭐ 已收藏")
+        print("   ⭐ 已收藏")
     cm.close()
     return 0
 
@@ -644,10 +646,10 @@ def cmd_delete(args):
 
     if not args.force:
         if not _json_mode:
-            print(c(f"\n⚠️  将删除记忆：", "yellow"))
+            print(c("\n⚠️  将删除记忆：", "yellow"))
             print(f"   [{entry.category}] {entry.preview[:60]}...")
-            print(c(f"\n确认删除？加 --force 执行（软删除，可在回收站恢复）", "yellow"))
-            print(c(f"彻底删除请加 --hard", "yellow"))
+            print(c("\n确认删除？加 --force 执行（软删除，可在回收站恢复）", "yellow"))
+            print(c("彻底删除请加 --hard", "yellow"))
         return 1
 
     success = cm.delete(
@@ -843,7 +845,7 @@ def cmd_list(args):
               f"层级: {c(entry.layer.value, layer_color)}  "
               f"重要性: {entry.importance.value}")
         if entry.starred:
-            print(f"状态:     ⭐ 已收藏")
+            print("状态:     ⭐ 已收藏")
         print(f"标签:     {', '.join(entry.tags) if entry.tags else '无'}")
         print(f"类型:     {entry.memory_type.value}")
         print(f"创建:     {format_time(entry.created_at)}  "
@@ -878,32 +880,32 @@ def cmd_stats(args):
         print(f"加密记忆数：      {c(str(stats.get('encrypted', 0)), 'purple')}")
 
         if stats.get("first_created"):
-            print(f"\n创建时间范围：")
+            print("\n创建时间范围：")
             print(f"  最早： {format_time(stats['first_created'])}")
             print(f"  最近： {format_time(stats['last_created'])}")
 
-        print(f"\n📊 平均指标：")
+        print("\n📊 平均指标：")
         print(f"  平均访问次数：   {stats.get('avg_access_count', 0)}")
         print(f"  平均记忆强度：   {stats.get('avg_strength', 0)}")
         print(f"  平均遗忘分数：   {stats.get('avg_forgetting_score', 0)}")
 
-        print(f"\n🔝 极值指标：")
+        print("\n🔝 极值指标：")
         print(f"  最高访问次数：   {stats.get('max_access_count', 0)}")
         print(f"  最低记忆强度：   {stats.get('min_strength', 0)}")
 
-        print(f"\n📂 按分类：")
+        print("\n📂 按分类：")
         for cat, count in stats.get("by_category", {}).items():
             print(f"  {cat}: {count}")
 
-        print(f"\n🧠 按层级：")
+        print("\n🧠 按层级：")
         for lay, count in stats.get("by_layer", {}).items():
             print(f"  {lay}: {count}")
 
-        print(f"\n🔐 按隐私：")
+        print("\n🔐 按隐私：")
         for pri, count in stats.get("by_privacy", {}).items():
             print(f"  {pri}: {count}")
 
-        print(f"\n⭐ 按重要性：")
+        print("\n⭐ 按重要性：")
         for imp, count in stats.get("by_importance", {}).items():
             print(f"  {imp}: {count}")
 
@@ -926,25 +928,25 @@ def cmd_stats(args):
         # v5.5.6 fix: stats() 不返回 db_path，改为显示数据库文件大小即可
         print(f"数据库路径：{args.db_path or '(默认)'}")
 
-        print(f"\n按隐私分级：")
+        print("\n按隐私分级：")
         for level, count in stats.get("by_privacy", {}).items():
             print(f"  {level}: {count}")
 
-        print(f"\n按记忆层级：")
+        print("\n按记忆层级：")
         for layer, count in stats.get("by_layer", {}).items():
             print(f"  {layer}: {count}")
 
-        print(f"\n按重要性：")
+        print("\n按重要性：")
         for level, count in stats.get("by_importance", {}).items():
             print(f"  {level}: {count}")
 
-        print(f"\n分类统计（前10）：")
+        print("\n分类统计（前10）：")
         for cat, count in list(stats.get("top_categories", {}).items())[:10]:
             print(f"  {cat}: {count}")
 
         top_tags = stats.get("top_tags", {})
         if top_tags:
-            print(f"\n标签统计（前10）：")
+            print("\n标签统计（前10）：")
             for tag, count in list(top_tags.items())[:10]:
                 print(f"  #{tag}: {count}")
 
@@ -1043,7 +1045,7 @@ def cmd_deduplicate(args):
             actor=args.agent,
             session_id=args.session,
         )
-        print(c(f"\n🔍 试运行结果（未实际删除）：", "yellow"))
+        print(c("\n🔍 试运行结果（未实际删除）：", "yellow"))
     else:
         result = cm.deduplicate(
             category=args.category,
@@ -1052,7 +1054,7 @@ def cmd_deduplicate(args):
             actor=args.agent,
             session_id=args.session,
         )
-        print(c(f"\n🗑️  去重完成：", "green"))
+        print(c("\n🗑️  去重完成：", "green"))
 
     print(f"   发现重复组：{c(str(result['duplicates_found']), 'cyan')}")
     if not actually_delete:
@@ -1220,17 +1222,17 @@ def cmd_health(args):
     print(f"数据库大小：{format_size(result['db_size_bytes'])}")
 
     idx = result["indexes"]
-    print(f"\n📊 索引状态：")
+    print("\n📊 索引状态：")
     print(f"   预期 {idx['expected']} 个，找到 {c(str(idx['found']), 'green' if idx['found'] == idx['expected'] else 'red')} 个")
     if idx["missing"]:
         print(f"   缺失：{', '.join(idx['missing'])}")
 
-    print(f"\n📋 数据一致性：")
+    print("\n📋 数据一致性：")
     print(f"   孤立 FTS 记录：    {c(str(result['fts_orphans']), 'yellow' if result['fts_orphans'] else 'green')}")
     print(f"   孤立审计日志：    {c(str(result['audit_orphans']), 'yellow' if result['audit_orphans'] else 'green')}")
     print(f"   加密不一致条目：  {c(str(result['encrypted_inconsistent']), 'red' if result['encrypted_inconsistent'] else 'green')}")
 
-    print(f"\n💡 建议：")
+    print("\n💡 建议：")
     for rec in result["recommendations"]:
         print(f"   • {rec}")
 
@@ -1251,7 +1253,7 @@ def cmd_summarize(args):
 
     print(f"\n总记忆数：{c(str(result['total']), 'cyan')}")
 
-    print(f"\n📅 近期活动：")
+    print("\n📅 近期活动：")
     print(f"   最近 7 天： {c(str(result['recent_activity']['last_7d']), 'cyan')} 条")
     print(f"   最近 30 天：{c(str(result['recent_activity']['last_30d']), 'cyan')} 条")
 
@@ -1260,12 +1262,12 @@ def cmd_summarize(args):
         print(f"\n  ▸ {c(key, 'cyan')} ({info['count']} 条)")
         print(f"    时间范围: {info['oldest'] or '-'} ~ {info['latest'] or '-'}")
         if info["samples"]:
-            print(f"    样例：")
+            print("    样例：")
             for s in info["samples"][:2]:
                 print(f"      • {s[:60]}{'...' if len(s) >= 60 else ''}")
 
     if result["top_tags"]:
-        print(f"\n🏷️  热门标签：")
+        print("\n🏷️  热门标签：")
         for tag, count in result["top_tags"][:5]:
             print(f"   #{tag}: {count}")
 
@@ -1346,12 +1348,12 @@ def cmd_analyze(args):
 
     stats = cm.stats()
 
-    print(f"\n📈 总体概览：")
+    print("\n📈 总体概览：")
     print(f"   总记忆数：        {c(str(stats['total']), 'cyan')}")
     print(f"   ⭐ 收藏数：       {c(str(stats.get('starred_count', 0)), 'yellow')}")
     print(f"   数据库大小：      {format_size(stats['db_size_bytes'])}")
 
-    print(f"\n📅 创建时间分布（最近 7 天）：")
+    print("\n📅 创建时间分布（最近 7 天）：")
     recent_counts = {}
     now = datetime.now().timestamp()
     day = 24 * 3600
@@ -1368,7 +1370,7 @@ def cmd_analyze(args):
         bar = "█" * int(cnt / max_count * 20) if max_count > 0 else ""
         print(f"   {date_str}: {bar} {c(str(cnt), 'cyan')} 条")
 
-    print(f"\n🔥 活跃度分析：")
+    print("\n🔥 活跃度分析：")
     total_access = sum(e.access_count for e in cm.list(limit=99999))
     avg_access = total_access / stats['total'] if stats['total'] > 0 else 0
     print(f"   总访问次数：      {c(str(total_access), 'purple')}")
@@ -1376,11 +1378,11 @@ def cmd_analyze(args):
 
     hot_entries = sorted(cm.list(limit=100), key=lambda e: e.access_count, reverse=True)[:5]
     if hot_entries:
-        print(f"\n   🔥 热门记忆 TOP5：")
+        print("\n   🔥 热门记忆 TOP5：")
         for i, e in enumerate(hot_entries, 1):
             print(f"      {i}. [{e.category}] {e.preview[:40]}... ({e.access_count} 次访问)")
 
-    print(f"\n🏷️ 标签分析：")
+    print("\n🏷️ 标签分析：")
     top_tags = stats.get("top_tags", {})
     if top_tags:
         tag_list = sorted(top_tags.items(), key=lambda x: x[1], reverse=True)[:10]
@@ -1458,7 +1460,7 @@ def cmd_import_md(args):
         except (ValueError, TypeError):
             skipped += 1
 
-    print(c(f"\n✅ Markdown 导入完成", "green"))
+    print(c("\n✅ Markdown 导入完成", "green"))
     print(f"   成功导入：{c(str(imported), 'green')} 条")
     print(f"   导入失败：{c(str(skipped), 'yellow')} 条")
     cm.close()
@@ -1489,7 +1491,7 @@ def cmd_migrate(args):
 
     try:
         result = cm.storage.migrate_to_latest()
-        print(c(f"\n✅ 迁移完成！", "green"))
+        print(c("\n✅ 迁移完成！", "green"))
         print(f"   迁移脚本：{result['scripts_applied']} 个")
         print(f"   耗时：{result['duration_ms']} ms")
         print(f"   当前版本：{result['final_version']}")
@@ -1576,7 +1578,7 @@ def cmd_export_html(args):
         return 1
     output_path.write_text(html_content, encoding='utf-8')
 
-    print(c(f"✅ HTML 导出完成！", "green"))
+    print(c("✅ HTML 导出完成！", "green"))
     print(f"   文件：{output_path}")
     print(f"   记忆数：{len(entries)}")
     cm.close()
@@ -1621,7 +1623,7 @@ def cmd_consolidate(args):
     print(f"   降级到感官记忆: {c(str(result['demoted_to_sensory']), 'yellow')} 条")
 
     stats = evolution.get_evolution_stats()
-    print(f"\n记忆层级分布：")
+    print("\n记忆层级分布：")
     print(f"  感官记忆: {stats['sensory']}")
     print(f"  短期记忆: {stats['short_term']}")
     print(f"  长期记忆: {stats['long_term']}")
@@ -1646,10 +1648,10 @@ def cmd_graph(args):
         print(c("知识图谱统计", "bold"))
         print(f"  实体总数: {stats['total_entities']}")
         print(f"  关系总数: {stats['total_relations']}")
-        print(f"\n  实体类型:")
+        print("\n  实体类型:")
         for etype, count in stats['entity_types'].items():
             print(f"    {etype}: {count}")
-        print(f"\n  关系类型:")
+        print("\n  关系类型:")
         for rtype, count in stats['relation_types'].items():
             print(f"    {rtype}: {count}")
 
@@ -1684,12 +1686,12 @@ def cmd_personality(args):
         print(f"  最后更新: {format_time(profile.last_updated)}")
 
         interests = pe.get_top_interests(args.user_id, 5)
-        print(f"\n  兴趣主题 TOP5:")
+        print("\n  兴趣主题 TOP5:")
         for topic, score in interests:
             print(f"    - {topic}: {score:.2f}")
 
         style = pe.get_recommended_style(args.user_id)
-        print(f"\n  推荐交流风格:")
+        print("\n  推荐交流风格:")
         for key, value in style.items():
             print(f"    - {key}: {value}")
 
@@ -1805,7 +1807,7 @@ def cmd_compliance(args):
     print(f"严格隔离：{report['strict_memories']}")
     print(f"活跃授权：{report['active_grants']}")
     print(f"合规状态：{c(report['compliance_status'], 'green' if report['compliance_status'] == 'PASS' else 'yellow')}")
-    print(f"\n按隐私分级统计：")
+    print("\n按隐私分级统计：")
     for level, count in report["by_privacy"].items():
         print(f"  {level}: {count}")
 
@@ -2076,12 +2078,12 @@ def cmd_export_csv(args):
     )
 
     size = output.stat().st_size
-    print(c(f"\n✅ CSV 导出成功", "green"))
+    print(c("\n✅ CSV 导出成功", "green"))
     print(f"   文件路径: {output}")
     print(f"   导出条数: {count}")
     print(f"   文件大小: {format_size(size)}")
     if not args.include_private:
-        print(f"   隐私过滤: 已排除 PRIVATE/STRICT 记忆")
+        print("   隐私过滤: 已排除 PRIVATE/STRICT 记忆")
     cm.close()
     return 0
 
@@ -2139,7 +2141,7 @@ def cmd_diff(args):
         lineterm="",
     )
 
-    print(c(f"\n🔀 记忆版本差异对比", "cyan"))
+    print(c("\n🔀 记忆版本差异对比", "cyan"))
     print("=" * 70)
     for line in diff:
         if line.startswith("+") and not line.startswith("+++"):
@@ -2174,7 +2176,7 @@ def cmd_space_create(args):
         policy=args.policy,
     )
     if result.get("success"):
-        print(c(f"\n✅ 记忆空间已创建", "green"))
+        print(c("\n✅ 记忆空间已创建", "green"))
         print(f"   空间 ID: {result['space_id']}")
         print(f"   名称: {result['name']}")
         print(f"   Owner: {result['owner_agent']}（已自动加入为 owner）")
@@ -2222,9 +2224,9 @@ def cmd_space_join(args):
         actor=args.agent,
     )
     if result.get("success"):
-        print(c(f"\n✅ 已加入空间", "green"))
+        print(c("\n✅ 已加入空间", "green"))
         print(f"   Agent: {result['agent_id']}（角色: {result['role']}）")
-        print(f"   提示: 需要 editor 角色共享记忆时，请联系空间 owner 调整")
+        print("   提示: 需要 editor 角色共享记忆时，请联系空间 owner 调整")
     else:
         print(c(f"\n❌ 加入失败: {result.get('error')}", "red"))
     cm.close()
@@ -2261,7 +2263,7 @@ def cmd_space_share(args):
         actor=args.agent,
     )
     if result.get("success"):
-        print(c(f"\n✅ 记忆已共享到空间", "green"))
+        print(c("\n✅ 记忆已共享到空间", "green"))
         print(f"   记忆 ID: {result['memory_id']}")
         print(f"   条目版本: v{result['version']}")
         if result.get("conflict_resolved"):
@@ -2321,14 +2323,14 @@ def cmd_space_stats(args):
         print("=" * 50)
         print(f"   成员数: {space['member_count']} | 共享记忆: {space['item_count']}")
         print(f"   策略: {space['policy']} | Owner: {space['owner_agent']}")
-        print(f"   角色分布: " + ", ".join(
+        print("   角色分布: " + ", ".join(
             f"{role}×{cnt}" for role, cnt in result["members_by_role"].items()))
         if result["top_contributors"]:
-            print(f"   贡献榜:")
+            print("   贡献榜:")
             for t in result["top_contributors"]:
                 print(f"     {t['agent_id']}: 共享 {t['shared']} 条")
     else:
-        print(c(f"\n📊 多 Agent 记忆空间全局统计", "cyan"))
+        print(c("\n📊 多 Agent 记忆空间全局统计", "cyan"))
         print("=" * 50)
         print(f"   空间总数: {result['total_spaces']}")
         print(f"   参与 Agent 数: {result['participating_agents']}")
@@ -3681,13 +3683,13 @@ def main():
     if isinstance(getattr(args, "tags", None), list):
         args.tags = _split_tags(args.tags)
 
-    _main_dispatch(args)
+    _main_dispatch(args, parser)
 
 
 def cmd_memory_importance(args):
     """记忆重要度分析（v5.3.7 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n📊 记忆重要度分析（v5.3.7）", "bold"))
+    print(c("\n📊 记忆重要度分析（v5.3.7）", "bold"))
     print("=" * 60)
     print(f"  Agent ID:    {args.agent}")
     print(f"  回溯天数:    {args.days}")
@@ -3714,7 +3716,7 @@ def cmd_memory_importance(args):
 
     # 重要度分布
     dist = result.get("importance_distribution", {})
-    print(c(f"\n📈 重要度分布", "cyan"))
+    print(c("\n📈 重要度分布", "cyan"))
     imp_colors = {"LOW": "yellow", "MEDIUM": "cyan", "HIGH": "green", "CRITICAL": "red"}
     for imp in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
         cnt = dist.get(imp, 0)
@@ -3725,7 +3727,7 @@ def cmd_memory_importance(args):
     # 漂移分析
     drift = result.get("drift_analysis", {})
     if drift:
-        print(c(f"\n📉 重要度漂移分析", "cyan"))
+        print(c("\n📉 重要度漂移分析", "cyan"))
         for imp in ("LOW", "MEDIUM", "HIGH", "CRITICAL"):
             d = drift.get(imp, {})
             dir_label = {"increasing": "↑ 上升", "decreasing": "↓ 下降", "stable": "→ 稳定"}
@@ -3751,7 +3753,7 @@ def cmd_memory_importance(args):
     # 建议
     suggestions = result.get("re-evaluation_suggestions", [])
     if suggestions:
-        print(c(f"\n💡 重评估建议", "cyan"))
+        print(c("\n💡 重评估建议", "cyan"))
         for s in suggestions:
             print(f"  • {s}")
 
@@ -3779,7 +3781,7 @@ def cmd_memory_context(args):
         cm.close()
         return 0
 
-    print(c(f"\n📥 上下文记忆注入（v5.3.7）", "bold"))
+    print(c("\n📥 上下文记忆注入（v5.3.7）", "bold"))
     print("=" * 60)
     print(f"  Agent ID:    {args.agent}")
     print(f"  查询:        {args.query}")
@@ -3796,7 +3798,7 @@ def cmd_memory_context(args):
 
     context = result.get("context", "")
     if not context:
-        print(c(f"\n⚠️  无匹配记忆可注入", "yellow"))
+        print(c("\n⚠️  无匹配记忆可注入", "yellow"))
         cm.close()
         return 0
 
@@ -3811,7 +3813,7 @@ def cmd_memory_context(args):
 def cmd_agent_emotion(args):
     """Agent 情感追踪（v5.3.7 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n😊 Agent 情感追踪（v5.3.7）", "bold"))
+    print(c("\n😊 Agent 情感追踪（v5.3.7）", "bold"))
     print("=" * 60)
     print(f"  Agent ID:    {args.agent}")
     print(f"  回溯天数:    {args.days}")
@@ -3839,7 +3841,7 @@ def cmd_agent_emotion(args):
     # 情感分布
     dist = result.get("emotion_distribution", {})
     pct = result.get("emotion_percentages", {})
-    print(c(f"\n📊 情感分布", "cyan"))
+    print(c("\n📊 情感分布", "cyan"))
     emo_label = {"joy": "喜悦", "frustration": "挫败", "calm": "平静"}
     emo_color = {"joy": "green", "frustration": "red", "calm": "cyan"}
     for e in ("joy", "frustration", "calm"):
@@ -3860,7 +3862,7 @@ def cmd_agent_emotion(args):
     # 时间线
     timeline = result.get("timeline", [])
     if timeline and len(timeline) <= 60:
-        print(c(f"\n📉 情感时间线", "cyan"))
+        print(c("\n📉 情感时间线", "cyan"))
         for t in timeline:
             dom = t["dominant"]
             bar = "█" * (t.get("total", 1))
@@ -3882,7 +3884,7 @@ def cmd_agent_emotion(args):
 def cmd_drama_genre_trend(args):
     """短剧类型趋势分析（v5.3.7 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🎭 短剧类型趋势分析（v5.3.7）", "bold"))
+    print(c("\n🎭 短剧类型趋势分析（v5.3.7）", "bold"))
     print("=" * 60)
     print(f"  回溯天数:    {args.days}")
 
@@ -3909,7 +3911,7 @@ def cmd_drama_genre_trend(args):
     # 类型分布
     dist = result.get("genre_distribution", {})
     trends = result.get("trends", {})
-    print(c(f"\n📊 类型分布与趋势", "cyan"))
+    print(c("\n📊 类型分布与趋势", "cyan"))
     print(f"{'类型':<16}{'数量':>6}{'占比':>8}{'趋势':>10}{'平均评分':>10}")
     print("-" * 60)
     for genre, cnt in sorted(dist.items(), key=lambda x: -x[1]):
@@ -3932,7 +3934,7 @@ def cmd_drama_genre_trend(args):
 def cmd_drama_binge_score(args):
     """追剧粘性评分（v5.3.7 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🔥 追剧粘性评分（v5.3.7）", "bold"))
+    print(c("\n🔥 追剧粘性评分（v5.3.7）", "bold"))
     print("=" * 60)
     print(f"  短剧 ID:    {args.drama_id}")
 
@@ -3961,7 +3963,7 @@ def cmd_drama_binge_score(args):
     # 因子分解
     factors = result.get("factors", {})
     if factors:
-        print(c(f"\n📊 因子分解", "cyan"))
+        print(c("\n📊 因子分解", "cyan"))
         print(f"{'因子':<20}{'得分':>8}{'权重':>8}{'贡献':>8}")
         print("-" * 50)
         for fname, fdata in factors.items():
@@ -3984,7 +3986,7 @@ def cmd_drama_binge_score(args):
 def cmd_char_relationship(args):
     """角色关系深度分析（v5.3.7 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n👥 角色关系深度分析（v5.3.7）", "bold"))
+    print(c("\n👥 角色关系深度分析（v5.3.7）", "bold"))
     print("=" * 60)
     print(f"  短剧 ID:    {args.drama_id}")
     print(f"  角色 1:     {args.char1}")
@@ -4020,7 +4022,7 @@ def cmd_char_relationship(args):
     # 关键场景
     key_scenes = result.get("key_scenes", [])
     if key_scenes:
-        print(c(f"\n🎬 关键场景（高互动/高冲突）", "cyan"))
+        print(c("\n🎬 关键场景（高互动/高冲突）", "cyan"))
         print(f"{'集':>4}{'场景':>6}{'交替':>6}{'冲突':>6}{'情感':>8}")
         print("-" * 40)
         for ks in key_scenes[:10]:
@@ -4032,7 +4034,7 @@ def cmd_char_relationship(args):
     # 情感发展
     progression = result.get("emotion_progression", [])
     if progression and len(progression) <= 30:
-        print(c(f"\n📈 情感发展", "cyan"))
+        print(c("\n📈 情感发展", "cyan"))
         for ep in progression:
             bar = "█" * ep.get("alternations", 1)
             print(f"  EP{ep['episode']} S{ep['scene']}  {ep['emotion']:<10} {bar}")
@@ -4064,7 +4066,7 @@ def cmd_memory_reflection(args):
         cm.close()
         return 0
 
-    print(c(f"\n🪞 记忆反思（v5.4.1）", "bold"))
+    print(c("\n🪞 记忆反思（v5.4.1）", "bold"))
     print("=" * 60)
     print(f"  Agent ID:    {args.agent}")
     print(f"  回溯天数:    {args.days}")
@@ -4083,13 +4085,13 @@ def cmd_memory_reflection(args):
 
     top_cats = result.get("top_categories", [])
     if top_cats:
-        print(c(f"\n📂 Top 分类", "cyan"))
+        print(c("\n📂 Top 分类", "cyan"))
         for t in top_cats:
             print(f"  {t['category']:<16} {t['count']:>4} 条 ({t['share']*100:.1f}%)")
 
     themes = result.get("recurring_themes", [])
     if themes:
-        print(c(f"\n🔁 反复出现的主题: ", "cyan") + "、".join(themes))
+        print(c("\n🔁 反复出现的主题: ", "cyan") + "、".join(themes))
 
     lessons = result.get("key_lessons", [])
     if lessons:
@@ -4125,7 +4127,7 @@ def cmd_memory_lineage(args):
         cm.close()
         return 0
 
-    print(c(f"\n🧬 记忆血缘溯源（v5.4.1）", "bold"))
+    print(c("\n🧬 记忆血缘溯源（v5.4.1）", "bold"))
     print("=" * 60)
     print(f"  记忆 ID:    {args.memory_id}")
 
@@ -4142,7 +4144,7 @@ def cmd_memory_lineage(args):
 
     timeline = result.get("lifecycle_timeline", [])
     if timeline:
-        print(c(f"\n🕓 生命周期时间线", "cyan"))
+        print(c("\n🕓 生命周期时间线", "cyan"))
         for ev in timeline[:20]:
             ts = ev.get("timestamp")
             ts_str = format_time(ts) if isinstance(ts, (int, float)) else str(ts)
@@ -4178,7 +4180,7 @@ def cmd_memory_diff(args):
         cm.close()
         return 0
 
-    print(c(f"\n🔄 记忆版本差异对比（v5.5.8）", "bold"))
+    print(c("\n🔄 记忆版本差异对比（v5.5.8）", "bold"))
     print("=" * 60)
     ver_a = result["version_a"]
     ver_b = result["version_b"]
@@ -4196,7 +4198,7 @@ def cmd_memory_diff(args):
     changes = result.get("changes", {})
     if changes.get("content", {}).get("changed"):
         diff = changes["content"].get("diff", "")
-        print(c(f"\n  📝 内容差异:", "cyan"))
+        print(c("\n  📝 内容差异:", "cyan"))
         for line in diff.splitlines():
             if line.startswith("+"):
                 print(c(f"  {line}", "green"))
@@ -4247,7 +4249,7 @@ def cmd_memory_reinforce(args):
         cm.close()
         return 0
 
-    print(c(f"\n💪 记忆强化候选（v5.4.1）", "bold"))
+    print(c("\n💪 记忆强化候选（v5.4.1）", "bold"))
     print("=" * 60)
     print(f"  Agent ID:    {args.agent}")
     print(f"  回溯天数:    {args.days}  |  候选上限: {args.limit}")
@@ -4280,7 +4282,7 @@ def cmd_memory_reinforce(args):
 def cmd_drama_plot_thread(args):
     """剧情伏笔线索追踪（v5.4.1 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🧵 剧情伏笔线索追踪（v5.4.1）", "bold"))
+    print(c("\n🧵 剧情伏笔线索追踪（v5.4.1）", "bold"))
     print("=" * 60)
     print(f"  短剧 ID:    {args.drama_id}")
 
@@ -4304,7 +4306,7 @@ def cmd_drama_plot_thread(args):
 
     threads = result.get("threads", [])
     if threads:
-        print(c(f"\n🔗 线索明细", "cyan"))
+        print(c("\n🔗 线索明细", "cyan"))
         for t in threads[:20]:
             status = "✅已回收" if t["status"] == "resolved" else "⏳未回收"
             print(f"  {t['thread_id']:<4} EP{t['setup_episode']}  {status}  {t['name']}")
@@ -4321,7 +4323,7 @@ def cmd_drama_plot_thread(args):
 def cmd_drama_episode_curve(args):
     """分集张力曲线（v5.4.1 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n📈 分集张力曲线（v5.4.1）", "bold"))
+    print(c("\n📈 分集张力曲线（v5.4.1）", "bold"))
     print("=" * 60)
     print(f"  短剧 ID:    {args.drama_id}")
 
@@ -4345,7 +4347,7 @@ def cmd_drama_episode_curve(args):
 
     curve = result.get("curve", [])
     if curve:
-        print(c(f"\n🎢 张力曲线", "cyan"))
+        print(c("\n🎢 张力曲线", "cyan"))
         for p in curve:
             bar = "█" * max(1, int(p["tension"] / 5))
             marker = " ← 高潮" if p["episode"] == result.get("climax_episode") else ""
@@ -4361,7 +4363,7 @@ def cmd_drama_episode_curve(args):
 def cmd_drama_screen_time(args):
     """角色戏份平衡分析（v5.4.1 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🎭 角色戏份平衡分析（v5.4.1）", "bold"))
+    print(c("\n🎭 角色戏份平衡分析（v5.4.1）", "bold"))
     print("=" * 60)
     print(f"  短剧 ID:    {args.drama_id}")
 
@@ -4388,7 +4390,7 @@ def cmd_drama_screen_time(args):
 
     chars = result.get("characters", [])
     if chars:
-        print(c(f"\n👤 角色戏份排行", "cyan"))
+        print(c("\n👤 角色戏份排行", "cyan"))
         print(f"{'#':>3}{'角色':<12}{'台词':>8}{'字数':>8}{'场景':>6}{'集数':>6}{'占比':>8}")
         print("-" * 60)
         for cs in chars[:20]:
@@ -4414,7 +4416,7 @@ def cmd_fed_acl_add(args):
         priority=args.priority, trust_min=args.trust_min,
         expires_hours=args.expires_hours, note=args.note)
     if result.get("success"):
-        print(c(f"\n✅ ACL 规则已添加", "green"))
+        print(c("\n✅ ACL 规则已添加", "green"))
         print(f"   规则 ID:   {result['rule_id']}")
         print(f"   主体:      {result['principal']}")
         print(f"   资源:      {result['resource']}")
@@ -4475,9 +4477,9 @@ def cmd_fed_acl_check(args):
         operation=args.operation, peer_trust=args.trust,
         memory_category=args.category, memory_tags=args.tags)
     if result["allowed"]:
-        print(c(f"\n✅ 允许访问", "green"))
+        print(c("\n✅ 允许访问", "green"))
     else:
-        print(c(f"\n❌ 拒绝访问", "red"))
+        print(c("\n❌ 拒绝访问", "red"))
     print(f"   Peer:      {args.peer}")
     print(f"   记忆:      {args.memory_id}")
     print(f"   操作:      {args.operation}")
@@ -4491,7 +4493,7 @@ def cmd_fed_acl_stats(args):
     """联邦 ACL：统计（v5.4.2 新增）"""
     cm = _get_memory(args)
     s = cm.federated_acl.acl_stats()
-    print(c(f"\n🛡️  联邦 ACL 统计", "bold"))
+    print(c("\n🛡️  联邦 ACL 统计", "bold"))
     print("=" * 40)
     print(f"   规则总数:     {s['total_rules']}")
     for eff, cnt in s.get("by_effect", {}).items():
@@ -4535,7 +4537,7 @@ def cmd_share_conflict_resolve(args):
     cm = _get_memory(args)
     result = cm.share_conflict.resolve(args.conflict_id, args.strategy, actor=args.actor)
     if result.get("success"):
-        print(c(f"\n✅ 冲突已解决", "green"))
+        print(c("\n✅ 冲突已解决", "green"))
         print(f"   冲突 ID:   {args.conflict_id}")
         print(f"   策略:      {args.strategy}")
         print(f"   结果:      {result['resolution']}")
@@ -4564,7 +4566,7 @@ def cmd_share_conflict_stats(args):
     """共享冲突：统计（v5.4.2 新增）"""
     cm = _get_memory(args)
     s = cm.share_conflict.stats()
-    print(c(f"\n⚔️  共享冲突统计", "bold"))
+    print(c("\n⚔️  共享冲突统计", "bold"))
     print("=" * 40)
     print(f"   冲突总数:   {s['total_conflicts']}")
     print(c(f"   待处理:     {s['open']}", "red" if s["open"] else "green"))
@@ -4584,7 +4586,7 @@ def cmd_share_conflict_stats(args):
 def cmd_intent_router(args):
     """意图分类路由 CLI 入口"""
     cm = _get_memory(args)
-    print(c(f"\n🧭 意图分类路由（v5.3.9）", "bold"))
+    print(c("\n🧭 意图分类路由（v5.3.9）", "bold"))
     print("=" * 60)
     try:
         result = cm.classify_intent(args.text, force=getattr(args, "force", None))
@@ -4619,7 +4621,7 @@ def cmd_intent_router(args):
 def cmd_conflict_scan(args):
     """矛盾扫描 + 自动衰减 CLI 入口"""
     cm = _get_memory(args)
-    print(c(f"\n⚡ 矛盾扫描 + 自动衰减（v5.3.9）", "bold"))
+    print(c("\n⚡ 矛盾扫描 + 自动衰减（v5.3.9）", "bold"))
     print("=" * 60)
     try:
         result = cm.scan_conflicts(
@@ -4668,7 +4670,7 @@ def cmd_conflict_scan(args):
 def cmd_skill_extract(args):
     """记忆→技能模板抽取 CLI 入口"""
     cm = _get_memory(args)
-    print(c(f"\n🧠 记忆 → 技能模板抽取（v5.3.9）", "bold"))
+    print(c("\n🧠 记忆 → 技能模板抽取（v5.3.9）", "bold"))
     print("=" * 60)
     try:
         result = cm.extract_skills(
@@ -4771,7 +4773,7 @@ def cmd_rerank_search(args):
 def cmd_session_focus(args):
     """会话焦点聚类 + 漂移检测 CLI 入口"""
     cm = _get_memory(args)
-    print(c(f"\n🎯 会话焦点分析（v5.3.9）", "bold"))
+    print(c("\n🎯 会话焦点分析（v5.3.9）", "bold"))
     print("=" * 60)
     # 解析 --messages/-m role:content
     msgs: List[Dict[str, Any]] = []
@@ -4823,8 +4825,14 @@ def cmd_session_focus(args):
     return 0
 
 
-def _main_dispatch(args):
-    """命令分发（v5.3.7 重构：将 commands dict 和 dispatch 逻辑独立）"""
+def _main_dispatch(args, parser=None):
+    """命令分发（v5.3.7 重构：将 commands dict 和 dispatch 逻辑独立）
+
+    Args:
+        args: argparse 解析结果
+        parser: 主 ArgumentParser 实例，用于未知命令时打印帮助
+                （v5.5.8 修复：此前引用了 main() 的局部 parser，触发 NameError）
+    """
     commands = {
         "init": cmd_init,
         "add": cmd_add,
@@ -5047,7 +5055,10 @@ def _main_dispatch(args):
     if cmd:
         sys.exit(cmd(args) or 0)
     else:
-        parser.print_help()
+        if parser is not None:
+            parser.print_help()
+        else:
+            print(f"未知命令: {args.command}")
         sys.exit(1)
 
 
@@ -5101,15 +5112,15 @@ def cmd_embedding_status(args):
         return 1
 
     if status["available"]:
-        print(c(f"  状态:       ✅ 可用", "green"))
+        print(c("  状态:       ✅ 可用", "green"))
         print(f"  模型:       {status['model_name']}")
         print(f"  维度:       {status['dimension']}")
         print(f"  向量数量:   {status['embedding_count']}")
     else:
-        print(c(f"  状态:       ❌ 不可用", "red"))
-        print(c(f"  原因:       sentence-transformers 未安装", "yellow"))
-        print(c(f"  安装命令:   pip install sentence-transformers", "cyan"))
-        print(f"\n  注意: 向量检索不可用时，搜索自动降级为 TF-IDF + Fuzzy")
+        print(c("  状态:       ❌ 不可用", "red"))
+        print(c("  原因:       sentence-transformers 未安装", "yellow"))
+        print(c("  安装命令:   pip install sentence-transformers", "cyan"))
+        print("\n  注意: 向量检索不可用时，搜索自动降级为 TF-IDF + Fuzzy")
 
     cm.close()
     return 0
@@ -5121,7 +5132,7 @@ def cmd_cleanup(args):
 
     count = cm.cleanup(max_age_hours=args.hours, layer=args.layer)
 
-    print(c(f"\n✅ 清理完成", "green"))
+    print(c("\n✅ 清理完成", "green"))
     print(f"   清理了 {count} 条过期记忆（层级: {args.layer}, 超过 {args.hours} 小时）")
 
     cm.close()
@@ -5132,7 +5143,7 @@ def cmd_archive(args):
     """自动归档过期记忆（v5.4.6 新增）"""
     cm = _get_memory(args)
     result = cm.auto_archive(max_age_hours=args.hours, layer=args.layer)
-    print(c(f"\n✅ 归档完成（v5.4.6）", "green"))
+    print(c("\n✅ 归档完成（v5.4.6）", "green"))
     print(f"   归档了 {result['archived']} 条记忆（层级: {result['layer']}, 超过 {result['max_age_hours']} 小时）")
     print(c("   使用 archived-list 查看归档记录，archived-restore 恢复", "cyan"))
     cm.close()
@@ -5163,7 +5174,7 @@ def cmd_archived_restore(args):
     cm = _get_memory(args)
     result = cm.restore_archived(args.archive_id)
     if result.get("restored"):
-        print(c(f"\n✅ 恢复成功", "green"))
+        print(c("\n✅ 恢复成功", "green"))
         print(f"   记忆 ID: {result.get('memory_id', '')}")
     else:
         print(c(f"\n❌ 恢复失败: {result.get('error', '未知错误')}", "red"))
@@ -5175,7 +5186,7 @@ def cmd_archived_purge(args):
     """永久删除过期归档记忆（v5.4.6 新增）"""
     cm = _get_memory(args)
     count = cm.purge_archived(older_than_days=args.older_than_days)
-    print(c(f"\n✅ 清理完成", "green"))
+    print(c("\n✅ 清理完成", "green"))
     print(f"   永久删除了 {count} 条归档记忆（超过 {args.older_than_days} 天）")
     cm.close()
     return 0
@@ -5191,7 +5202,7 @@ def cmd_export_obsidian(args):
         layer=layer,
         starred_only=args.starred,
     )
-    print(c(f"\n✅ Obsidian Vault 导出完成（v5.4.6）", "green"))
+    print(c("\n✅ Obsidian Vault 导出完成（v5.4.6）", "green"))
     print(f"   导出目录: {result['output_dir']}")
     print(f"   导出记忆: {result['exported']} 条")
     if result['errors']:
@@ -5214,16 +5225,16 @@ def cmd_batch_add(args):
         with open(input_path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except json.JSONDecodeError:
-        print(c(f"\n❌ JSON 解析失败", "red"))
+        print(c("\n❌ JSON 解析失败", "red"))
         return 1
 
     entries = data.get("memories", data)
     if not isinstance(entries, list):
-        print(c(f"\n❌ 数据格式错误：必须是 memories 列表", "red"))
+        print(c("\n❌ 数据格式错误：必须是 memories 列表", "red"))
         return 1
 
     count = cm.batch_add(entries)
-    print(c(f"\n✅ 批量添加完成", "green"))
+    print(c("\n✅ 批量添加完成", "green"))
     print(f"   成功添加 {count} 条记忆（共 {len(entries)} 条）")
 
     cm.close()
@@ -5287,7 +5298,6 @@ def cmd_import_url(args):
     cm = _get_memory(args)
 
     try:
-        import urllib.request
         import http.client
         import ssl
         import re
@@ -5332,7 +5342,7 @@ def cmd_import_url(args):
             layer=MemoryLayer.from_string(args.layer),
         )
 
-        print(c(f"\n✅ URL 导入完成", "green"))
+        print(c("\n✅ URL 导入完成", "green"))
         print(f"   标题: {title}")
         print(f"   内容: {text_content[:100]}...")
         print(f"   ID: {entry.id[:16]}...")
@@ -5397,7 +5407,7 @@ def cmd_export_xml(args):
 
     output_path.write_text(final_xml, encoding='utf-8')
 
-    print(c(f"\n✅ XML 导出完成！", "green"))
+    print(c("\n✅ XML 导出完成！", "green"))
     print(f"   文件：{output_path}")
     print(f"   记忆数：{len(entries)}")
     cm.close()
@@ -5483,7 +5493,7 @@ def cmd_import_xml(args):
         except (ValueError, TypeError):
             skipped += 1
 
-    print(c(f"\n✅ XML 导入完成", "green"))
+    print(c("\n✅ XML 导入完成", "green"))
     print(f"   成功导入：{c(str(imported), 'green')} 条")
     print(f"   导入失败：{c(str(skipped), 'yellow')} 条")
     cm.close()
@@ -5536,7 +5546,7 @@ def cmd_export_json(args):
     indent = 2 if args.pretty else None
     output_path.write_text(json.dumps(export_data, ensure_ascii=False, indent=indent), encoding='utf-8')
 
-    print(c(f"\n✅ JSON 导出完成！", "green"))
+    print(c("\n✅ JSON 导出完成！", "green"))
     print(f"   文件：{output_path}")
     print(f"   记忆数：{len(entries)}")
     cm.close()
@@ -5594,7 +5604,7 @@ def cmd_import_json(args):
             skip_duplicates=not args.force,
             dedup_threshold=dedup_threshold,
         )
-        print(c(f"\n✅ JSON 导入完成（智能去重）", "green"))
+        print(c("\n✅ JSON 导入完成（智能去重）", "green"))
         print(f"   成功导入：{c(str(stats['imported']), 'green')} 条")
         print(f"   去重跳过：{c(str(stats.get('deduped', 0)), 'purple')} 条")
         print(f"   ID 重复：{c(str(stats['skipped']), 'yellow')} 条")
@@ -5616,7 +5626,7 @@ def cmd_import_json(args):
             except (ValueError, TypeError):
                 skipped += 1
 
-        print(c(f"\n✅ JSON 导入完成", "green"))
+        print(c("\n✅ JSON 导入完成", "green"))
         print(f"   成功导入：{c(str(imported), 'green')} 条")
         print(f"   导入失败：{c(str(skipped), 'yellow')} 条")
     cm.close()
@@ -5666,7 +5676,7 @@ def cmd_import_csv(args):
         dedup_threshold=dedup_threshold,
     )
 
-    print(c(f"\n✅ CSV 导入完成", "green"))
+    print(c("\n✅ CSV 导入完成", "green"))
     print(f"   成功导入：{c(str(stats['imported']), 'green')} 条")
     if stats.get('deduped', 0) > 0:
         print(f"   去重跳过：{c(str(stats['deduped']), 'purple')} 条")
@@ -5725,7 +5735,7 @@ def cmd_merge(args):
         except (ValueError, TypeError):
             skipped += 1
 
-    print(c(f"\n✅ 合并完成", "green"))
+    print(c("\n✅ 合并完成", "green"))
     print(f"   已合并：{c(str(merged), 'green')} 组")
     print(f"   合并失败：{c(str(skipped), 'yellow')} 组")
     cm.close()
@@ -5982,7 +5992,7 @@ def cmd_config(args):
     print(f"  版本: v{__version__}")
 
     stats = cm.stats()
-    print(f"\n📊 记忆统计:")
+    print("\n📊 记忆统计:")
     print(f"  总记忆数: {stats['total']}")
     print(f"  分类数: {len(stats.get('top_categories', {}))}")
     print(f"  收藏数: {stats.get('starred_count', 0)}")
@@ -6056,7 +6066,7 @@ def cmd_doctor(args):
                 print("  ✅ 已迁移到最新版本")
                 fixes_applied += 1
             else:
-                issues.append(f"数据库版本落后，建议运行 migrate --force")
+                issues.append("数据库版本落后，建议运行 migrate --force")
     except (sqlite3.OperationalError, ValueError) as e:
         print(f"  ⚠️  无法获取版本: {e}")
 
@@ -6110,7 +6120,7 @@ def cmd_find(args):
     if args.limit:
         results = results[:args.limit]
 
-    print(c(f"\n🔍 高级查找结果", "bold"))
+    print(c("\n🔍 高级查找结果", "bold"))
     print(f"   匹配 {c(str(total), 'cyan')} 条记忆" + (f"（显示前 {len(results)} 条）" if args.limit and total > args.limit else ""))
 
     for entry in results:
@@ -6147,7 +6157,7 @@ def cmd_export_excel(args):
     )
 
     size = path.stat().st_size
-    print(c(f"\n✅ Excel 导出成功", "green"))
+    print(c("\n✅ Excel 导出成功", "green"))
     print(f"   文件路径: {path}")
     print(f"   文件大小: {format_size(size)}")
     cm.close()
@@ -6177,7 +6187,7 @@ def cmd_import_excel(args):
         target_layer=layer,
     )
 
-    print(c(f"\n✅ Excel 导入完成", "green"))
+    print(c("\n✅ Excel 导入完成", "green"))
     print(f"   成功导入：{c(str(stats['imported']), 'green')} 条")
     print(f"   跳过重复：{c(str(stats['skipped']), 'yellow')} 条")
     print(f"   导入失败：{c(str(stats['failed']), 'red')} 条")
@@ -6369,7 +6379,7 @@ def cmd_merge_tags(args):
 
     source_tags = [t.strip() for t in args.source.split(",") if t.strip()]
 
-    print(c(f"\n合并标签确认:", "yellow"))
+    print(c("\n合并标签确认:", "yellow"))
     print(f"   源标签: {', '.join(source_tags)}")
     print(f"   目标标签: {args.target}")
 
@@ -6408,7 +6418,7 @@ def cmd_db_backup(args):
     result = cm.create_backup(backup_dir=str(backup_dir))
 
     if result["success"]:
-        print(c(f"\n✅ 备份成功", "green"))
+        print(c("\n✅ 备份成功", "green"))
         print(f"   文件: {result['filename']}")
         print(f"   路径: {result['path']}")
         print(f"   大小: {result['size_mb']} MB")
@@ -6471,7 +6481,7 @@ def cmd_db_restore(args):
         cm.close()
         return 1
 
-    print(c(f"\n⚠️  恢复备份警告:", "yellow"))
+    print(c("\n⚠️  恢复备份警告:", "yellow"))
     print(f"   备份文件: {backup_file}")
     print(f"   恢复前自动备份: {'否' if args.no_pre_backup else '是'}")
     print(c("\n   此操作将覆盖当前数据库！", "red"))
@@ -6508,7 +6518,7 @@ def cmd_db_clean_backups(args):
     backups = cm.list_backups(backup_dir=args.dir)
     will_delete = max(0, len(backups) - args.keep)
 
-    print(c(f"\n🧹 清理旧备份", "yellow"))
+    print(c("\n🧹 清理旧备份", "yellow"))
     print(f"   当前备份数: {len(backups)}")
     print(f"   保留数量: {args.keep}")
     print(f"   将删除: {will_delete} 个")
@@ -6546,7 +6556,7 @@ def cmd_drama_add(args):
         tags=args.tags,
         cover_url=args.cover,
     )
-    print(c(f"\n✅ 短剧已添加", "green"))
+    print(c("\n✅ 短剧已添加", "green"))
     print(f"   ID: {drama.id}")
     print(f"   标题: {drama.title}")
     print(f"   类型: {drama.genre.value}")
@@ -6596,7 +6606,7 @@ def cmd_drama_get(args):
         cm.close()
         return 1
 
-    print(c(f"\n📺 短剧详情", "bold"))
+    print(c("\n📺 短剧详情", "bold"))
     print("=" * 50)
     print(f"标题:   {drama.title}")
     print(f"ID:     {drama.id}")
@@ -6628,7 +6638,7 @@ def cmd_drama_get(args):
 
     lines = cm.classic_lines(drama_id=drama.id, limit=3)
     if lines:
-        print(f"\n经典台词:")
+        print("\n经典台词:")
         for l in lines[:3]:
             char = l.character_name or "未知"
             print(f'   "{l.line_text[:80]}" — {char}')
@@ -6693,7 +6703,7 @@ def cmd_drama_stats(args):
     """短剧统计（v5.2.1 新增）"""
     cm = _get_memory(args)
     stats = cm.drama_stats()
-    print(c(f"\n📊 短剧统计", "bold"))
+    print(c("\n📊 短剧统计", "bold"))
     print("=" * 40)
     print(f"短剧总数:   {stats['total']}")
     print(f"在看:       {stats['watching']}")
@@ -6701,11 +6711,11 @@ def cmd_drama_stats(args):
     print(f"台词总数:   {stats['total_lines']}")
     print(f"经典台词:   {stats['classic_lines']}")
     if stats['by_genre']:
-        print(f"\n按类型:")
+        print("\n按类型:")
         for genre, cnt in stats['by_genre'].items():
             print(f"  {genre}: {cnt}")
     if stats['by_status']:
-        print(f"\n按状态:")
+        print("\n按状态:")
         for status, cnt in stats['by_status'].items():
             print(f"  {status}: {cnt}")
     cm.close()
@@ -6745,7 +6755,7 @@ def cmd_drama_progress(args):
     """观看进度统计（v5.2.2 新增）"""
     cm = _get_memory(args)
     progress = cm.drama_watching_progress()
-    print(c(f"\n📈 观看进度统计", "bold"))
+    print(c("\n📈 观看进度统计", "bold"))
     print("=" * 50)
     print(f"短剧总数:   {progress['total_dramas']}")
     print(f"规划总集数: {progress['total_planned_episodes']}")
@@ -6755,7 +6765,7 @@ def cmd_drama_progress(args):
     print(f"完成度:     {c(f'{rate}%', rate_color)}")
 
     if progress['by_genre']:
-        print(f"\n按类型分布:")
+        print("\n按类型分布:")
         for genre, data in progress['by_genre'].items():
             genre_rate = 0.0
             if data['total_planned'] > 0:
@@ -6773,7 +6783,7 @@ def cmd_drama_export(args):
             output_path=args.output,
             drama_ids=args.ids,
         )
-        print(c(f"\n✅ 短剧数据已导出", "green"))
+        print(c("\n✅ 短剧数据已导出", "green"))
         print(f"   文件: {args.output}")
         print(f"   数量: {count} 部")
     except (OSError, ValueError) as e:
@@ -6789,7 +6799,7 @@ def cmd_drama_export(args):
 def cmd_drama_import(args):
     """从 JSON 批量导入短剧（v5.2.9 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n📥 批量导入短剧", "bold"))
+    print(c("\n📥 批量导入短剧", "bold"))
     print("=" * 60)
     print(f"  输入文件:    {args.input}")
     print(f"  已存在处理:  {'覆盖（不跳过）' if args.overwrite else '跳过'}")
@@ -6822,7 +6832,7 @@ def cmd_drama_import(args):
 def cmd_drama_stars(args):
     """高分短剧排行榜（v5.2.9 新增，别名 drama-stars）"""
     cm = _get_memory(args)
-    print(c(f"\n⭐ 高分短剧排行榜", "bold"))
+    print(c("\n⭐ 高分短剧排行榜", "bold"))
     print("=" * 60)
     print(f"  类型过滤:   {args.genre or '全部'}")
     print(f"  最低评分:   ≥ {args.min_rating}")
@@ -6859,7 +6869,7 @@ def cmd_drama_stars(args):
 def cmd_scene_list_lines(args):
     """按场次列出台词（v5.2.9 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🎬 场次台词", "bold"))
+    print(c("\n🎬 场次台词", "bold"))
     print("=" * 60)
     print(f"  场次 ID:  {args.scene_id}")
     print(f"  Limit:    {args.limit}")
@@ -6877,7 +6887,6 @@ def cmd_scene_list_lines(args):
         return 0
 
     print(f"\n共 {c(str(len(lines)), 'cyan')} 条：")
-    from datetime import datetime
     for i, l in enumerate(lines, 1):
         char = (l.character_name or "未知")[:12]
         classic = "⭐" if l.is_classic else "  "
@@ -6892,7 +6901,7 @@ def cmd_scene_list_lines(args):
 def cmd_char_list_lines(args):
     """按角色列出台词（v5.2.9 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🧑 角色台词", "bold"))
+    print(c("\n🧑 角色台词", "bold"))
     print("=" * 60)
     print(f"  角色 ID:    {args.char_id}")
     print(f"  限定短剧:   {args.drama_id or '全部'}")
@@ -6929,7 +6938,7 @@ def cmd_char_list_lines(args):
 def cmd_drama_info(args):
     """短剧深度统计（v5.3.0 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n📊 短剧深度统计", "bold"))
+    print(c("\n📊 短剧深度统计", "bold"))
     print("=" * 60)
 
     info = cm.drama_info(drama_id=args.drama_id)
@@ -6944,7 +6953,7 @@ def cmd_drama_info(args):
     print(f"  状态:       {info['status']}")
     print(f"  评分:       {c(str(round(info['rating'], 1)) + '★', 'yellow')}")
     print(f"  总集数:     {info['total_episodes']}  |  当前: {info['current_episode']}")
-    print(f"\n  📋 内容统计:")
+    print("\n  📋 内容统计:")
     print(f"     场次数:     {info['scene_count']}")
     print(f"     角色数:     {info['character_count']}")
     print(f"     台词数:     {c(str(info['line_count']), 'cyan')}")
@@ -6953,13 +6962,13 @@ def cmd_drama_info(args):
     print(f"     平均台词:   {info['avg_line_length']} 字/条")
 
     if info.get("episode_distribution"):
-        print(f"\n  📺 每集台词分布:")
+        print("\n  📺 每集台词分布:")
         for ep, cnt in info["episode_distribution"].items():
             bar = "█" * min(cnt, 40)
             print(f"     EP{ep}: {bar} {cnt}")
 
     if info.get("top_characters_by_lines"):
-        print(f"\n  🧑 台词最多角色 Top-5:")
+        print("\n  🧑 台词最多角色 Top-5:")
         for i, ch in enumerate(info["top_characters_by_lines"], 1):
             print(f"     {i}. {ch['name']}: {ch['line_count']} 条")
 
@@ -6970,14 +6979,14 @@ def cmd_drama_info(args):
 def cmd_line_random(args):
     """随机抽取台词（v5.3.0 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🎲 随机台词", "bold"))
+    print(c("\n🎲 随机台词", "bold"))
     print("=" * 60)
     if args.drama_id:
         print(f"  限定短剧:  {args.drama_id}")
     if args.char_id:
         print(f"  限定角色:  {args.char_id}")
     if args.classic:
-        print(f"  仅经典:    是")
+        print("  仅经典:    是")
     print(f"  抽取数量:  {args.count}")
 
     lines = cm.random_lines(
@@ -7007,7 +7016,7 @@ def cmd_line_random(args):
 def cmd_char_profile(args):
     """角色画像分析（v5.3.0 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🧑 角色画像", "bold"))
+    print(c("\n🧑 角色画像", "bold"))
     print("=" * 60)
 
     profile = cm.character_profile(
@@ -7024,12 +7033,12 @@ def cmd_char_profile(args):
     print(f"  角色 ID:      {profile['character_id']}")
     if profile.get("drama_id"):
         print(f"  限定短剧:     {profile['drama_id']}")
-    print(f"\n  📋 台词统计:")
+    print("\n  📋 台词统计:")
     print(f"     总台词:     {c(str(profile['total_lines']), 'cyan')}")
     print(f"     经典台词:   {profile['classic_lines']} ({profile['classic_ratio']}%)")
     print(f"     总字数:     {profile['total_text_chars']}")
     print(f"     平均长度:   {profile['avg_line_length']} 字/条")
-    print(f"\n  🎬 出场统计:")
+    print("\n  🎬 出场统计:")
     print(f"     场次:       {profile['scene_appearances']}")
     print(f"     短剧数:     {profile['drama_appearances']}")
 
@@ -7037,7 +7046,7 @@ def cmd_char_profile(args):
         print(f"     出场短剧:   {', '.join(profile['drama_ids'][:5])}")
 
     if profile.get("longest_line"):
-        print(f"\n  💬 代表性台词（最长）:")
+        print("\n  💬 代表性台词（最长）:")
         print(f'     "{profile["longest_line"]}"')
 
     cm.close()
@@ -7059,12 +7068,12 @@ def cmd_line_add(args):
         is_classic=args.classic,
         tags=args.tags,
     )
-    print(c(f"\n✅ 台词已添加", "green"))
+    print(c("\n✅ 台词已添加", "green"))
     print(f"   ID: {line.id}")
     char = line.character_name or "未知"
     print(f'   "{line.line_text}" — {char}')
     if line.is_classic:
-        print(f"   ⭐ 经典台词")
+        print("   ⭐ 经典台词")
     cm.close()
     return 0
 
@@ -7189,7 +7198,7 @@ def cmd_char_add(args):
         avatar_url=args.avatar,
         tags=args.tags,
     )
-    print(c(f"\n✅ 角色已添加", "green"))
+    print(c("\n✅ 角色已添加", "green"))
     print(f"   ID: {char.id}")
     print(f"   姓名: {char.name}")
     print(f"   定位: {char.role}")
@@ -7230,7 +7239,7 @@ def cmd_char_get(args):
         cm.close()
         return 1
 
-    print(c(f"\n👤 角色详情", "bold"))
+    print(c("\n👤 角色详情", "bold"))
     print("=" * 40)
     print(f"姓名:   {char.name}")
     print(f"ID:     {char.id}")
@@ -7246,7 +7255,7 @@ def cmd_char_get(args):
 
     lines = cm.list_lines(character_id=char.id, limit=5)
     if lines:
-        print(f"\n代表台词（最近5条）:")
+        print("\n代表台词（最近5条）:")
         for l in lines[:5]:
             print(f'   "{l.line_text[:60]}"')
 
@@ -7314,7 +7323,7 @@ def cmd_scene_add(args):
         time_of_day=args.time,
         tags=args.tags,
     )
-    print(c(f"\n✅ 场次已添加", "green"))
+    print(c("\n✅ 场次已添加", "green"))
     print(f"   ID: {scene.id}")
     print(f"   EP{scene.episode} - 场{scene.scene_number}: {scene.title}")
     if scene.location:
@@ -7352,7 +7361,7 @@ def cmd_scene_get(args):
         cm.close()
         return 1
 
-    print(c(f"\n🎬 场次详情", "bold"))
+    print(c("\n🎬 场次详情", "bold"))
     print("=" * 40)
     print(f"标题:   EP{scene.episode} - 场{scene.scene_number}: {scene.title}")
     print(f"ID:     {scene.id}")
@@ -7428,7 +7437,7 @@ def cmd_agent_stats(args):
     """Agent 记忆统计（v5.2.2 新增）"""
     cm = _get_memory(args)
     stats = cm.agent_stats(agent_id=args.agent)
-    print(c(f"\n🤖 Agent 记忆统计", "bold"))
+    print(c("\n🤖 Agent 记忆统计", "bold"))
     print("=" * 50)
 
     if args.agent:
@@ -7439,18 +7448,18 @@ def cmd_agent_stats(args):
             from datetime import datetime
             print(f"最后活跃:   {datetime.fromtimestamp(stats['last_active']).strftime('%Y-%m-%d %H:%M')}")
         if stats['by_category']:
-            print(f"\n按分类:")
+            print("\n按分类:")
             for cat, cnt in sorted(stats['by_category'].items(), key=lambda x: x[1], reverse=True)[:10]:
                 print(f"  {cat}: {cnt}")
         if stats['by_layer']:
-            print(f"\n按层级:")
+            print("\n按层级:")
             for layer, cnt in stats['by_layer'].items():
                 print(f"  {layer}: {cnt}")
     else:
         # 全部 Agent 概览
         print(f"Agent 总数: {stats['total_agents']}")
         if stats['by_agent']:
-            print(f"\n按 Agent 分布:")
+            print("\n按 Agent 分布:")
             for agent, data in sorted(stats['by_agent'].items(), key=lambda x: x[1]['count'], reverse=True)[:15]:
                 count = data['count']
                 cats = ', '.join(data['top_categories'][:3]) if data['top_categories'] else '无'
@@ -7476,7 +7485,7 @@ def cmd_agent_list(args):
 def cmd_evolve(args):
     """记忆演化（v5.2.2 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🧠 记忆演化", "bold"))
+    print(c("\n🧠 记忆演化", "bold"))
     print("=" * 50)
 
     result = cm.evolve_memories(dry_run=args.dry_run)
@@ -7495,7 +7504,7 @@ def cmd_evolve(args):
         print(f"  实际升级到永久: {result.get('upgraded_to_permanent', 0)} 条")
 
     if args.dry_run:
-        print(f"\n💡 使用 evolve（不加 --dry-run）执行实际演化")
+        print("\n💡 使用 evolve（不加 --dry-run）执行实际演化")
     cm.close()
     return 0
 
@@ -7503,7 +7512,7 @@ def cmd_evolve(args):
 def cmd_agent_transfer(args):
     """迁移 Agent 记忆（v5.2.2 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🔄 Agent 记忆迁移", "bold"))
+    print(c("\n🔄 Agent 记忆迁移", "bold"))
     print("=" * 50)
     print(f"  源 Agent:   {args.from_agent}")
     print(f"  目标 Agent: {args.to_agent}")
@@ -7524,7 +7533,7 @@ def cmd_agent_transfer(args):
 def cmd_agent_clean(args):
     """清理 Agent 旧记忆（v5.2.2 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🧹 Agent 记忆清理", "bold"))
+    print(c("\n🧹 Agent 记忆清理", "bold"))
     print("=" * 50)
     print(f"  Agent ID:           {args.agent}")
     print(f"  清理天数阈值:       {args.days} 天")
@@ -7547,7 +7556,7 @@ def cmd_agent_clean(args):
         print(f"  已清理:       {c(str(result.get('cleaned', 0)) + ' 条', 'green')}")
 
     if args.dry_run:
-        print(f"\n💡 使用 agent-clean（不加 --dry-run）执行实际清理")
+        print("\n💡 使用 agent-clean（不加 --dry-run）执行实际清理")
     cm.close()
     return 0
 
@@ -7557,7 +7566,7 @@ def cmd_agent_clean(args):
 def cmd_agent_list_memories(args):
     """列出 Agent 记忆（v5.2.9 新增，表格/JSON 双格式）"""
     cm = _get_memory(args)
-    print(c(f"\n🧠 Agent 记忆列表", "bold"))
+    print(c("\n🧠 Agent 记忆列表", "bold"))
     print("=" * 60)
     print(f"  Agent ID:  {args.agent}")
     print(f"  Limit:     {args.limit}")
@@ -7595,7 +7604,7 @@ def cmd_agent_list_memories(args):
 def cmd_agent_rank(args):
     """Agent 记忆排行榜（v5.2.9 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🏆 Agent 记忆排行榜", "bold"))
+    print(c("\n🏆 Agent 记忆排行榜", "bold"))
     print("=" * 60)
     print(f"  排序维度: {args.by}")
     print(f"  Limit:    {args.limit}")
@@ -7636,7 +7645,7 @@ def cmd_agent_rank(args):
 def cmd_agent_forget(args):
     """遗忘 Agent 低质量旧记忆（v5.2.9 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🗑️  Agent 智能遗忘", "bold"))
+    print(c("\n🗑️  Agent 智能遗忘", "bold"))
     print("=" * 60)
     print(f"  Agent ID:            {args.agent}")
     print(f"  质量分数阈值:        < {args.min_score}/100")
@@ -7676,7 +7685,7 @@ def cmd_agent_forget(args):
 def cmd_agent_profile(args):
     """Agent 记忆画像（v5.3.0 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🧠 Agent 记忆画像", "bold"))
+    print(c("\n🧠 Agent 记忆画像", "bold"))
     print("=" * 60)
 
     profile = cm.agent_profile(agent_id=args.agent)
@@ -7700,29 +7709,29 @@ def cmd_agent_profile(args):
     print(f"  最近活跃:       {c(last, 'green')}")
 
     if profile.get("by_layer"):
-        print(f"\n  📊 层级分布:")
+        print("\n  📊 层级分布:")
         for layer, cnt in profile["by_layer"].items():
             print(f"     {layer}: {cnt}")
 
     if profile.get("by_category"):
-        print(f"\n  📁 分类分布 Top-10:")
+        print("\n  📁 分类分布 Top-10:")
         for cat, cnt in profile["by_category"].items():
             print(f"     {cat}: {cnt}")
 
     if profile.get("by_importance"):
-        print(f"\n  ⚡ 重要度分布:")
+        print("\n  ⚡ 重要度分布:")
         for imp, cnt in profile["by_importance"].items():
             print(f"     {imp}: {cnt}")
 
     print(f"\n  ⭐ 收藏: {profile.get('starred_count', 0)}  |  📌 置顶: {profile.get('pinned_count', 0)}")
 
     if profile.get("top_tags"):
-        print(f"\n  🏷️  知识领域 Top-10:")
+        print("\n  🏷️  知识领域 Top-10:")
         for t in profile["top_tags"]:
             print(f"     {t['tag']}: {t['count']}")
 
     if profile.get("activity_timeline_30d"):
-        print(f"\n  📈 近 30 天活跃:")
+        print("\n  📈 近 30 天活跃:")
         for day, cnt in sorted(profile["activity_timeline_30d"].items())[-7:]:
             bar = "█" * min(cnt, 30)
             print(f"     {day}: {bar} {cnt}")
@@ -7742,7 +7751,7 @@ def cmd_agent_profile(args):
 def cmd_agent_merge(args):
     """合并两个 Agent 的记忆（v5.3.0 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🔀 Agent 记忆合并", "bold"))
+    print(c("\n🔀 Agent 记忆合并", "bold"))
     print("=" * 60)
     print(f"  源 Agent:    {args.from_agent}")
     print(f"  目标 Agent:  {args.to_agent}")
@@ -7778,7 +7787,7 @@ def cmd_agent_merge(args):
 def cmd_agent_export(args):
     """导出 Agent 记忆为 JSON 包（v5.3.0 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n📦 导出 Agent 记忆", "bold"))
+    print(c("\n📦 导出 Agent 记忆", "bold"))
     print("=" * 60)
     print(f"  Agent ID:    {args.agent}")
     print(f"  输出文件:    {args.output}")
@@ -7800,7 +7809,7 @@ def cmd_agent_export(args):
         cm.close()
         return 1
 
-    print(c(f"\n✅ 导出成功", "green"))
+    print(c("\n✅ 导出成功", "green"))
     print(f"   文件: {result['file_path']}")
     print(f"   数量: {result['total']} 条记忆")
 
@@ -7811,7 +7820,7 @@ def cmd_agent_export(args):
 def cmd_agent_search(args):
     """在指定 Agent 的记忆中搜索关键词（v5.3.1 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🔍 Agent 记忆搜索（v5.3.1）", "bold"))
+    print(c("\n🔍 Agent 记忆搜索（v5.3.1）", "bold"))
     print("=" * 60)
     print(f"  Agent ID:  {args.agent}")
     print(f"  关键词:    {args.keyword}")
@@ -7830,7 +7839,7 @@ def cmd_agent_search(args):
         return 1
 
     if not results:
-        print(c(f"\n⚠️  未找到匹配的记忆", "yellow"))
+        print(c("\n⚠️  未找到匹配的记忆", "yellow"))
         cm.close()
         return 0
 
@@ -7865,7 +7874,7 @@ def cmd_agent_search(args):
 def cmd_agent_compare(args):
     """对比两个 Agent 的记忆差异（v5.3.1 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n⚖️  Agent 记忆对比（v5.3.1）", "bold"))
+    print(c("\n⚖️  Agent 记忆对比（v5.3.1）", "bold"))
     print("=" * 60)
     print(f"  Agent A:   {args.agent_a}")
     print(f"  Agent B:   {args.agent_b}")
@@ -7882,23 +7891,23 @@ def cmd_agent_compare(args):
         cm.close()
         return 1
 
-    print(c(f"\n📊 记忆数量对比", "cyan"))
+    print(c("\n📊 记忆数量对比", "cyan"))
     print(f"  Agent A:   {result['count_a']} 条")
     print(f"  Agent B:   {result['count_b']} 条")
     print(f"  差值:      {result['count_a'] - result['count_b']:+d}")
 
-    print(c(f"\n📈 平均重要度对比", "cyan"))
+    print(c("\n📈 平均重要度对比", "cyan"))
     print(f"  Agent A:   {result['avg_importance_a']}")
     print(f"  Agent B:   {result['avg_importance_b']}")
 
-    print(c(f"\n📂 共有分类", "cyan"))
+    print(c("\n📂 共有分类", "cyan"))
     if result["common_categories"]:
         for cat in result["common_categories"][:10]:
             print(f"  • {cat}")
         if len(result["common_categories"]) > 10:
             print(f"  ... 共 {len(result['common_categories'])} 个")
     else:
-        print(f"  （无共有分类）")
+        print("  （无共有分类）")
 
     print(c(f"\n📂 A 独有分类（{len(result['only_a_categories'])} 个）", "yellow"))
     for cat in result["only_a_categories"][:5]:
@@ -7908,11 +7917,11 @@ def cmd_agent_compare(args):
     for cat in result["only_b_categories"][:5]:
         print(f"  • {cat}")
 
-    print(c(f"\n🏷️  共有标签", "cyan"))
+    print(c("\n🏷️  共有标签", "cyan"))
     if result["common_tags"]:
         print(f"  {' '.join(result['common_tags'][:15])}")
     else:
-        print(f"  （无共有标签）")
+        print("  （无共有标签）")
 
     print(f"\n  标签总数: A={result['tags_a_count']}  B={result['tags_b_count']}")
 
@@ -7923,7 +7932,7 @@ def cmd_agent_compare(args):
 def cmd_drama_search(args):
     """按关键词搜索短剧（v5.3.1 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🎬 短剧搜索（v5.3.1）", "bold"))
+    print(c("\n🎬 短剧搜索（v5.3.1）", "bold"))
     print("=" * 60)
     print(f"  关键词:    {args.keyword}")
     if args.genre:
@@ -7946,7 +7955,7 @@ def cmd_drama_search(args):
         return 1
 
     if not results:
-        print(c(f"\n⚠️  未找到匹配的短剧", "yellow"))
+        print(c("\n⚠️  未找到匹配的短剧", "yellow"))
         cm.close()
         return 0
 
@@ -7969,12 +7978,12 @@ def cmd_drama_search(args):
 def cmd_char_ranking(args):
     """角色台词排行榜（v5.3.1 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🏆 角色台词排行榜（v5.3.1）", "bold"))
+    print(c("\n🏆 角色台词排行榜（v5.3.1）", "bold"))
     print("=" * 60)
     if args.drama_id:
         print(f"  短剧 ID:   {args.drama_id}")
     else:
-        print(f"  范围:      全局")
+        print("  范围:      全局")
     print(f"  排序维度:  {args.sort_by}")
     print(f"  Top 数:    {args.limit}")
 
@@ -7990,7 +7999,7 @@ def cmd_char_ranking(args):
         return 1
 
     if not results:
-        print(c(f"\n⚠️  暂无角色数据", "yellow"))
+        print(c("\n⚠️  暂无角色数据", "yellow"))
         cm.close()
         return 0
 
@@ -8008,7 +8017,7 @@ def cmd_char_ranking(args):
 def cmd_agent_diff(args):
     """对比同一 Agent 在不同时间段的记忆差异（v5.3.2 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n📈 Agent 记忆时间段对比（v5.3.2）", "bold"))
+    print(c("\n📈 Agent 记忆时间段对比（v5.3.2）", "bold"))
     print("=" * 60)
     print(f"  Agent ID:   {args.agent}")
     print(f"  时间段 A:   {args.days_a} 天前 ~ {args.days_b} 天前")
@@ -8028,27 +8037,27 @@ def cmd_agent_diff(args):
 
     pa = result["period_a"]
     pb = result["period_b"]
-    print(c(f"\n📊 时间段对比", "cyan"))
+    print(c("\n📊 时间段对比", "cyan"))
     print(f"  {pa['time_range']}: {pa['count']} 条")
     print(f"  {pb['time_range']}: {pb['count']} 条")
     print(f"  增量: {c(str(result['total_diff']), 'green' if result['total_diff'] >= 0 else 'yellow')}")
 
-    print(c(f"\n📈 重要度分布（A 时间段）", "cyan"))
+    print(c("\n📈 重要度分布（A 时间段）", "cyan"))
     for imp, cnt in pa["by_importance"].items():
         print(f"  {imp:<10} {cnt}")
 
-    print(c(f"\n📈 重要度分布（B 时间段）", "cyan"))
+    print(c("\n📈 重要度分布（B 时间段）", "cyan"))
     for imp, cnt in pb["by_importance"].items():
         print(f"  {imp:<10} {cnt}")
 
     if result["new_categories"]:
-        print(c(f"\n✨ 新增分类（B 新增，A 没有）", "green"))
+        print(c("\n✨ 新增分类（B 新增，A 没有）", "green"))
         for cat in result["new_categories"][:15]:
             cnt = pb["by_category"].get(cat, 0)
             print(f"  • {cat}  ({cnt} 条)")
 
     if result["dropped_categories"]:
-        print(c(f"\n💨 消失分类（A 有，B 没有）", "yellow"))
+        print(c("\n💨 消失分类（A 有，B 没有）", "yellow"))
         for cat in result["dropped_categories"][:15]:
             cnt = pa["by_category"].get(cat, 0)
             print(f"  • {cat}  ({cnt} 条)")
@@ -8061,7 +8070,7 @@ def cmd_agent_purge(args):
     """清空指定 Agent 的全部记忆（v5.3.2 新增，高危操作）"""
     cm = _get_memory(args)
     dry_run = not args.force
-    print(c(f"\n⚠️  Agent 记忆清空（v5.3.2）", "bold" if not dry_run else "bold"))
+    print(c("\n⚠️  Agent 记忆清空（v5.3.2）", "bold" if not dry_run else "bold"))
     print("=" * 60)
     print(f"  Agent ID:   {args.agent}")
     print(f"  模式:       {'❌ 实际执行！会永久删除！' if not dry_run else '🔍 预览模式 (加 --force 实际执行)'}")
@@ -8100,7 +8109,7 @@ def cmd_agent_purge(args):
 def cmd_drama_progress_update(args):
     """更新短剧观看进度（v5.3.2 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🎬 短剧观看进度更新（v5.3.2）", "bold"))
+    print(c("\n🎬 短剧观看进度更新（v5.3.2）", "bold"))
     print("=" * 60)
     print(f"  短剧 ID:    {args.drama}")
     print(f"  当前集数:   第 {args.episode} 集")
@@ -8122,7 +8131,7 @@ def cmd_drama_progress_update(args):
         cm.close()
         return 1
 
-    print(c(f"\n✅ 进度已更新", "green"))
+    print(c("\n✅ 进度已更新", "green"))
     print(f"  短剧:       {result['drama_id']}")
     print(f"  集数:       {result['current_episode']}")
     if result.get("status"):
@@ -8137,7 +8146,7 @@ def cmd_drama_progress_update(args):
 def cmd_drama_rec2(args):
     """短剧智能推荐 v2（v5.3.2 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🎬 短剧智能推荐 v2（v5.3.2）", "bold"))
+    print(c("\n🎬 短剧智能推荐 v2（v5.3.2）", "bold"))
     print("=" * 60)
     if args.genre:
         print(f"  类型:       {args.genre}")
@@ -8159,7 +8168,7 @@ def cmd_drama_rec2(args):
         return 1
 
     if not results:
-        print(c(f"\n⚠️  暂无匹配短剧，请尝试调整过滤条件", "yellow"))
+        print(c("\n⚠️  暂无匹配短剧，请尝试调整过滤条件", "yellow"))
         cm.close()
         return 0
 
@@ -8180,7 +8189,7 @@ def cmd_drama_rec2(args):
 def cmd_agent_timeline(args):
     """Agent 记忆时间线分析（v5.3.3 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n📊 Agent 记忆时间线分析（v5.3.3）", "bold"))
+    print(c("\n📊 Agent 记忆时间线分析（v5.3.3）", "bold"))
     print("=" * 60)
     print(f"  Agent:   {args.agent_id}")
     print(f"  天数:    {args.days}")
@@ -8236,7 +8245,7 @@ def cmd_agent_timeline(args):
 def cmd_agent_heatmap(args):
     """Agent 记忆热力图（v5.3.3 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🔥 Agent 记忆热力图（v5.3.3）", "bold"))
+    print(c("\n🔥 Agent 记忆热力图（v5.3.3）", "bold"))
     print("=" * 60)
     print(f"  Agent:   {args.agent_id}")
     print(f"  天数:    {args.days}")
@@ -8269,7 +8278,7 @@ def cmd_agent_heatmap(args):
     matrix = result.get("matrix", {})
     imp_levels = result.get("importance_levels", ["LOW", "MEDIUM", "HIGH", "CRITICAL"])
 
-    print(c(f"\n📊 密度矩阵（分类 × 重要度）", "cyan"))
+    print(c("\n📊 密度矩阵（分类 × 重要度）", "cyan"))
     print(f"  {'分类':<20}", end="")
     for lv in imp_levels:
         print(f"{lv:<10}", end="")
@@ -8297,7 +8306,7 @@ def cmd_agent_heatmap(args):
 def cmd_drama_binge(args):
     """追剧统计（v5.3.3 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n📺 追剧统计（v5.3.3）", "bold"))
+    print(c("\n📺 追剧统计（v5.3.3）", "bold"))
     print("=" * 60)
 
     try:
@@ -8313,7 +8322,7 @@ def cmd_drama_binge(args):
         return 1
 
     if result["total_dramas"] == 0:
-        print(c(f"\n⚠️  暂无短剧数据", "yellow"))
+        print(c("\n⚠️  暂无短剧数据", "yellow"))
         cm.close()
         return 0
 
@@ -8329,7 +8338,7 @@ def cmd_drama_binge(args):
         print(f"  平均评分:      {result['average_rating']}（{result['rated_count']} 部已评分）")
 
     if result.get("recent_watched"):
-        print(c(f"\n🕐 最近观看 Top-5", "cyan"))
+        print(c("\n🕐 最近观看 Top-5", "cyan"))
         print("-" * 60)
         for i, w in enumerate(result["recent_watched"], 1):
             status_label = {"watching": "追剧中", "completed": "已完成",
@@ -8345,7 +8354,7 @@ def cmd_drama_binge(args):
 def cmd_char_network(args):
     """角色关系网络（v5.3.3 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🕸️  角色关系网络（v5.3.3）", "bold"))
+    print(c("\n🕸️  角色关系网络（v5.3.3）", "bold"))
     print("=" * 60)
     print(f"  短剧 ID: {args.drama_id}")
 
@@ -8362,7 +8371,7 @@ def cmd_char_network(args):
         return 1
 
     if result["total_characters"] == 0:
-        print(c(f"\n⚠️  该短剧暂无角色数据", "yellow"))
+        print(c("\n⚠️  该短剧暂无角色数据", "yellow"))
         cm.close()
         return 0
 
@@ -8373,7 +8382,7 @@ def cmd_char_network(args):
     # 角色节点（按关联数排序）
     nodes = result.get("nodes", [])
     if nodes:
-        print(c(f"\n👥 角色节点（按关联数排序）", "cyan"))
+        print(c("\n👥 角色节点（按关联数排序）", "cyan"))
         print("-" * 60)
         print(f"  {'#':<4}{'角色名':<16}{'角色类型':<12}{'出场场次':<10}{'关联数':<8}")
         for i, n in enumerate(nodes[:15], 1):
@@ -8383,7 +8392,7 @@ def cmd_char_network(args):
     # 关系边（按权重排序，Top-10）
     edges = result.get("edges", [])
     if edges:
-        print(c(f"\n🔗 角色关系 Top-10（按共同出场次数）", "cyan"))
+        print(c("\n🔗 角色关系 Top-10（按共同出场次数）", "cyan"))
         print("-" * 60)
         for i, e in enumerate(edges[:10], 1):
             print(f"  {i}. {e['source_name'][:12]} ↔ {e['target_name'][:12]}  "
@@ -8396,7 +8405,7 @@ def cmd_char_network(args):
 def cmd_agent_sentiment(args):
     """Agent 记忆情感分析（v5.3.4 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🧠 Agent 记忆情感分析（v5.3.4）", "bold"))
+    print(c("\n🧠 Agent 记忆情感分析（v5.3.4）", "bold"))
     print("=" * 60)
     print(f"  Agent ID:   {args.agent}")
     print(f"  回溯天数:   {args.days}")
@@ -8432,7 +8441,7 @@ def cmd_agent_sentiment(args):
     print(c(f"\n  主导情感: {dom_label}", "bold"))
 
     if result.get("by_importance"):
-        print(c(f"\n📈 按重要度细分", "cyan"))
+        print(c("\n📈 按重要度细分", "cyan"))
         for imp, vals in sorted(result["by_importance"].items()):
             print(f"  {imp:<10} 正:{vals['positive']}  负:{vals['negative']}  中:{vals['neutral']}")
 
@@ -8443,7 +8452,7 @@ def cmd_agent_sentiment(args):
 def cmd_memory_decay(args):
     """记忆衰减评分（v5.3.4 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🧠 记忆衰减评分（v5.3.4）", "bold"))
+    print(c("\n🧠 记忆衰减评分（v5.3.4）", "bold"))
     print("=" * 60)
     print(f"  Agent ID:   {args.agent}")
     print(f"  回溯天数:   {args.days}")
@@ -8492,7 +8501,7 @@ def cmd_memory_decay(args):
 def cmd_drama_compare(args):
     """短剧对比分析（v5.3.4 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🎬 短剧对比分析（v5.3.4）", "bold"))
+    print(c("\n🎬 短剧对比分析（v5.3.4）", "bold"))
     print("=" * 60)
     print(f"  对比数量:   {len(args.dramas)} 部")
 
@@ -8523,7 +8532,7 @@ def cmd_drama_compare(args):
 
     comp = result.get("comparison", {})
     if comp:
-        print(c(f"\n🏆 各维度领先", "green"))
+        print(c("\n🏆 各维度领先", "green"))
         if comp.get("best_rated"):
             print(f"  评分最高:   {comp['best_rated']}")
         if comp.get("most_episodes"):
@@ -8540,7 +8549,7 @@ def cmd_drama_compare(args):
 def cmd_char_arc(args):
     """角色成长弧线分析（v5.3.4 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🎬 角色成长弧线分析（v5.3.4）", "bold"))
+    print(c("\n🎬 角色成长弧线分析（v5.3.4）", "bold"))
     print("=" * 60)
     print(f"  短剧 ID:    {args.drama_id}")
     print(f"  角色 ID:    {args.character_id}")
@@ -8563,7 +8572,7 @@ def cmd_char_arc(args):
     print(f"  总台词数:   {result['total_lines']}")
 
     if result["total_scenes"] == 0:
-        print(c(f"\n⚠️  该角色无台词记录", "yellow"))
+        print(c("\n⚠️  该角色无台词记录", "yellow"))
         cm.close()
         return 0
 
@@ -8581,7 +8590,7 @@ def cmd_char_arc(args):
     print(c(f"\n  成长阶段:   {stage_label}", "bold"))
 
     sd = result["stage_distribution"]
-    print(c(f"\n📊 三段分布", "cyan"))
+    print(c("\n📊 三段分布", "cyan"))
     total = sd["early"] + sd["mid"] + sd["late"]
     if total > 0:
         print(f"  前期:  {sd['early']:>4} 句  ({sd['early']/total:.1%})")
@@ -8595,7 +8604,7 @@ def cmd_char_arc(args):
 def cmd_memory_cluster(args):
     """记忆主题聚类（v5.3.5 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🧠 记忆主题聚类（v5.3.5）", "bold"))
+    print(c("\n🧠 记忆主题聚类（v5.3.5）", "bold"))
     print("=" * 60)
     print(f"  Agent ID:   {args.agent}")
     print(f"  回溯天数:   {args.days}")
@@ -8619,7 +8628,7 @@ def cmd_memory_cluster(args):
         cm.close()
         return 0
 
-    print(c(f"\n📊 总览", "cyan"))
+    print(c("\n📊 总览", "cyan"))
     print(f"  总记忆数:    {total}")
     print(f"  已聚类:      {result['clustered_memories']}")
     print(f"  未聚类:      {result['unclustered']}")
@@ -8627,11 +8636,11 @@ def cmd_memory_cluster(args):
 
     clusters = result.get("clusters", [])
     if not clusters:
-        print(c(f"\n⚠️  未识别出明确主题簇", "yellow"))
+        print(c("\n⚠️  未识别出明确主题簇", "yellow"))
         cm.close()
         return 0
 
-    print(c(f"\n🏷️  主题簇列表（按规模排序）", "cyan"))
+    print(c("\n🏷️  主题簇列表（按规模排序）", "cyan"))
     print("-" * 75)
     print(f"{'#':<4}{'规模':<6}{'权重':<8}{'主题标签'}")
     print("-" * 75)
@@ -8667,7 +8676,7 @@ def cmd_agent_insight(args):
         cm.close()
         return 0
 
-    print(c(f"\n🔍 混合检索增强（查询扩展 + Cross-Encoder 重排）（v5.3.9）", "bold"))
+    print(c("\n🔍 混合检索增强（查询扩展 + Cross-Encoder 重排）（v5.3.9）", "bold"))
     print("=" * 60)
     
 
@@ -8676,7 +8685,7 @@ def cmd_agent_insight(args):
         cm.close()
         return 1
 
-    print(c(f"\n🧠 Agent 行为洞察（v5.3.5）", "bold"))
+    print(c("\n🧠 Agent 行为洞察（v5.3.5）", "bold"))
     print("=" * 60)
     print(f"  Agent ID:   {args.agent}")
     print(f"  回溯天数:   {args.days}")
@@ -8688,7 +8697,7 @@ def cmd_agent_insight(args):
         return 0
 
     act = result["activity"]
-    print(c(f"\n📊 活跃度统计", "cyan"))
+    print(c("\n📊 活跃度统计", "cyan"))
     print(f"  总记忆数:    {total}")
     print(f"  总访问次数:  {act['total_accesses']}")
     avg_access = f"{act['avg_access_per_memory']} 次/条"
@@ -8705,27 +8714,27 @@ def cmd_agent_insight(args):
             bar = "█" * max(1, int(cnt / max_v * 20))
             print(f"  {wk:<8}  {cnt:>5} 条  {bar}")
 
-    print(c(f"\n📦 记忆层分布", "cyan"))
+    print(c("\n📦 记忆层分布", "cyan"))
     for layer, cnt in sorted(result["layer_distribution"].items(), key=lambda x: -x[1]):
         pct = cnt / total * 100
         bar = "█" * int(pct / 5)
         print(f"  {layer:<16} {cnt:>5}  ({pct:>5.1f}%)  {bar}")
 
-    print(c(f"\n⭐ 重要度分布", "cyan"))
+    print(c("\n⭐ 重要度分布", "cyan"))
     for imp, cnt in sorted(result["importance_distribution"].items(), key=lambda x: -x[1]):
         pct = cnt / total * 100
         print(f"  {imp:<10} {cnt:>5}  ({pct:>5.1f}%)")
 
     tags = result.get("tag_preferences", [])
     if tags:
-        print(c(f"\n🏷️  Top 标签偏好", "cyan"))
+        print(c("\n🏷️  Top 标签偏好", "cyan"))
         for t in tags[:8]:
             pct_s = f"{t['ratio'] * 100:.1f}%"
             print(f"  {t['tag']:<20} {t['count']:>5} 次  ({pct_s:>6})")
 
     insights = result.get("insights", [])
     if insights:
-        print(c(f"\n💡 智能洞察", "green"))
+        print(c("\n💡 智能洞察", "green"))
         for s in insights:
             print(f"  ✨ {s}")
 
@@ -8736,7 +8745,7 @@ def cmd_agent_insight(args):
 def cmd_drama_summary(args):
     """短剧剧情摘要（v5.3.5 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🎬 短剧剧情摘要（v5.3.5）", "bold"))
+    print(c("\n🎬 短剧剧情摘要（v5.3.5）", "bold"))
     print("=" * 60)
     print(f"  短剧 ID:    {args.drama_id}")
     print(f"  摘要长度:   {args.max_length} 字")
@@ -8770,11 +8779,10 @@ def cmd_drama_summary(args):
         for ch in chars:
             print(f"  · {ch['name']:<14} 台词 {ch['lines']} 句")
 
-    print(c(f"\n📖 剧情摘要", "cyan"))
+    print(c("\n📖 剧情摘要", "cyan"))
     print("-" * 60)
     summary = result.get("summary", "(无)")
     # 格式化换行（每 60 字左右）
-    import re as _re
     wrapped = []
     for line in summary.split("\n"):
         cur = ""
@@ -8790,7 +8798,7 @@ def cmd_drama_summary(args):
 
     quotes = result.get("classic_quotes", [])
     if quotes:
-        print(c(f"\n🎭 经典台词", "green"))
+        print(c("\n🎭 经典台词", "green"))
         for q in quotes:
             print(f"  💬 {q}")
 
@@ -8801,7 +8809,7 @@ def cmd_drama_summary(args):
 def cmd_scene_tension(args):
     """场景张力分析（v5.3.5 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🎬 场景张力分析（v5.3.5）", "bold"))
+    print(c("\n🎬 场景张力分析（v5.3.5）", "bold"))
     print("=" * 60)
     print(f"  短剧 ID:    {args.drama_id}")
     print(f"  Top-K:      {args.top_k}")
@@ -8820,7 +8828,7 @@ def cmd_scene_tension(args):
 
     total = result["total_scenes"]
     if total == 0:
-        print(c(f"\n⚠️  该短剧无场景数据", "yellow"))
+        print(c("\n⚠️  该短剧无场景数据", "yellow"))
         cm.close()
         return 0
 
@@ -8832,7 +8840,7 @@ def cmd_scene_tension(args):
     # 主高潮
     mc = result.get("main_climax")
     if mc:
-        print(c(f"\n🌋 主高潮段", "red"))
+        print(c("\n🌋 主高潮段", "red"))
         peak_s = f"{mc['peak_tension']:.1f}"
         print(f"  集数:       第 {mc['episodes']} 集")
         print(f"  张力峰值:   {peak_s}")
@@ -8856,7 +8864,7 @@ def cmd_scene_tension(args):
     # 张力曲线：ASCII 可视化（按顺序）
     curve = result.get("tension_curve", [])
     if curve and len(curve) <= 80:
-        print(c(f"\n📉 张力曲线（按场景顺序）", "cyan"))
+        print(c("\n📉 张力曲线（按场景顺序）", "cyan"))
         # 每场景一行精简
         max_t = max((c["tension"] for c in curve), default=1) or 1
         for cp in curve:
@@ -8874,7 +8882,7 @@ def cmd_scene_tension(args):
 def cmd_memory_link(args):
     """记忆关联推理（v5.3.6 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🔗 记忆关联推理（v5.3.6）", "bold"))
+    print(c("\n🔗 记忆关联推理（v5.3.6）", "bold"))
     print("=" * 60)
     print(f"  Agent ID:    {args.agent}")
     print(f"  目标记忆:    {args.memory_id}")
@@ -8899,21 +8907,21 @@ def cmd_memory_link(args):
         cm.close()
         return 0
 
-    print(c(f"\n📊 总览", "cyan"))
+    print(c("\n📊 总览", "cyan"))
     print(f"  候选记忆:    {total_cand}")
     print(f"  关联总数:    {result['total_links']}")
     print(f"  返回数量:    {result['returned']}")
 
     links = result.get("links", [])
     if not links:
-        print(c(f"\n⚠️  未发现显著关联记忆", "yellow"))
+        print(c("\n⚠️  未发现显著关联记忆", "yellow"))
         cm.close()
         return 0
 
     # 关联类型分布
     tdist = result.get("link_type_distribution", {})
     if tdist:
-        print(c(f"\n🏷️  关联类型分布", "cyan"))
+        print(c("\n🏷️  关联类型分布", "cyan"))
         type_label = {"keyword": "关键词", "tag": "标签", "temporal": "时间", "weak": "弱关联"}
         for t, cnt in sorted(tdist.items(), key=lambda x: -x[1]):
             print(f"  {type_label.get(t, t):<10} {cnt:>5} 条")
@@ -8932,7 +8940,7 @@ def cmd_memory_link(args):
     # 最强关联详情
     strongest = result.get("strongest_link")
     if strongest:
-        print(c(f"\n💪 最强关联", "green"))
+        print(c("\n💪 最强关联", "green"))
         print(f"  关联强度:    {strongest['strength']:.3f}")
         print(f"  关联类型:    {' / '.join(strongest['link_types'])}")
         sk = strongest.get("shared_keywords", [])
@@ -8966,7 +8974,7 @@ def cmd_memory_recall(args):
         cm.close()
         return 0
 
-    print(c(f"\n🔎 智能记忆召回（v5.3.6）", "bold"))
+    print(c("\n🔎 智能记忆召回（v5.3.6）", "bold"))
     print("=" * 60)
     print(f"  Agent ID:    {args.agent}")
     print(f"  查询:        {args.query}")
@@ -8986,7 +8994,7 @@ def cmd_memory_recall(args):
 
     recalled = result.get("recalled", [])
     if not recalled:
-        print(c(f"\n⚠️  无匹配记忆", "yellow"))
+        print(c("\n⚠️  无匹配记忆", "yellow"))
         cm.close()
         return 0
 
@@ -9018,7 +9026,7 @@ def cmd_memory_recall(args):
 def cmd_drama_pacing(args):
     """剧集节奏分析（v5.3.6 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🎬 剧集节奏分析（v5.3.6）", "bold"))
+    print(c("\n🎬 剧集节奏分析（v5.3.6）", "bold"))
     print("=" * 60)
     print(f"  短剧 ID:    {args.drama_id}")
     print(f"  窗口大小:   {args.window}")
@@ -9037,7 +9045,7 @@ def cmd_drama_pacing(args):
 
     total = result["total_scenes"]
     if total == 0:
-        print(c(f"\n⚠️  该短剧无场景数据", "yellow"))
+        print(c("\n⚠️  该短剧无场景数据", "yellow"))
         cm.close()
         return 0
 
@@ -9051,7 +9059,7 @@ def cmd_drama_pacing(args):
 
     # 节奏分布
     dist = result["pacing_distribution"]
-    print(c(f"\n📊 节奏分布", "cyan"))
+    print(c("\n📊 节奏分布", "cyan"))
     pace_label = {"fast": "快节奏", "medium": "中节奏", "slow": "慢节奏"}
     pace_color = {"fast": "red", "medium": "green", "slow": "yellow"}
     for p in ["fast", "medium", "slow"]:
@@ -9063,7 +9071,7 @@ def cmd_drama_pacing(args):
     # 拖沓段
     slow_segs = result.get("slow_segments", [])
     if slow_segs:
-        print(c(f"\n🐢 拖沓段（连续慢节奏）", "yellow"))
+        print(c("\n🐢 拖沓段（连续慢节奏）", "yellow"))
         for seg in slow_segs:
             print(f"  第 {seg['episodes']} 集  长度 {seg['length']} 场景  "
                   f"平均密度 {seg['avg_density']:.2f}")
@@ -9071,7 +9079,7 @@ def cmd_drama_pacing(args):
     # 密集段
     fast_segs = result.get("fast_segments", [])
     if fast_segs:
-        print(c(f"\n🔥 密集段（连续快节奏）", "red"))
+        print(c("\n🔥 密集段（连续快节奏）", "red"))
         for seg in fast_segs:
             print(f"  第 {seg['episodes']} 集  长度 {seg['length']} 场景  "
                   f"平均密度 {seg['avg_density']:.2f}")
@@ -9079,7 +9087,7 @@ def cmd_drama_pacing(args):
     # 节奏曲线（ASCII 可视化）
     curve = result.get("pacing_curve", [])
     if curve and len(curve) <= 80:
-        print(c(f"\n📉 节奏曲线（按场景顺序）", "cyan"))
+        print(c("\n📉 节奏曲线（按场景顺序）", "cyan"))
         for cp in curve:
             idx = cp.get("order") or "-"
             density = cp.get("avg_density", 0)
@@ -9091,7 +9099,7 @@ def cmd_drama_pacing(args):
     # 洞察
     insights = result.get("insights", [])
     if insights:
-        print(c(f"\n💡 节奏洞察", "cyan"))
+        print(c("\n💡 节奏洞察", "cyan"))
         for ins in insights:
             print(f"  • {ins}")
 
@@ -9102,7 +9110,7 @@ def cmd_drama_pacing(args):
 def cmd_char_interaction(args):
     """角色互动分析（v5.3.6 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🤝 角色互动分析（v5.3.6）", "bold"))
+    print(c("\n🤝 角色互动分析（v5.3.6）", "bold"))
     print("=" * 60)
     print(f"  短剧 ID:    {args.drama_id}")
     print(f"  Top-K:      {args.top_k}")
@@ -9121,7 +9129,7 @@ def cmd_char_interaction(args):
 
     total_chars = result["total_characters"]
     if total_chars == 0:
-        print(c(f"\n⚠️  该短剧无角色数据", "yellow"))
+        print(c("\n⚠️  该短剧无角色数据", "yellow"))
         cm.close()
         return 0
 
@@ -9132,14 +9140,14 @@ def cmd_char_interaction(args):
     # 核心角色
     core = result.get("core_characters", [])
     if core:
-        print(c(f"\n⭐ 核心角色（互动强度 Top-3）", "cyan"))
+        print(c("\n⭐ 核心角色（互动强度 Top-3）", "cyan"))
         for cc in core:
             print(f"  {cc['name']:<16} 总强度 {cc['total_strength']:.1f}")
 
     # Top-K 互动关系
     interactions = result.get("interactions", [])
     if not interactions:
-        print(c(f"\n⚠️  无角色互动数据", "yellow"))
+        print(c("\n⚠️  无角色互动数据", "yellow"))
         cm.close()
         return 0
 
@@ -9175,19 +9183,19 @@ def cmd_quality(args):
             cm.close()
             return 1
 
-        print(c(f"\n📊 记忆质量评分", "bold"))
+        print(c("\n📊 记忆质量评分", "bold"))
         print("=" * 50)
         print(f"记忆 ID:   {result['memory_id'][:16]}...")
         print(f"总评分:     {c(str(result['total_score']) + '/100', 'green')}")
         print(f"等  级:     {c(result['grade'], 'cyan')}")
 
-        print(f"\n各项得分:")
+        print("\n各项得分:")
         for item, score in result['breakdown'].items():
             print(f"  {item}: {score}")
 
     else:
         # 批量评分
-        print(c(f"\n📊 批量质量评分", "bold"))
+        print(c("\n📊 批量质量评分", "bold"))
         print("=" * 50)
         if args.category:
             print(f"分类过滤:   {args.category}")
@@ -9195,17 +9203,17 @@ def cmd_quality(args):
 
         result = cm.batch_quality_score(category=args.category, limit=args.limit)
 
-        print(f"\n统计结果:")
+        print("\n统计结果:")
         print(f"  总  数:   {result['total']}")
         print(f"  平均分:   {c(str(result['average_score']), 'green')}")
 
-        print(f"\n等级分布:")
+        print("\n等级分布:")
         for grade, count in result['grades'].items():
             if count > 0:
                 print(f"  {grade}: {count} 条")
 
         if result.get('top_scores'):
-            print(f"\n🏆 高分记忆 Top 5:")
+            print("\n🏆 高分记忆 Top 5:")
             for i, s in enumerate(result['top_scores'][:5], 1):
                 print(f"  {i}. {s['memory_id'][:16]}... - {s['total_score']}分 ({s['grade']})")
 
@@ -9223,7 +9231,7 @@ def cmd_similar(args):
         cm.close()
         return 1
 
-    print(c(f"\n🔍 相似度分析", "bold"))
+    print(c("\n🔍 相似度分析", "bold"))
     print("=" * 50)
     print(f"目标记忆:   {args.memory_id[:16]}...")
     print(f"内容预览:   {entry.content[:60]}...")
@@ -9254,7 +9262,7 @@ def cmd_note_add(args):
     cm = _get_memory(args)
     result = cm.add_note(args.memory_id, args.content, author=args.author, tags=args.tags)
     if result.get("success"):
-        print(c(f"\n✅ 笔记已添加", "green"))
+        print(c("\n✅ 笔记已添加", "green"))
         print(f"   笔记 ID: {result['note_id']}")
         print(f"   记忆 ID: {result['memory_id']}")
     else:
@@ -9297,7 +9305,7 @@ def cmd_note_delete(args):
 
     result = cm.delete_note(args.note_id)
     if result.get("success"):
-        print(c(f"\n✅ 笔记已删除", "green"))
+        print(c("\n✅ 笔记已删除", "green"))
     else:
         print(c(f"\n❌ {result.get('error', '删除失败')}", "red"))
     cm.close()
@@ -9317,7 +9325,7 @@ def cmd_template_add(args):
         description=args.description,
     )
     if result.get("success"):
-        print(c(f"\n✅ 模板已创建", "green"))
+        print(c("\n✅ 模板已创建", "green"))
         print(f"   模板 ID: {result['template_id']}")
         print(f"   名称: {result['name']}")
     else:
@@ -9363,7 +9371,7 @@ def cmd_template_use(args):
     result = cm.use_template(args.template_id, variables=variables,
                              actor=args.agent, session_id=args.session)
     if result.get("success"):
-        print(c(f"\n✅ 记忆已创建", "green"))
+        print(c("\n✅ 记忆已创建", "green"))
         print(f"   记忆 ID: {result['memory_id']}")
         print(f"   使用模板: {result['template_name']}")
         print(f"   内容: {result['content'][:80]}")
@@ -9437,7 +9445,7 @@ def cmd_batch_update(args):
         session_id=args.session,
     )
     if result.get("success"):
-        print(c(f"\n✅ 批量更新完成", "green"))
+        print(c("\n✅ 批量更新完成", "green"))
         print(f"   成功更新: {result['updated']}/{result['total']} 条")
         if result.get("errors"):
             print(c(f"   失败: {len(result['errors'])} 条（ID 不存在）", "yellow"))
@@ -9458,7 +9466,7 @@ def cmd_schedule(args):
             return 1
         result = cm.create_review_schedule(args.memory_id, interval_days=args.interval)
         if result.get("success"):
-            print(c(f"\n✅ 复习计划已创建", "green"))
+            print(c("\n✅ 复习计划已创建", "green"))
             print(f"   计划 ID: {result['schedule_id']}")
             print(f"   记忆 ID: {result['memory_id']}")
             print(f"   间隔: {result['interval_days']} 天")
@@ -9493,7 +9501,7 @@ def cmd_schedule(args):
             return 1
         result = cm.complete_review(args.schedule_id)
         if result.get("success"):
-            print(c(f"\n✅ 复习完成！", "green"))
+            print(c("\n✅ 复习完成！", "green"))
             print(f"   累计复习: {result['review_count']} 次")
             print(f"   下次间隔: {result['next_interval_days']} 天")
             print(f"   下次复习: {format_time(result['next_scheduled_at'])}")
@@ -9504,7 +9512,7 @@ def cmd_schedule(args):
 
     elif args.schedule_action == "stats":
         stats = cm.get_review_stats()
-        print(c(f"\n📊 复习计划统计", "bold"))
+        print(c("\n📊 复习计划统计", "bold"))
         print("=" * 40)
         print(f"   总计划数: {stats['total_schedules']}")
         print(f"   待复习: {stats['pending']}")
@@ -9520,7 +9528,7 @@ def cmd_schedule(args):
 def cmd_agent_influence(args):
     """Agent 记忆影响力图谱（v5.4.3 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🕸️  Agent 记忆影响力图谱（v5.4.3）", "bold"))
+    print(c("\n🕸️  Agent 记忆影响力图谱（v5.4.3）", "bold"))
     print("=" * 60)
     print(f"  Agent ID:    {args.agent}")
     print(f"  回溯天数:    {args.days}")
@@ -9554,7 +9562,7 @@ def cmd_agent_influence(args):
 
     edges = result.get("edges", [])
     if edges:
-        print(c(f"\n🔗 影响力边（前 20 条）", "cyan"))
+        print(c("\n🔗 影响力边（前 20 条）", "cyan"))
         for e in edges[:20]:
             print(f"  {e['from'][:20]} → {e['to'][:20]}  [{e['type']}]")
 
@@ -9565,7 +9573,7 @@ def cmd_agent_influence(args):
 def cmd_memory_overlap(args):
     """记忆重叠分析（v5.4.3 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n📊 记忆重叠分析（v5.4.3）", "bold"))
+    print(c("\n📊 记忆重叠分析（v5.4.3）", "bold"))
     print("=" * 60)
     print(f"  Agent A:     {args.agent_a}")
     print(f"  Agent B:     {args.agent_b}")
@@ -9586,7 +9594,7 @@ def cmd_memory_overlap(args):
     print(f"\n  综合相似度:  {result['overall_similarity']}  ({result['similarity_level']})")
 
     tags = result.get("tags", {})
-    print(c(f"\n🏷️  标签重叠", "cyan"))
+    print(c("\n🏷️  标签重叠", "cyan"))
     print(f"  Jaccard:     {tags.get('jaccard', 0)}")
     print(f"  重叠率:      {tags.get('overlap_pct', 0)}%")
     print(f"  共享标签:    {', '.join(tags.get('shared', [])[:10]) or '无'}")
@@ -9594,12 +9602,12 @@ def cmd_memory_overlap(args):
     print(f"  B 独有:      {', '.join(tags.get('unique_b', [])[:10]) or '无'}")
 
     cats = result.get("categories", {})
-    print(c(f"\n📂 分类重叠", "cyan"))
+    print(c("\n📂 分类重叠", "cyan"))
     print(f"  Jaccard:     {cats.get('jaccard', 0)}")
     print(f"  共享分类:    {', '.join(cats.get('shared', [])) or '无'}")
 
     kw = result.get("keywords", {})
-    print(c(f"\n🔑 关键词重叠", "cyan"))
+    print(c("\n🔑 关键词重叠", "cyan"))
     print(f"  Jaccard:     {kw.get('jaccard', 0)}")
     print(f"  共享词数:    {kw.get('shared_count', 0)}")
     print(f"  共享词:      {', '.join(kw.get('shared', [])[:10]) or '无'}")
@@ -9611,7 +9619,7 @@ def cmd_memory_overlap(args):
 def cmd_conflict_graph(args):
     """记忆冲突检测图（v5.4.3 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n⚔️  记忆冲突检测图（v5.4.3）", "bold"))
+    print(c("\n⚔️  记忆冲突检测图（v5.4.3）", "bold"))
     print("=" * 60)
     print(f"  Agent ID:    {args.agent}")
     print(f"  回溯天数:    {args.days}")
@@ -9633,14 +9641,14 @@ def cmd_conflict_graph(args):
     print(f"  冲突密度:    {result['conflict_density']}")
 
     sev = result.get("severity_distribution", {})
-    print(c(f"\n📋 严重度分布", "cyan"))
+    print(c("\n📋 严重度分布", "cyan"))
     print(f"  高:    {sev.get('high', 0)}")
     print(f"  中:    {sev.get('medium', 0)}")
     print(f"  低:    {sev.get('low', 0)}")
 
     conflicts = result.get("conflicts", [])
     if conflicts:
-        print(c(f"\n⚠️  冲突详情（前 20 条）", "cyan"))
+        print(c("\n⚠️  冲突详情（前 20 条）", "cyan"))
         for cf in conflicts[:20]:
             sev_label = {"high": "🔴高", "medium": "🟡中", "low": "🟢低"}.get(cf["severity"], "?")
             print(f"\n  {sev_label} [{cf['conflict_type']}] 重要度差: {cf['importance_diff']}")
@@ -9651,7 +9659,7 @@ def cmd_conflict_graph(args):
 
     top_tags = result.get("top_conflict_tags", [])
     if top_tags:
-        print(c(f"\n🏷️  冲突热点标签", "cyan"))
+        print(c("\n🏷️  冲突热点标签", "cyan"))
         print(f"  {', '.join(top_tags)}")
 
     cm.close()
@@ -9661,7 +9669,7 @@ def cmd_conflict_graph(args):
 def cmd_drama_quote_map(args):
     """经典台词地图（v5.4.3 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🗺️  经典台词地图（v5.4.3）", "bold"))
+    print(c("\n🗺️  经典台词地图（v5.4.3）", "bold"))
     print("=" * 60)
     print(f"  短剧 ID:    {args.drama_id}")
 
@@ -9685,7 +9693,7 @@ def cmd_drama_quote_map(args):
 
     by_char = result.get("by_character", [])
     if by_char:
-        print(c(f"\n🎭 角色经典台词贡献排行", "cyan"))
+        print(c("\n🎭 角色经典台词贡献排行", "cyan"))
         print(f"{'角色':<16}{'总台词':>6}{'经典':>6}{'经典率':>8}")
         print("-" * 40)
         for ch in by_char:
@@ -9696,13 +9704,13 @@ def cmd_drama_quote_map(args):
 
     top_eps = result.get("top_episodes", [])
     if top_eps:
-        print(c(f"\n📺 经典台词最多的集", "cyan"))
+        print(c("\n📺 经典台词最多的集", "cyan"))
         for ep in top_eps:
             print(f"  EP{ep['episode']}:  {ep['classic_count']} 条经典台词")
 
     timeline = result.get("timeline", [])
     if timeline:
-        print(c(f"\n📜 经典台词时间线（前 15 条）", "cyan"))
+        print(c("\n📜 经典台词时间线（前 15 条）", "cyan"))
         for t in timeline[:15]:
             print(f"  EP{t['episode']}  [{t['character'][:10]}]  \"{t['text'][:40]}\"")
 
@@ -9713,7 +9721,7 @@ def cmd_drama_quote_map(args):
 def cmd_char_growth(args):
     """角色成长深度分析（v5.4.3 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🌱 角色成长深度分析（v5.4.3）", "bold"))
+    print(c("\n🌱 角色成长深度分析（v5.4.3）", "bold"))
     print("=" * 60)
     print(f"  短剧 ID:    {args.drama_id}")
     print(f"  角色 ID:    {args.character_id}")
@@ -9739,7 +9747,7 @@ def cmd_char_growth(args):
 
     emotion_arc = result.get("emotion_arc", [])
     if emotion_arc:
-        print(c(f"\n💖 情感弧线", "cyan"))
+        print(c("\n💖 情感弧线", "cyan"))
         print(f"{'集':>4}{'台词数':>6}{'情感':>10}{'评分':>8}")
         print("-" * 32)
         for e in emotion_arc:
@@ -9747,7 +9755,7 @@ def cmd_char_growth(args):
 
     complexity = result.get("complexity_curve", [])
     if complexity:
-        print(c(f"\n🧠 对话复杂度曲线", "cyan"))
+        print(c("\n🧠 对话复杂度曲线", "cyan"))
         print(f"{'集':>4}{'平均长度':>8}{'词汇量':>8}{'复杂度':>8}")
         print("-" * 32)
         for c_item in complexity:
@@ -9756,7 +9764,7 @@ def cmd_char_growth(args):
 
     stages = result.get("activity_stages", [])
     if stages:
-        print(c(f"\n📊 活跃度阶段", "cyan"))
+        print(c("\n📊 活跃度阶段", "cyan"))
         for s in stages:
             print(f"  {s['stage']:<10} 台词数: {s['line_count']}")
 
@@ -9769,7 +9777,7 @@ def cmd_char_growth(args):
 def cmd_scene_rhythm(args):
     """场景节奏分析（v5.4.3 新增）"""
     cm = _get_memory(args)
-    print(c(f"\n🎵 场景节奏分析（v5.4.3）", "bold"))
+    print(c("\n🎵 场景节奏分析（v5.4.3）", "bold"))
     print("=" * 60)
     print(f"  短剧 ID:    {args.drama_id}")
 
@@ -9791,7 +9799,7 @@ def cmd_scene_rhythm(args):
     print(f"  节奏变化度: {result['rhythm_variability']}")
 
     pace = result.get("pace_distribution", {})
-    print(c(f"\n📋 节奏分布", "cyan"))
+    print(c("\n📋 节奏分布", "cyan"))
     print(f"  快节奏:     {pace.get('fast', 0)}")
     print(f"  中节奏:     {pace.get('moderate', 0)}")
     print(f"  慢节奏:     {pace.get('slow', 0)}")
@@ -9799,7 +9807,7 @@ def cmd_scene_rhythm(args):
 
     rhythms = result.get("scene_rhythms", [])
     if rhythms:
-        print(c(f"\n🎬 各场景节奏（前 20 个）", "cyan"))
+        print(c("\n🎬 各场景节奏（前 20 个）", "cyan"))
         print(f"{'集':>4}{'场景':>6}{'台词':>6}{'密度':>8}{'节奏':>10}  标题")
         print("-" * 60)
         for sr in rhythms[:20]:

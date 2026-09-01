@@ -5,12 +5,10 @@
 AI 短剧分集生成/角色台词/剧情反转/剧本导出、
 Bug 修复验证（枚举不匹配）
 """
-import json
 import os
 import sys
 import tempfile
 
-import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)

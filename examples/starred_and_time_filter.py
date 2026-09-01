@@ -9,7 +9,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.MindForge import MindForge
-from core.types import MemoryLayer, PrivacyLevel, Importance
+from core.types import Importance
 
 
 def main():
@@ -66,12 +66,12 @@ def main():
     print("-" * 40)
 
     target_id = ids[0]
-    print(f"  对第1条记忆进行收藏...")
+    print("  对第1条记忆进行收藏...")
     cm.star(target_id)
     entry = cm.get(target_id)
     print(f"  状态：{'⭐ 已收藏' if entry.starred else '未收藏'}")
 
-    print(f"\n  取消收藏...")
+    print("\n  取消收藏...")
     cm.unstar(target_id)
     entry = cm.get(target_id)
     print(f"  状态：{'⭐ 已收藏' if entry.starred else '未收藏'}")

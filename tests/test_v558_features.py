@@ -12,7 +12,6 @@ MindForge v5.5.8 测试套件
 
 import os
 import sys
-import json
 import tempfile
 import unittest
 
@@ -184,7 +183,7 @@ class TestFalsyEnumFix(unittest.TestCase):
 
     def test_add_preserves_explicit_enum(self):
         """显式传入的枚举值应该被保留"""
-        from MindForge import Importance, MemoryLayer
+        from MindForge import Importance
         entry = self.mf.add(
             "test importance",
             category="test",

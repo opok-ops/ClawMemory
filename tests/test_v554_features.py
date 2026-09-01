@@ -9,8 +9,7 @@ import time
 import tempfile
 import pytest
 
-from MindForge import MindForge, __version__
-from core.types import MemoryLayer, PrivacyLevel
+from MindForge import MindForge
 
 
 @pytest.fixture

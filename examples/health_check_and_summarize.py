@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core import MindForge, MemoryConfig, Importance, MemoryLayer
+from core import MindForge, MemoryConfig, Importance
 
 
 def main():
@@ -60,7 +60,7 @@ def main():
         print(f"   孤立 FTS 记录：{health['fts_orphans']}")
         print(f"   孤立审计日志：{health['audit_orphans']}")
         print(f"   加密不一致：{health['encrypted_inconsistent']}")
-        print(f"\n   建议：")
+        print("\n   建议：")
         for rec in health["recommendations"]:
             print(f"     • {rec}")
 
@@ -74,7 +74,7 @@ def main():
         print(f"   最近 7 天新增：{summary['recent_activity']['last_7d']}")
         print(f"   最近 30 天新增：{summary['recent_activity']['last_30d']}")
 
-        print(f"\n   📂 分组详情：")
+        print("\n   📂 分组详情：")
         for key, info in summary["grouped"].items():
             print(f"\n     ▸ {key} ({info['count']} 条)")
             print(f"       时间：{info['oldest']} ~ {info['latest']}")
@@ -82,7 +82,7 @@ def main():
                 print(f"       • {s[:60]}")
 
         if summary["top_tags"]:
-            print(f"\n   🏷️  热门标签：")
+            print("\n   🏷️  热门标签：")
             for tag, count in summary["top_tags"][:5]:
                 print(f"     #{tag}: {count}")
 
@@ -91,7 +91,7 @@ def main():
         print("📊 步骤 3：记忆摘要（按重要性分组）")
         print("=" * 60)
         summary2 = cm.summarize(group_by="importance")
-        print(f"\n   分组：")
+        print("\n   分组：")
         for key, info in summary2["grouped"].items():
             print(f"     ▸ {key}: {info['count']} 条")
 

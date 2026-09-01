@@ -4,7 +4,6 @@ MindForge v5.0.3 - 批量删除与标签搜索示例
 """
 import sys
 import os
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -58,7 +57,7 @@ def main():
     stats = cm.stats()
     print(f"总记忆数：{stats['total']}")
     print(f"⭐ 收藏数：{stats.get('starred_count', 0)}")
-    print(f"热门标签：")
+    print("热门标签：")
     for tag, count in stats.get("top_tags", {}).items():
         print(f"  #{tag}: {count}")
 

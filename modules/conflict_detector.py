@@ -13,7 +13,6 @@ MindForge v5.3.9 矛盾检测 + 自动衰减引擎
 from __future__ import annotations
 
 import re
-import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 

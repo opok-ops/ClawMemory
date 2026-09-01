@@ -17,7 +17,6 @@ import tempfile
 import pytest
 
 from MindForge import MindForge, __version__
-from core.types import MemoryLayer, PrivacyLevel, Importance
 
 
 @pytest.fixture

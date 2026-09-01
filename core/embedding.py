@@ -1,5 +1,5 @@
 """
-MindForge v5.5.2 嵌入引擎
+MindForge v5.5.8 嵌入引擎
 
 多后端适配器架构（v5.4.6 新增）：
 - sentence-transformers（本地 CPU 推理，默认）
@@ -182,7 +182,7 @@ class OpenAIBackend(EmbeddingBackend):
             self._available = False
             return
         try:
-            import urllib.request
+            pass
             # 探测维度：发送一条测试请求
             result = self._call_api(["test"])
             if result and len(result) > 0:

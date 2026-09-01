@@ -57,19 +57,19 @@ def basic_usage():
     for entry in entries:
         print(f"   ✓ 添加: {entry.preview[:40]}...")
 
-    print(f"\n2. 统计信息...")
+    print("\n2. 统计信息...")
     stats = memory.stats()
     print(f"   总记忆数: {stats['total']}")
     print(f"   分类: {stats.get('top_categories', {})}")
 
-    print(f"\n3. 搜索记忆 'Python'...")
+    print("\n3. 搜索记忆 'Python'...")
     results = memory.search("Python", max_results=5)
     print(f"   找到 {results.total_found} 条相关记忆")
     print(f"   耗时: {results.query_time_ms}ms")
     for i, chunk in enumerate(results.chunks, 1):
         print(f"   {i}. [{chunk.category}] {chunk.content[:50]}... (相关度: {chunk.relevance_score:.3f})")
 
-    print(f"\n4. 记忆层级分布...")
+    print("\n4. 记忆层级分布...")
     by_layer = stats.get('by_layer', {})
     for layer, count in by_layer.items():
         print(f"   {layer}: {count} 条")
@@ -108,7 +108,7 @@ def knowledge_graph_example():
         print(f"   - {name}  [{rel_type}]  (权重: {weight:.2f})")
 
     stats = kg.get_entity_stats()
-    print(f"\n4. 图谱统计...")
+    print("\n4. 图谱统计...")
     print(f"   实体总数: {stats['total_entities']}")
     print(f"   关系总数: {stats['total_relations']}")
 

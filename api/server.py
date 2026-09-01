@@ -33,7 +33,7 @@ import time
 import hmac
 import threading
 from pathlib import Path
-from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 from collections import defaultdict
 from MindForge import __version__ as MF_VERSION
@@ -117,7 +117,25 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
             args=(request, client_address),
             daemon=True,
         )
-        t.start()
+        # v5.5.8 修复：t.start() 失败（如线程资源耗尽）时计数不会回退，
+        # 并发槽位会逐步泄漏直至服务永久返回 503。
+        try:
+            t.start()
+        except RuntimeError:
+            with self._thread_lock:
+                self._active_threads -= 1
+            try:
+                body = b'{"error": "Failed to start worker thread"}'
+                request.sendall(
+                    b"HTTP/1.1 503 Service Unavailable\r\n"
+                    b"Content-Type: application/json\r\n"
+                    b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+                    b"\r\n"
+                    + body
+                )
+            except Exception:
+                pass
+            request.close()
 
     def _process_request_thread(self, request, client_address):
         try:
@@ -477,8 +495,8 @@ def start_api_server(mindforge_instance, host="127.0.0.1", port=8080):
     server = BoundedThreadingHTTPServer((host, port), MindForgeAPIHandler)
     print(f"MindForge REST API serving on http://{host}:{port}")
     print(f"  Max concurrent threads: {BoundedThreadingHTTPServer.max_threads}")
-    print(f"  Endpoints: /api/memories, /api/search, /api/stats, /api/health, ...")
-    print(f"  Press Ctrl+C to stop")
+    print("  Endpoints: /api/memories, /api/search, /api/stats, /api/health, ...")
+    print("  Press Ctrl+C to stop")
 
     try:
         server.serve_forever()

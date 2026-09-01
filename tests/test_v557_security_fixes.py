@@ -15,7 +15,6 @@ MindForge v5.5.7 安全修复验证测试
 
 import os
 import sys
-import json
 import tempfile
 import unittest
 import hashlib
@@ -30,7 +29,7 @@ class TestP1008EncryptionNoFallback(unittest.TestCase):
 
     def test_encryption_requires_cryptography(self):
         """验证加密引擎在 cryptography 可用时正常工作"""
-        from core.encryption import EncryptionEngine, SecurityError
+        from core.encryption import EncryptionEngine
 
         # cryptography 应该已安装（测试依赖）
         key = os.urandom(32)
@@ -298,7 +297,6 @@ class TestP001KeyFileEncryption(unittest.TestCase):
     def test_key_file_existing_enables_encryption(self):
         """验证 key_file 存在时 MindForge 启用加密模式"""
         from core import MindForge, MemoryConfig
-        from core.encryption import init_engine
 
         # 先创建加密数据库和密钥文件
         config = MemoryConfig(

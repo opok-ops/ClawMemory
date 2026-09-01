@@ -9,7 +9,7 @@ import uuid
 import time
 import sqlite3  # v5.4.7 修复 C-3：异常处理中引用 sqlite3.OperationalError 需要此导入
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple, Set
+from typing import List, Dict, Optional, Tuple
 from collections import defaultdict, deque  # v5.4.7 修复 L-7：BFS 使用 deque
 
 

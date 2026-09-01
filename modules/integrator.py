@@ -4,7 +4,7 @@ MindForge v5.0 记忆整合器
 """
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Dict, Optional
 from collections import defaultdict
 

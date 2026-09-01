@@ -3,9 +3,7 @@ MindForge v5.0 通用 API 适配器
 REST API / SDK 风格接口
 """
 
-import json
-from typing import List, Dict, Optional, Any, Callable
-from dataclasses import dataclass
+from typing import List, Dict, Optional, Callable
 
 
 class GenericAPIAdapter:

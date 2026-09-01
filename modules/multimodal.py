@@ -4,9 +4,7 @@ MindForge v5.0 多模态记忆模块
 """
 
 import base64
-import hashlib
 import json
-import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Any, Tuple

@@ -3,14 +3,15 @@ MindForge v5.0 召回引擎
 语义检索 + 知识图谱增强 + 上下文优化
 """
 
+import copy
 import time
-from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from dataclasses import dataclass
+from typing import List, Optional, Any
 
 from core.storage import StorageEngine, MemoryEntry
 from core.indexer import IndexEngine
 from core.query import QueryEngine, MemoryChunk, RecallResult
-from core.types import MemoryLayer, PrivacyLevel
+from core.types import MemoryLayer
 
 
 @dataclass
@@ -189,7 +190,10 @@ class RecallEngine:
             else:
                 remaining = max_tokens - total_tokens
                 if remaining > 50:
-                    truncated = chunk
+                    # v5.5.8 修复：原写法 `truncated = chunk` 只是别名而非拷贝，
+                    # 随后的赋值会原地修改调用方持有的 MemoryChunk，
+                    # 导致记忆内容被永久截断（缓存/复用场景尤其危险）。
+                    truncated = copy.copy(chunk)
                     truncated.content = chunk.content[:remaining * 4]
                     selected.append(truncated)
                 break

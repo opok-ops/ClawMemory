@@ -1,9 +1,22 @@
 #!/usr/bin/env python3
 """
-MindForge - 智能记忆管理系统
-带 AI 短剧创作功能的完整记忆管理 CLI
+MindForge_combined.py — 已废弃的遗留单文件构建（DEPRECATED）
+=============================================================
 
-核心能力：
+.. warning::
+   本文件是 v5.0 时代的遗留 fork，**与当前 `core/` 主线实现不再等价**：
+
+   - 记忆层级命名不同：本文件为 working / episodic / semantic / procedural，
+     主线为 sensory / short_term / long_term / permanent；
+   - 公开 API 签名不兼容：本文件 `add(category=...)` / `search(max_results=...)`，
+     主线 `add(layer=...)` / `search(limit=...)`；
+   - 仅覆盖主线约 1/3 的方法，缺少向量检索、联邦记忆、隐私引擎、MCP 等模块；
+
+   新项目请直接使用主线包（`from MindForge import MindForge`）或 CLI（`MindForge`），
+   请勿基于本文件开发。保留它仅为兼容早期使用者，后续版本将移除。
+   文档与更新记录见 README.md 与 CHANGELOG.md。
+
+历史能力描述（仅供对照）：
 - 分层记忆存储（工作记忆 / 情景记忆 / 语义记忆 / 程序记忆）
 - FTS5 全文检索 + 向量语义检索混合召回
 - 遗忘曲线与记忆巩固（spaced repetition）
@@ -16,7 +29,6 @@ import argparse
 import json
 import os
 import sys
-import time
 import uuid
 import hashlib
 import sqlite3
@@ -24,7 +36,6 @@ import logging
 from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timedelta
-from pathlib import Path
 
 # ============================================================
 # 配置与常量
@@ -726,7 +737,7 @@ class MemoryCore:
         # 1. FTS 全文检索
         try:
             cursor = self._conn.cursor()
-            fts_query = f"SELECT m.*, bm25(memories_fts) as score FROM memories_fts JOIN memories m ON memories_fts.rowid = m.rowid WHERE memories_fts MATCH ? ORDER BY score LIMIT ?"
+            fts_query = "SELECT m.*, bm25(memories_fts) as score FROM memories_fts JOIN memories m ON memories_fts.rowid = m.rowid WHERE memories_fts MATCH ? ORDER BY score LIMIT ?"
             cursor.execute(fts_query, (query, limit * 2))
             rows = cursor.fetchall()
             for row in rows:
@@ -1843,14 +1854,14 @@ def cmd_add(args, core: MemoryCore):
     if _json_mode:
         output_json(asdict(entry))
     else:
-        print(f"✓ 记忆已添加")
+        print("✓ 记忆已添加")
         print(f"  ID: {entry.id}")
         print(f"  层级: {entry.layer}")
         print(f"  内容: {entry.content[:100]}..." if len(entry.content) > 100 else f"  内容: {entry.content}")
         if entry.tags:
             print(f"  标签: {', '.join(entry.tags)}")
         if entry.encrypted:
-            print(f"  加密: 已启用")
+            print("  加密: 已启用")
 
 
 def cmd_delete(args, core: MemoryCore):
@@ -1986,14 +1997,14 @@ def cmd_agent_insight(args, core: MemoryCore):
         print("=== Agent 洞察 ===")
         if "profile" in insights:
             p = insights["profile"]
-            print(f"\n[记忆画像]")
+            print("\n[记忆画像]")
             print(f"  总记忆: {p['total_memories']}")
             print(f"  主导层级: {p['dominant_layer']}")
             print(f"  近7天活跃: {p['recent_activity']} 条")
             if p["top_tags"]:
                 print(f"  热门标签: {', '.join(t for t, _ in p['top_tags'][:5])}")
         if "conflict_count" in insights:
-            print(f"\n[冲突检测]")
+            print("\n[冲突检测]")
             print(f"  发现 {insights['conflict_count']} 处潜在冲突")
             for c in insights.get("conflicts", [])[:5]:
                 print(f"  - [{c['severity']}] {c['memory1']['preview'][:50]}... vs {c['memory2']['preview'][:50]}...")
@@ -2053,14 +2064,14 @@ def cmd_drama(args, core: MemoryCore):
         else:
             print("=== 短剧分析 ===")
             if "error" not in pacing:
-                print(f"\n[节奏分析]")
+                print("\n[节奏分析]")
                 print(f"  总场次: {pacing['total_scenes']}")
                 print(f"  场均台词: {pacing['avg_lines_per_scene']}")
                 print(f"  节奏分布: {pacing['pacing_distribution']}")
-            print(f"\n[角色关系]")
+            print("\n[角色关系]")
             print(f"  角色数: {relationships['stats']['character_count']}")
             print(f"  关系数: {relationships['stats']['relationship_count']}")
-            print(f"\n[伏笔追踪]")
+            print("\n[伏笔追踪]")
             print(f"  总伏笔: {len(foreshadowings)}")
             print(f"  未回收: {analysis['active_foreshadowings']}")
 

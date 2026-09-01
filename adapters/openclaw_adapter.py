@@ -2,8 +2,7 @@
 MindForge v5.0 OpenClaw 适配器
 """
 
-import json
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 
 
 class OpenClawAdapter:

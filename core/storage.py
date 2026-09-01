@@ -14,7 +14,7 @@ import threading
 import tempfile
 from pathlib import Path
 from collections import OrderedDict
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timezone
 
@@ -166,7 +166,6 @@ def _safe_json_loads(data: str, max_depth: int = 32, max_size: int = 10_000_000)
     if len(data) > max_size:
         raise ValueError(f"JSON 数据过大（{len(data)} > {max_size} 字节）")
 
-    import re as _re
 
     def _check_depth(s: str) -> int:
         """用括号匹配粗检查深度（在 json.loads 之前快速失败）"""
@@ -4752,10 +4751,10 @@ class StorageEngine:
                     continue
                 seen_pairs.add(pair_key)
                 edges.append({
-                    "source": a,
-                    "source_name": characters.get(a, {}).get("name", a),
-                    "target": b,
-                    "target_name": characters.get(b, {}).get("name", b),
+                    "source": primary_char,
+                    "source_name": characters.get(primary_char, {}).get("name", primary_char),
+                    "target": partner_char,
+                    "target_name": characters.get(partner_char, {}).get("name", partner_char),
                     "weight": count,
                 })
 
@@ -5398,7 +5397,6 @@ class StorageEngine:
             # created_at 索引修正：SELECT 中是第 6 列（index=5）？重新按顺序
             # 顺序是: id[0],content[1],tags[2],category[3],importance[4],layer[5],created_at[6],access_count[7],privacy[8]
             # 所以应该修正：
-            pass
 
         # 重新整理统计，修正列索引
         layers.clear()
@@ -7665,7 +7663,7 @@ class StorageEngine:
         import time as _time
         now = _time.time()
         # 计算各时间边界（本地日期）
-        from datetime import datetime, timedelta
+        from datetime import datetime
         now_dt = datetime.now()
         today_start = datetime(now_dt.year, now_dt.month, now_dt.day).timestamp()
         yesterday_start = today_start - 86400
