@@ -42,13 +42,8 @@ jobs:
       - name: Smoke test — MCP tools/list
         run: |
           python -c "
-          import sys, json
+          import sys
           sys.path.insert(0, '.')
-          import importlib.util
-          spec = importlib.util.spec_from_file_location('MindForge', '__init__.py', submodule_search_locations=['.'])
-          mod = importlib.util.module_from_spec(spec)
-          sys.modules['MindForge'] = mod
-          spec.loader.exec_module(mod)
           from mcp.server import _handle_tools_list
           tools = _handle_tools_list({})['tools']
           assert len(tools) >= 30, f'Expected at least 30 tools, got {len(tools)}'
