@@ -23,7 +23,7 @@ overview.md
 # Test artifacts
 .coverage
 .pytest_cache/
-test_*.py
+/test_*.py
 benchmark_*.py
 benchmark_*.json
 benchmark_*.html
