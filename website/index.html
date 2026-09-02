@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MindForge — 让 AI Agent 拥有终身记忆</title>
-<meta name="description" content="MindForge 是生产级 AI Agent 终身记忆系统：四层记忆架构、知识图谱、六路混合检索、多模态、联邦网络与端侧 AES-256-GCM 加密。pip install mindforge，本地运行，数据不上云。">
+<meta name="description" content="MindForge 是生产级 AI Agent 终身记忆系统：四层记忆架构、知识图谱、六路混合检索、多模态、联邦网络与端侧 AES-256-GCM 加密。源码安装，本地运行，数据不上云。">
 <meta name="keywords" content="MindForge, AI Agent 记忆, 长期记忆, 知识图谱, 混合检索, MCP, 端侧加密, Python 记忆库, RAG 记忆">
 <meta name="author" content="MindForge">
 <meta name="theme-color" content="#05070d">
@@ -14,7 +14,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="MindForge">
 <meta property="og:title" content="MindForge — 让 AI Agent 拥有终身记忆">
-<meta property="og:description" content="四层记忆架构 · 知识图谱 · 六路混合检索 · 联邦网络 · 端侧 AES-256-GCM 加密。pip install mindforge，本地运行，数据不上云。">
+<meta property="og:description" content="四层记忆架构 · 知识图谱 · 六路混合检索 · 联邦网络 · 端侧 AES-256-GCM 加密。源码安装，本地运行，数据不上云。">
 <meta property="og:url" content="https://opok-ops.github.io/MindForge/">
 <meta property="og:locale" content="zh_CN">
 
@@ -274,7 +274,7 @@
         <div class="qs-steps">
           <div class="qs-step">
             <span class="n">1</span>
-            <span class="t"><b>安装</b> — pip install mindforge</span>
+            <span class="t"><b>安装</b> — git clone + pip install -e .</span>
           </div>
           <div class="qs-step">
             <span class="n">2</span>
@@ -298,7 +298,8 @@
             </button>
           </div>
           <pre class="code-body"><code id="code-quickstart"><span class="tk-cm"># 1. 安装</span>
-<span class="tk-op">$</span> pip install mindforge
+<span class="tk-op">$</span> git clone https://github.com/opok-ops/MindForge.git
+<span class="tk-op">$</span> cd MindForge && pip install -e .
 
 <span class="tk-cm"># 2. 三行代码接入</span>
 <span class="tk-kw">from</span> <span class="tk-var">MindForge</span> <span class="tk-kw">import</span> <span class="tk-var">MindForge</span>
@@ -323,7 +324,8 @@
             <span class="code-dot g" aria-hidden="true"></span>
             <span class="code-name">bash — mindforge</span>
           </div>
-          <pre class="term-body"><code><span class="l"><span class="tk-prompt">$</span> pip install mindforge</span>
+          <pre class="term-body"><code><span class="l"><span class="tk-prompt">$</span> git clone https://github.com/opok-ops/MindForge.git</span>
+<span class="l"><span class="tk-prompt">$</span> cd MindForge && pip install -e .</span>
 <span class="l dim">Successfully installed mindforge-5.5.8</span>
 <span class="l"><span class="tk-prompt">$</span> python</span>
 <span class="l dim">&gt;&gt;&gt; from MindForge import MindForge</span>
@@ -1420,7 +1422,7 @@
             <span class="copy-label">复制</span>
           </button>
         </div>
-        <pre class="code-body"><code id="code-install"><span class="tk-op">$</span> pip install mindforge <span class="tk-op">&amp;&amp;</span> mindforge init --encrypted</code></pre>
+        <pre class="code-body"><code id="code-install"><span class="tk-op">$</span> git clone https://github.com/opok-ops/MindForge.git <span class="tk-op">&amp;&amp;</span> cd MindForge <span class="tk-op">&amp;&amp;</span> pip install -e .</code></pre>
       </div>
     </div>
 
@@ -1515,7 +1517,7 @@
     <div class="foot-bottom">
       <span>© <span id="foot-year">2026</span> MindForge · 本地运行 · 数据不上云</span>
       <span class="fb-legal">
-        <span>Python 库 · <code style="font-size:11.5px">pip install mindforge</code></span>
+        <span>Python 库 · <code style="font-size:11.5px">git clone + pip install -e .</code></span>
         <a href="https://github.com/opok-ops/MindForge/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a>
         <a href="https://github.com/opok-ops/MindForge" target="_blank" rel="noopener noreferrer">
           源码 <svg class="icon icon-sm" style="display:inline;vertical-align:-2px" aria-hidden="true"><use href="#i-external"/></svg>
