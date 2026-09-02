@@ -6,7 +6,7 @@ MindForge is a local-first encrypted memory system — security is core to the p
 
 If you discover a security vulnerability, please report it responsibly:
 
-1. **Email**: security@opok-ops.dev
+1. **Email**: 2638895480@qq.com
 2. **Subject line**: `[SECURITY] MindForge — <brief description>`
 3. **Include**: steps to reproduce, affected version, potential impact
 
