@@ -16,7 +16,9 @@
 三行代码，立即体验：
 
 ```bash
-pip install mindforge
+git clone https://github.com/opok-ops/MindForge.git
+cd MindForge
+pip install -e .
 ```
 
 ```python
