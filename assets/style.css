@@ -44,8 +44,8 @@
   /* —— 文字 —— */
   --txt:         #e8eefb;
   --txt-2:       #a7b4cd;
-  --txt-3:       #6f7c96;
-  --txt-4:       #4e5a72;
+  --txt-3:       #828ea6;
+  --txt-4:       #5f6c88;
 
   /* —— 主色：青 → 靛 → 紫（克制使用） —— */
   --cy:          #22d3ee;
@@ -631,6 +631,16 @@ button {
   background: linear-gradient(180deg, transparent, var(--void) 82%);
 }
 .hero-inner { position: relative; z-index: 2; max-width: 940px; }
+/* 文字焦点区柔光暗角：在粒子网络之上叠加一层中心暗化，保证 Hero 文案在任何粒子密度下都清晰可读 */
+.hero-inner::before {
+  content: "";
+  position: absolute;
+  inset: -16% -18%;
+  z-index: -1;
+  background: radial-gradient(ellipse 60% 56% at 50% 46%, rgba(5, 7, 13, 0.78), rgba(5, 7, 13, 0.42) 46%, transparent 72%);
+  filter: blur(8px);
+  pointer-events: none;
+}
 
 .hero-badge {
   display: inline-flex;
