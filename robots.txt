@@ -1,3 +1,11 @@
-﻿User-agent: *
+# MindForge — https://opok-ops.github.io/MindForge/
+# 允许所有合规爬虫抓取站点内容
+
+User-agent: *
 Allow: /
-Sitemap: https://opok-ops.github.io/ClawMemory/sitemap.xml
+
+# 演示页为动画页，无实质文本内容，不纳入索引
+User-agent: *
+Disallow: /demo.html
+
+Sitemap: https://opok-ops.github.io/MindForge/sitemap.xml
