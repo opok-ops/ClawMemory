@@ -707,6 +707,18 @@
     // 年份
     var yearEl = qs('#foot-year');
     if (yearEl) { yearEl.textContent = String(new Date().getFullYear()); }
+
+    // 版本号注入：读取 JSON-LD 中的 softwareVersion，统一替换所有 [data-ver] 元素
+    var ver = '';
+    try {
+      var ld = document.querySelector('script[type="application/ld+json"]');
+      if (ld) { ver = JSON.parse(ld.textContent).softwareVersion || ''; }
+    } catch (e) {}
+    if (ver) {
+      document.querySelectorAll('[data-ver]').forEach(function (el) {
+        el.textContent = el.dataset.verTpl ? el.dataset.verTpl.replace('{v}', ver) : 'v' + ver;
+      });
+    }
   }
 
   if (document.readyState === 'loading') {

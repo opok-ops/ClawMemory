@@ -27,7 +27,9 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/fonts.css">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="assets/style.css">
 
 <script type="application/ld+json">
@@ -148,7 +150,7 @@
         </svg>
       </span>
       <span class="brand-name">MindForge</span>
-      <span class="brand-ver">v5.5.8</span>
+      <span class="brand-ver" data-ver>v5.5.8</span>
     </a>
 
     <ul class="nav-links">
@@ -202,7 +204,7 @@
   <div class="hero-inner">
     <p class="hero-badge" data-reveal>
       <span class="pulse" aria-hidden="true"></span>
-      <b>v5.5.8</b>
+      <b data-ver>v5.5.8</b>
       <span>四层记忆架构 · 六路混合检索 · 端侧加密</span>
     </p>
 
@@ -326,7 +328,7 @@
           </div>
           <pre class="term-body"><code><span class="l"><span class="tk-prompt">$</span> git clone https://github.com/opok-ops/MindForge.git</span>
 <span class="l"><span class="tk-prompt">$</span> cd MindForge && pip install -e .</span>
-<span class="l dim">Successfully installed mindforge-5.5.8</span>
+<span class="l dim" data-ver data-ver-tpl="Successfully installed mindforge-{v}">Successfully installed mindforge-5.5.8</span>
 <span class="l"><span class="tk-prompt">$</span> python</span>
 <span class="l dim">&gt;&gt;&gt; from MindForge import MindForge</span>
 <span class="l dim">&gt;&gt;&gt; m = MindForge(db_path="./data/memory.db")</span>
@@ -1163,13 +1165,13 @@
     <div class="section-head" data-reveal>
       <span class="tag"><span class="tag-dot" aria-hidden="true"></span>Changelog</span>
       <h2 id="cl-title">每次迭代，<span class="gradient-text">都在进化</span></h2>
-      <p>从 v5.3.3 到 v5.5.8，功能扩展、安全加固与 Bug 修复的完整轨迹。</p>
+      <p>从 v5.3.3 到 <span data-ver>v5.5.8</span>，功能扩展、安全加固与 Bug 修复的完整轨迹。</p>
     </div>
 
     <div class="cl-list">
       <article class="cl-item is-latest" data-reveal>
         <div class="cl-meta">
-          <span class="cl-ver">v5.5.8</span>
+          <span class="cl-ver" data-ver>v5.5.8</span>
           <span class="cl-date">2026-09-01</span>
           <span class="cl-kind">最新</span>
         </div>
@@ -1466,7 +1468,7 @@
         </span>
         <div>
           <div class="fb-t">MindForge</div>
-          <p class="fb-s">AI Agent 终身记忆系统<br>v5.5.8 · 100% 本地加密 · 零云端依赖</p>
+          <p class="fb-s">AI Agent 终身记忆系统<br><span data-ver>v5.5.8</span> · 100% 本地加密 · 零云端依赖</p>
           <div class="fb-links">
             <a href="https://github.com/opok-ops/MindForge" target="_blank" rel="noopener noreferrer" aria-label="MindForge GitHub 仓库">
               <svg class="icon icon-md icon-fill" aria-hidden="true"><use href="#i-github"/></svg>
