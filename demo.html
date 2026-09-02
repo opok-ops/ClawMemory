@@ -3,567 +3,523 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MindForge Demo - 记忆系统演示</title>
+<title>MindForge 交互演示 — 记忆从写入到召回</title>
+<meta name="description" content="MindForge 交互演示：四阶段展示记忆写入、语义检索、知识关联与四层记忆架构。">
+<meta name="robots" content="noindex, follow">
+<link rel="canonical" href="https://opok-ops.github.io/MindForge/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%2322d3ee'/%3E%3Cstop offset='52%25' stop-color='%23818cf8'/%3E%3Cstop offset='100%25' stop-color='%23a855f7'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='16' cy='16' r='13' fill='none' stroke='url(%23g)' stroke-width='2.4'/%3E%3Cpath d='M9 16a7 7 0 0 1 14 0' fill='none' stroke='url(%23g)' stroke-width='2.4' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='16' r='2.6' fill='url(%23g)'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-  background: #0a0a0f;
-  color: #fff;
-  font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  overflow: hidden;
-}
-
-#canvas {
-  position: fixed;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  z-index: 1;
-}
-
-.overlay {
-  position: fixed;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  z-index: 2;
-  pointer-events: none;
-}
-
-/* Back button */
-.back-btn {
-  position: fixed;
-  top: 24px;
-  left: 24px;
-  z-index: 10;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  background: rgba(26, 26, 37, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  color: #a0a0b0;
-  font-size: 14px;
-  font-weight: 500;
-  text-decoration: none;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  transition: all 0.2s;
-  pointer-events: all;
-}
-
-.back-btn:hover {
-  color: #00d4ff;
-  border-color: rgba(0, 212, 255, 0.3);
-  background: rgba(0, 212, 255, 0.1);
-}
-
-.title-screen {
-  position: absolute;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  text-align: center;
-  opacity: 0;
-  animation: fadeIn 2s ease-out forwards;
-}
-
-.title-screen h1 {
-  font-size: 5rem;
-  font-weight: 900;
-  background: linear-gradient(135deg, #00d4ff 0%, #a855f7 50%, #f472b6 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  margin-bottom: 1rem;
-  letter-spacing: -2px;
-}
-
-.title-screen p {
-  font-size: 1.2rem;
-  color: #a0a0b0;
-  max-width: 500px;
-}
-
-.phase {
-  position: absolute;
-  top: 10%; left: 10%;
-  opacity: 0;
-  font-size: 0.85rem;
-  color: #00d4ff;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  font-weight: 600;
-  padding: 8px 16px;
-  background: rgba(0, 212, 255, 0.1);
-  border: 1px solid rgba(0, 212, 255, 0.2);
-  border-radius: 8px;
-}
-
-.demo-card {
-  position: absolute;
-  background: rgba(26, 26, 37, 0.9);
-  border: 1px solid rgba(0, 212, 255, 0.2);
-  border-radius: 16px;
-  padding: 1.5rem;
-  opacity: 0;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-}
-
-.demo-card h3 {
-  font-size: 1rem;
-  color: #00d4ff;
-  margin-bottom: 0.75rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 600;
-}
-
-.demo-card .content {
-  font-size: 0.9rem;
-  color: #e0e0e8;
-  line-height: 1.6;
-}
-
-.demo-card .tags {
-  display: flex;
-  gap: 0.4rem;
-  margin-top: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.demo-card .tag {
-  padding: 0.25rem 0.7rem;
-  background: rgba(168, 85, 247, 0.15);
-  border: 1px solid rgba(168, 85, 247, 0.2);
-  border-radius: 6px;
-  font-size: 0.7rem;
-  color: #a855f7;
-  font-weight: 500;
-}
-
-.demo-card .score {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.8rem;
-  color: #10b981;
-  margin-top: 0.5rem;
-  font-weight: 600;
-}
-
-.search-box {
-  position: absolute;
-  bottom: 20%; left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 0.5rem;
-  opacity: 0;
-}
-
-.search-box input {
-  width: 400px;
-  padding: 0.85rem 1.2rem;
-  background: rgba(26, 26, 37, 0.9);
-  border: 1px solid rgba(0, 212, 255, 0.3);
-  border-radius: 12px;
-  color: #fff;
-  font-size: 0.9rem;
-  outline: none;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  font-family: inherit;
-}
-
-.search-box input::placeholder {
-  color: #6b6b80;
-}
-
-.search-box button {
-  padding: 0.85rem 1.5rem;
-  background: linear-gradient(135deg, #00d4ff, #a855f7);
-  border: none;
-  border-radius: 12px;
-  color: #fff;
-  font-weight: 600;
-  cursor: pointer;
-  font-family: inherit;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.search-box button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(0, 212, 255, 0.3);
-}
-
-.graph-node {
-  position: absolute;
-  width: 64px; height: 64px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.75rem;
-  opacity: 0;
-  background: rgba(26, 26, 37, 0.9);
-  border: 2px solid rgba(0, 212, 255, 0.4);
-  box-shadow: 0 0 30px rgba(0, 212, 255, 0.2);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-.graph-line {
-  position: absolute;
-  height: 2px;
-  background: linear-gradient(90deg, rgba(0, 212, 255, 0.6), rgba(168, 85, 247, 0.6));
-  transform-origin: left center;
-  opacity: 0;
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
-}
-
-.layer-stack {
-  position: absolute;
-  right: 10%; top: 50%;
-  transform: translateY(-50%);
-  opacity: 0;
-}
-
-.layer {
-  padding: 1rem 1.5rem;
-  background: rgba(26, 26, 37, 0.8);
-  border-left: 3px solid;
-  margin-bottom: 0.75rem;
-  border-radius: 0 12px 12px 0;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  min-width: 180px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-}
-
-.layer.sensory { border-color: #00d4ff; }
-.layer.short-term { border-color: #a855f7; }
-.layer.long-term { border-color: #f472b6; }
-.layer.permanent { border-color: #10b981; }
-
-.layer span {
-  font-size: 0.95rem;
-  color: #e0e0e8;
-  font-weight: 600;
-}
-
-.layer .label {
-  font-size: 0.7rem;
-  color: #6b6b80;
-  display: block;
-  margin-top: 0.25rem;
-  font-weight: 400;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translate(-50%, -50%) translateY(20px); }
-  to { opacity: 1; transform: translate(-50%, -50%) translateY(0); }
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.7; transform: scale(1.05); }
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
-}
-
-@keyframes glow {
-  0%, 100% { box-shadow: 0 0 20px rgba(0, 212, 255, 0.3); }
-  50% { box-shadow: 0 0 40px rgba(0, 212, 255, 0.6); }
-}
-
-.typewriter {
-  overflow: hidden;
-  border-right: 2px solid #00d4ff;
-  animation: typing 3s steps(40) forwards, blink 0.75s step-end infinite;
-}
-
-@keyframes typing {
-  from { width: 0; }
-  to { width: 100%; }
-}
-
-@keyframes blink {
-  50% { border-color: transparent; }
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .title-screen h1 { font-size: 3rem; }
-  .search-box input { width: 280px; }
-  .demo-card { width: 280px !important; }
-  .layer-stack { right: 5%; }
-  .layer { min-width: 140px; padding: 0.75rem 1rem; }
-}
-</style>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
 </head>
-<body>
-<canvas id="canvas"></canvas>
+<body class="demo-body">
 
-<a href="index.html" class="back-btn">
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-  返回首页
+<svg class="sprite-host" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <symbol id="d-arrow" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></symbol>
+    <symbol id="d-brain" viewBox="0 0 24 24"><path d="M12 5.5A3.5 3.5 0 0 0 8.5 9v.45A3 3 0 0 0 6.5 15a3.5 3.5 0 0 0 2 3.16A3.4 3.4 0 0 0 12 19.5a3.4 3.4 0 0 0 3.5-1.34 3.5 3.5 0 0 0 2-3.16 3 3 0 0 0-2-5.55V9A3.5 3.5 0 0 0 12 5.5Z"/><path d="M12 5.5v14"/><path d="m9.6 9.6-1.4-1.4"/><path d="m14.4 9.6 1.4-1.4"/></symbol>
+    <symbol id="d-graph" viewBox="0 0 24 24"><circle cx="5.5" cy="6.5" r="2.4"/><circle cx="18.5" cy="7.5" r="2.4"/><circle cx="12" cy="18" r="2.4"/><path d="m7.6 7.7 2.8 8.2"/><path d="m16.5 8.9-2.9 7"/><path d="M7.9 6.3h8.2"/></symbol>
+    <symbol id="d-link" viewBox="0 0 24 24"><path d="m9.5 14.5 5-5"/><path d="M11 6.8 12.8 5a4.3 4.3 0 0 1 6.1 6.1L17 13"/><path d="M13 17.2 11.2 19a4.3 4.3 0 0 1-6.1-6.1L7 11"/></symbol>
+    <symbol id="d-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 4.5 4.5"/></symbol>
+    <symbol id="d-spark" viewBox="0 0 24 24"><path d="M12 3.5 13.8 9l5.7 1.8L13.8 12.6 12 18.2l-1.8-5.6L4.5 10.8 10.2 9 12 3.5Z"/></symbol>
+    <symbol id="d-recall" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><circle cx="11" cy="11" r="2.6"/><path d="M11 4V1.8"/><path d="M11 20.2V18"/><path d="M4 11H1.8"/><path d="M20.2 11H18"/></symbol>
+    <symbol id="d-pause" viewBox="0 0 24 24"><path d="M9 5v14"/><path d="M15 5v14"/></symbol>
+    <symbol id="d-play" viewBox="0 0 24 24"><path d="M7 4.5 19 12 7 19.5v-15Z"/></symbol>
+    <symbol id="d-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4.5V10h-5.5"/></symbol>
+    <symbol id="d-tag" viewBox="0 0 24 24"><path d="M3.5 11.5V4.5h7l9.5 9.5-7 7-9.5-9.5Z"/><circle cx="7.5" cy="8" r="1.2"/></symbol>
+    <symbol id="d-focus" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.2"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/></symbol>
+  </defs>
+</svg>
+
+<canvas id="demo-canvas" aria-hidden="true" role="presentation"></canvas>
+<div class="demo-vignette" aria-hidden="true"></div>
+
+<a href="index.html" class="demo-back">
+  <svg class="icon icon-sm" aria-hidden="true"><use href="#d-arrow"/></svg>
+  <span>返回首页</span>
 </a>
 
-<div class="overlay">
-  <div class="title-screen" id="titleScreen">
-    <h1>MindForge</h1>
-    <p>AI Agent 终身记忆系统</p>
+<div class="demo-controls">
+  <button type="button" class="demo-ctrl" id="btn-pause" aria-pressed="false">
+    <svg class="icon icon-sm" aria-hidden="true">
+      <use class="u-pause" href="#d-pause"/>
+      <use class="u-play" href="#d-play"/>
+    </svg>
+    <span id="label-pause">暂停</span>
+  </button>
+  <button type="button" class="demo-ctrl" id="btn-replay">
+    <svg class="icon icon-sm" aria-hidden="true"><use href="#d-refresh"/></svg>
+    <span>重播</span>
+  </button>
+</div>
+
+<!-- ===================== 舞台 ===================== -->
+<div class="stage" id="stage" aria-live="polite">
+
+  <div class="demo-title" id="titleScreen">
+    <h1><span class="gradient-text">MindForge</span></h1>
+    <p>AI Agent 终身记忆系统 · 交互演示</p>
   </div>
 
-  <div class="phase" id="phase1">Phase 1: 添加记忆</div>
-  <div class="phase" id="phase2">Phase 2: 语义检索</div>
-  <div class="phase" id="phase3">Phase 3: 知识关联</div>
-  <div class="phase" id="phase4">Phase 4: 多层架构</div>
+  <div class="phase" id="phase1"><span class="pn">1</span> Phase 1 · 添加记忆</div>
+  <div class="phase" id="phase2"><span class="pn">2</span> Phase 2 · 语义检索</div>
+  <div class="phase" id="phase3"><span class="pn">3</span> Phase 3 · 知识关联</div>
+  <div class="phase" id="phase4"><span class="pn">4</span> Phase 4 · 多层架构</div>
 
-  <div class="demo-card" id="card1" style="top: 25%; left: 15%; width: 340px;">
-    <h3>🧠 新记忆</h3>
-    <div class="content">用户喜欢用 Python 进行数据分析，偏好 pandas 和 numpy 库。</div>
-    <div class="tags"><span class="tag">preferences</span><span class="tag">python</span><span class="tag">data</span></div>
+  <article class="dcard" id="card1">
+    <h3><svg class="icon icon-md" aria-hidden="true"><use href="#d-spark"/></svg>新记忆写入</h3>
+    <p class="dc-body">用户喜欢用 Python 进行数据分析，偏好 pandas 和 numpy 库。</p>
+    <div class="dc-tags"><span>preferences</span><span>python</span><span>data</span></div>
+    <div class="dc-score">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#d-tag"/></svg>
+      分类 · preferences
+    </div>
+  </article>
+
+  <article class="dcard" id="card2">
+    <h3><svg class="icon icon-md" aria-hidden="true"><use href="#d-recall"/></svg>检索结果</h3>
+    <p class="dc-body">用户上周提到需要优化数据库查询性能，建议使用索引。</p>
+    <div class="dc-tags"><span>work</span><span>database</span><span>optimization</span></div>
+    <div class="dc-score">
+      相似度
+      <span class="dc-bar"><i id="score-bar"></i></span>
+      0.89
+    </div>
+  </article>
+
+  <form class="search-dock" id="searchBox">
+    <label class="sr-only" for="searchInput">搜索记忆</label>
+    <input type="text" id="searchInput" placeholder="搜索记忆…" autocomplete="off" spellcheck="false">
+    <button type="submit" id="searchBtn">搜索</button>
+  </form>
+
+  <div class="gnode" id="node1">
+    <svg class="icon icon-lg" aria-hidden="true"><use href="#d-brain"/></svg>
+    <span class="gn-l">记忆主体</span>
+  </div>
+  <div class="gnode" id="node2">
+    <svg class="icon icon-lg" aria-hidden="true"><use href="#d-graph"/></svg>
+    <span class="gn-l">知识图谱</span>
+  </div>
+  <div class="gnode" id="node3">
+    <svg class="icon icon-lg" aria-hidden="true"><use href="#d-link"/></svg>
+    <span class="gn-l">关联推理</span>
   </div>
 
-  <div class="demo-card" id="card2" style="top: 55%; left: 15%; width: 340px;">
-    <h3>🔍 检索结果</h3>
-    <div class="content">用户上周提到需要优化数据库查询性能，建议使用索引。</div>
-    <div class="tags"><span class="tag">work</span><span class="tag">database</span><span class="tag">optimization</span></div>
-    <div class="score">相似度: 0.89</div>
-  </div>
+  <span class="glink" id="line1" aria-hidden="true"></span>
+  <span class="glink" id="line2" aria-hidden="true"></span>
 
-  <div class="search-box" id="searchBox">
-    <input type="text" id="searchInput" placeholder="搜索记忆...">
-    <button id="searchBtn">搜索</button>
-  </div>
-
-  <div class="graph-node" id="node1" style="top: 40%; left: 48%;">🧠</div>
-  <div class="graph-node" id="node2" style="top: 28%; left: 62%;">💡</div>
-  <div class="graph-node" id="node3" style="top: 55%; left: 68%;">🔗</div>
-  <div class="graph-line" id="line1"></div>
-  <div class="graph-line" id="line2"></div>
-
-  <div class="layer-stack" id="layerStack">
-    <div class="layer permanent"><span>永久记忆</span><span class="label">Permanent</span></div>
-    <div class="layer long-term"><span>长期记忆</span><span class="label">Long-term</span></div>
-    <div class="layer short-term"><span>短期记忆</span><span class="label">Short-term</span></div>
-    <div class="layer sensory"><span>感官记忆</span><span class="label">Sensory</span></div>
+  <div class="dlayer-stack" id="layerStack">
+    <div class="dlayer d1"><span>核心记忆</span><span class="dl-en">Core</span></div>
+    <div class="dlayer d2"><span>长期记忆</span><span class="dl-en">Long-term</span></div>
+    <div class="dlayer d3"><span>短期记忆</span><span class="dl-en">Short-term</span></div>
+    <div class="dlayer d4"><span>感官缓冲</span><span class="dl-en">Sensory</span></div>
   </div>
 </div>
 
+<div class="demo-progress" id="demo-progress" role="progressbar" aria-label="演示进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+
+<p class="sr-only">本演示以动画方式展示 MindForge 的记忆写入、语义检索、知识关联与四层记忆架构。可通过右上角按钮暂停或重播。</p>
+
 <script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-let width, height;
-let particles = [];
+(function () {
+  'use strict';
 
-function resize() {
-  width = canvas.width = window.innerWidth;
-  height = canvas.height = window.innerHeight;
-}
+  /* ---------------- 环境探测 ---------------- */
+  var reduced = false;
+  try {
+    reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch (e) { reduced = false; }
 
-class Particle {
-  constructor() {
-    this.reset();
-  }
-  reset() {
-    this.x = Math.random() * width;
-    this.y = Math.random() * height;
-    this.vx = (Math.random() - 0.5) * 0.5;
-    this.vy = (Math.random() - 0.5) * 0.5;
-    this.size = Math.random() * 2 + 0.5;
-    this.color = Math.random() > 0.5 ? '#00d4ff' : '#a855f7';
-    this.alpha = Math.random() * 0.5 + 0.2;
-  }
-  update() {
-    this.x += this.vx;
-    this.y += this.vy;
-    if (this.x < 0 || this.x > width) this.vx *= -1;
-    if (this.y < 0 || this.y > height) this.vy *= -1;
-  }
-  draw() {
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-    ctx.fillStyle = this.color;
-    ctx.globalAlpha = this.alpha;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-}
+  /* ---------------- DOM ---------------- */
+  var canvas = document.getElementById('demo-canvas');
+  var input = document.getElementById('searchInput');
+  var searchBtn = document.getElementById('searchBtn');
+  var searchForm = document.getElementById('searchBox');
+  var btnPause = document.getElementById('btn-pause');
+  var btnReplay = document.getElementById('btn-replay');
+  var labelPause = document.getElementById('label-pause');
+  var progress = document.getElementById('demo-progress');
+  var scoreBar = document.getElementById('score-bar');
 
-function initParticles() {
-  particles = [];
-  const count = Math.min(150, Math.floor(width * height / 10000));
-  for (let i = 0; i < count; i++) {
-    particles.push(new Particle());
-  }
-}
+  var node1 = document.getElementById('node1');
+  var node2 = document.getElementById('node2');
+  var node3 = document.getElementById('node3');
+  var line1 = document.getElementById('line1');
+  var line2 = document.getElementById('line2');
 
-function animateParticles() {
-  ctx.clearRect(0, 0, width, height);
-  particles.forEach(p => {
-    p.update();
-    p.draw();
-  });
+  var ALL_IDS = ['titleScreen', 'phase1', 'phase2', 'phase3', 'phase4',
+                 'card1', 'card2', 'searchBox', 'node1', 'node2', 'node3',
+                 'line1', 'line2', 'layerStack'];
 
-  particles.forEach((p1, i) => {
-    particles.slice(i + 1).forEach(p2 => {
-      const dx = p1.x - p2.x;
-      const dy = p1.y - p2.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 120) {
-        ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
-        ctx.strokeStyle = `rgba(0, 212, 255, ${0.1 * (1 - dist / 120)})`;
-        ctx.lineWidth = 0.5;
-        ctx.stroke();
-      }
+  /* ---------------- 状态机 ---------------- */
+  var TICK = 90;                        // 轮询步长（ms），用于支持暂停
+  var ABORT = { aborted: true };        // 中止信号
+  var state = { paused: false, generation: 0, step: 0 };
+  var TOTAL_STEPS = 5;
+
+  /**
+   * 可暂停、可中止的等待。
+   * @param {number} ms 等待时长
+   * @return {Promise<void>}
+   */
+  function sleep(ms) {
+    return new Promise(function (resolve, reject) {
+      var gen = state.generation;
+      var elapsed = 0;
+      var timer = window.setInterval(function () {
+        if (gen !== state.generation) {
+          window.clearInterval(timer);
+          reject(ABORT);
+          return;
+        }
+        if (!state.paused) { elapsed += TICK; }
+        if (elapsed >= ms) {
+          window.clearInterval(timer);
+          resolve();
+        }
+      }, TICK);
     });
+  }
+
+  /**
+   * 显示元素。
+   * @param {string} id 元素 id
+   */
+  function show(id) {
+    var el = document.getElementById(id);
+    if (el) { el.classList.add('is-on'); }
+  }
+
+  /**
+   * 隐藏元素。
+   * @param {string} id 元素 id
+   */
+  function hide(id) {
+    var el = document.getElementById(id);
+    if (el) { el.classList.remove('is-on'); }
+  }
+
+  /** 隐藏全部元素。 */
+  function hideAll() {
+    for (var i = 0; i < ALL_IDS.length; i++) { hide(ALL_IDS[i]); }
+  }
+
+  /**
+   * 更新进度条。
+   * @param {number} step 当前阶段序号（0 起）
+   */
+  function setStep(step) {
+    state.step = step;
+    var pct = Math.max(0, Math.min(100, Math.round(((step + 1) / TOTAL_STEPS) * 100)));
+    progress.style.width = pct + '%';
+    progress.setAttribute('aria-valuenow', String(pct));
+  }
+
+  /**
+   * 逐字打字效果。
+   * @param {HTMLInputElement} el 输入框
+   * @param {string} text 目标文本
+   * @param {number} perChar 每字间隔
+   * @return {Promise<void>}
+   */
+  function typeText(el, text, perChar) {
+    var gen = state.generation;
+    return new Promise(function (resolve, reject) {
+      el.value = '';
+      var idx = 0;
+      var timer = window.setInterval(function () {
+        if (gen !== state.generation) {
+          window.clearInterval(timer);
+          reject(ABORT);
+          return;
+        }
+        if (state.paused) { return; }
+        if (idx < text.length) {
+          el.value += text.charAt(idx);
+          idx++;
+        } else {
+          window.clearInterval(timer);
+          resolve();
+        }
+      }, perChar);
+    });
+  }
+
+  /** 计算并绘制知识图谱节点之间的连线。 */
+  function drawLinks() {
+    var r1 = node1.getBoundingClientRect();
+    var r2 = node2.getBoundingClientRect();
+    var r3 = node3.getBoundingClientRect();
+
+    var x1 = r1.left + r1.width / 2;
+    var y1 = r1.top + r1.height / 2;
+    var x2 = r2.left + r2.width / 2;
+    var y2 = r2.top + r2.height / 2;
+    var x3 = r3.left + r3.width / 2;
+    var y3 = r3.top + r3.height / 2;
+
+    placeLink(line1, x1, y1, x2, y2);
+    placeLink(line2, x2, y2, x3, y3);
+  }
+
+  /**
+   * 定位一条连线。
+   * @param {HTMLElement} el 连线元素
+   * @param {number} ax 起点 x
+   * @param {number} ay 起点 y
+   * @param {number} bx 终点 x
+   * @param {number} by 终点 y
+   */
+  function placeLink(el, ax, ay, bx, by) {
+    var dx = bx - ax;
+    var dy = by - ay;
+    var len = Math.sqrt(dx * dx + dy * dy);
+    el.style.left = ax + 'px';
+    el.style.top = ay + 'px';
+    el.style.width = len + 'px';
+    el.style.transform = 'rotate(' + Math.atan2(dy, dx) + 'rad)';
+  }
+
+  /* ---------------- 演示主流程 ---------------- */
+
+  /** 单轮演示。 */
+  function runDemo() {
+    var gen = state.generation;
+
+    function check() {
+      if (gen !== state.generation) { throw ABORT; }
+    }
+
+    hideAll();
+    setStep(0);
+
+    return Promise.resolve()
+      // —— 标题 ——
+      .then(function () { check(); show('titleScreen'); return sleep(2600); })
+      .then(function () { check(); hide('titleScreen'); return sleep(500); })
+
+      // —— Phase 1：添加记忆 ——
+      .then(function () { check(); setStep(1); show('phase1'); return sleep(400); })
+      .then(function () { check(); show('card1'); return sleep(2600); })
+
+      // —— Phase 2：语义检索 ——
+      .then(function () { check(); setStep(2); show('phase2'); return sleep(300); })
+      .then(function () { check(); show('searchBox'); return sleep(900); })
+      .then(function () { check(); return typeText(input, '关于数据库优化的建议', 95); })
+      .then(function () { check(); return sleep(600); })
+      .then(function () {
+        check();
+        show('card2');
+        window.setTimeout(function () {
+          if (scoreBar && gen === state.generation) { scoreBar.style.width = '89%'; }
+        }, 260);
+        return sleep(2700);
+      })
+
+      // —— Phase 3：知识关联 ——
+      .then(function () { check(); setStep(3); show('phase3'); return sleep(300); })
+      .then(function () { check(); show('node1'); return sleep(400); })
+      .then(function () { check(); show('node2'); return sleep(400); })
+      .then(function () { check(); show('node3'); return sleep(400); })
+      .then(function () { check(); drawLinks(); show('line1'); show('line2'); return sleep(3200); })
+
+      // —— Phase 4：多层架构（清场，只留层级栈，避免多阶段元素互相遮挡） ——
+      .then(function () {
+        check();
+        hide('card1'); hide('card2'); hide('searchBox');
+        hide('node1'); hide('node2'); hide('node3');
+        hide('line1'); hide('line2');
+        return sleep(500);
+      })
+      .then(function () { check(); setStep(4); show('phase4'); return sleep(300); })
+      .then(function () { check(); show('layerStack'); return sleep(4200); })
+
+      // —— 收尾 ——
+      .then(function () { check(); hideAll(); if (scoreBar) { scoreBar.style.width = '0%'; } return sleep(900); })
+      .then(function () {
+        check();
+        window.setTimeout(function () {
+          if (gen === state.generation) { runDemo(); }
+        }, 200);
+      })
+      .catch(function (err) {
+        if (err !== ABORT && window.console) { window.console.error(err); }
+      });
+  }
+
+  /** 重启演示。 */
+  function replay() {
+    state.generation++;
+    state.paused = false;
+    if (scoreBar) { scoreBar.style.width = '0%'; }
+    syncPauseButton();
+    hideAll();
+    setStep(0);
+    window.setTimeout(function () { runDemo(); }, 260);
+  }
+
+  /** 同步暂停按钮状态（图标切换交由 CSS 依据 aria-pressed 处理）。 */
+  function syncPauseButton() {
+    btnPause.setAttribute('aria-pressed', state.paused ? 'true' : 'false');
+    btnPause.setAttribute('aria-label', state.paused ? '继续演示' : '暂停演示');
+    if (labelPause) { labelPause.textContent = state.paused ? '继续' : '暂停'; }
+  }
+
+  btnPause.addEventListener('click', function () {
+    state.paused = !state.paused;
+    syncPauseButton();
   });
 
-  requestAnimationFrame(animateParticles);
-}
+  btnReplay.addEventListener('click', replay);
 
-function showElement(id, delay = 0, duration = 1000) {
-  return new Promise(resolve => {
-    setTimeout(() => {
-      const el = document.getElementById(id);
-      if (el) {
-        el.style.transition = `opacity ${duration}ms ease-out, transform ${duration}ms ease-out`;
-        el.style.opacity = '1';
-        el.style.transform = 'translateY(0)';
+  // 表单提交不刷新页面
+  searchForm.addEventListener('submit', function (evt) { evt.preventDefault(); });
+
+  // 手动搜索：跳到检索结果
+  searchBtn.addEventListener('click', function () {
+    if (!input.value) { return; }
+    show('card2');
+    window.setTimeout(function () { if (scoreBar) { scoreBar.style.width = '89%'; } }, 260);
+  });
+
+  input.addEventListener('keydown', function (evt) {
+    if (evt.key === 'Enter') { evt.preventDefault(); searchBtn.click(); }
+  });
+
+  /**
+   * 判断事件目标是否处于文本输入状态（此时不拦截快捷键）。
+   * @param {Event} evt 键盘事件
+   * @return {boolean}
+   */
+  function isTypingTarget(evt) {
+    var t = evt.target;
+    if (!t || !t.tagName) { return false; }
+    var tag = t.tagName.toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || t.isContentEditable === true;
+  }
+
+  document.addEventListener('keydown', function (evt) {
+    if (isTypingTarget(evt)) { return; }
+    if (evt.key === ' ' || evt.key === 'Spacebar') {
+      evt.preventDefault();
+      btnPause.click();
+    } else if (evt.key === 'r' || evt.key === 'R') {
+      replay();
+    }
+  });
+
+  /* ---------------- 背景粒子场（轻量版） ---------------- */
+  var ctx = canvas.getContext('2d');
+  var W = 0, H = 0, dpr = 1;
+  var parts = [];
+  var rafId = 0;
+
+  /** 重建画布与粒子。 */
+  function resetField() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    var cap = W < 768 ? 34 : (W < 1280 ? 58 : 88);
+    var count = Math.max(18, Math.min(Math.round((W * H) / 22000), cap));
+    parts = [];
+    for (var i = 0; i < count; i++) {
+      parts.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: (Math.random() - 0.5) * 0.3,
+        r: 0.8 + Math.random() * 1.3,
+        a: 0.18 + Math.random() * 0.3
+      });
+    }
+    if (reduced) { drawField(); }
+  }
+
+  /** 绘制一帧粒子网络。 */
+  function drawField() {
+    ctx.clearRect(0, 0, W, H);
+    var link = W < 768 ? 96 : 124;
+    var link2 = link * link;
+
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(129, 178, 220, 0.07)';
+    ctx.beginPath();
+    for (var i = 0; i < parts.length; i++) {
+      for (var j = i + 1; j < parts.length; j++) {
+        var dx = parts[i].x - parts[j].x;
+        var dy = parts[i].y - parts[j].y;
+        if (dx * dx + dy * dy < link2) {
+          ctx.moveTo(parts[i].x, parts[i].y);
+          ctx.lineTo(parts[j].x, parts[j].y);
+        }
       }
-      setTimeout(resolve, duration);
-    }, delay);
-  });
-}
-
-function hideElement(id, duration = 500) {
-  return new Promise(resolve => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.style.transition = `opacity ${duration}ms ease-out`;
-      el.style.opacity = '0';
     }
-    setTimeout(resolve, duration);
-  });
-}
+    ctx.stroke();
 
-async function runDemo() {
-  await showElement('titleScreen');
-  await new Promise(r => setTimeout(r, 3000));
-  await hideElement('titleScreen');
-
-  await showElement('phase1');
-  await showElement('card1', 500);
-  await new Promise(r => setTimeout(r, 2500));
-
-  await showElement('phase2', 300);
-  await showElement('searchBox', 600);
-  await new Promise(r => setTimeout(r, 1000));
-
-  const input = document.getElementById('searchInput');
-  input.value = '';
-  const text = '关于数据库优化的建议';
-  let i = 0;
-  const typeInterval = setInterval(() => {
-    if (i < text.length) {
-      input.value += text[i];
-      i++;
-    } else {
-      clearInterval(typeInterval);
+    for (var k = 0; k < parts.length; k++) {
+      var p = parts[k];
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(150, 190, 240, ' + p.a.toFixed(3) + ')';
+      ctx.fill();
     }
-  }, 100);
-  await new Promise(r => setTimeout(r, text.length * 100 + 500));
+  }
 
-  await showElement('card2', 300);
-  await new Promise(r => setTimeout(r, 2500));
+  /** 动画循环。 */
+  function loop() {
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      if (p.x < -20) { p.x = W + 20; } else if (p.x > W + 20) { p.x = -20; }
+      if (p.y < -20) { p.y = H + 20; } else if (p.y > H + 20) { p.y = -20; }
+    }
+    drawField();
+    rafId = window.requestAnimationFrame(loop);
+  }
 
-  await showElement('phase3', 300);
-  await showElement('node1', 500);
-  await showElement('node2', 800);
-  await showElement('node3', 1100);
+  /** 启动背景动画。 */
+  function startField() {
+    if (reduced || rafId) { return; }
+    rafId = window.requestAnimationFrame(loop);
+  }
 
-  const node1 = document.getElementById('node1');
-  const node2 = document.getElementById('node2');
-  const node3 = document.getElementById('node3');
-  const line1 = document.getElementById('line1');
-  const line2 = document.getElementById('line2');
+  /** 停止背景动画。 */
+  function stopField() {
+    if (rafId) { window.cancelAnimationFrame(rafId); rafId = 0; }
+  }
 
-  setTimeout(() => {
-    const rect1 = node1.getBoundingClientRect();
-    const rect2 = node2.getBoundingClientRect();
-    const rect3 = node3.getBoundingClientRect();
+  window.addEventListener('resize', function () {
+    resetField();
+    if (document.getElementById('line1').classList.contains('is-on')) { drawLinks(); }
+  }, { passive: true });
 
-    const x1 = rect1.left + rect1.width / 2;
-    const y1 = rect1.top + rect1.height / 2;
-    const x2 = rect2.left + rect2.width / 2;
-    const y2 = rect2.top + rect2.height / 2;
-    const x3 = rect3.left + rect3.width / 2;
-    const y3 = rect3.top + rect3.height / 2;
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) { stopField(); } else { startField(); }
+  });
 
-    const dx1 = x2 - x1;
-    const dy1 = y2 - y1;
-    const dx2 = x3 - x2;
-    const dy2 = y3 - y2;
+  /* ---------------- 启动 ---------------- */
+  resetField();
+  startField();
+  syncPauseButton();
+  setStep(0);
 
-    line1.style.left = x1 + 'px';
-    line1.style.top = y1 + 'px';
-    line1.style.width = Math.sqrt(dx1*dx1 + dy1*dy1) + 'px';
-    line1.style.transform = `rotate(${Math.atan2(dy1, dx1)}rad)`;
-    line1.style.opacity = '1';
-
-    line2.style.left = x2 + 'px';
-    line2.style.top = y2 + 'px';
-    line2.style.width = Math.sqrt(dx2*dx2 + dy2*dy2) + 'px';
-    line2.style.transform = `rotate(${Math.atan2(dy2, dx2)}rad)`;
-    line2.style.opacity = '1';
-  }, 1300);
-
-  await new Promise(r => setTimeout(r, 3000));
-
-  await showElement('phase4', 300);
-  await showElement('layerStack', 600);
-  await new Promise(r => setTimeout(r, 4000));
-
-  await hideElement('phase1');
-  await hideElement('phase2');
-  await hideElement('phase3');
-  await hideElement('phase4');
-  await hideElement('card1');
-  await hideElement('card2');
-  await hideElement('searchBox');
-  await hideElement('node1');
-  await hideElement('node2');
-  await hideElement('node3');
-  await hideElement('line1');
-  await hideElement('line2');
-  await hideElement('layerStack');
-
-  setTimeout(() => {
-    runDemo();
-  }, 1000);
-}
-
-resize();
-initParticles();
-animateParticles();
-window.addEventListener('resize', () => {
-  resize();
-  initParticles();
-});
-
-setTimeout(runDemo, 1000);
+  if (reduced) {
+    // 尊重系统「减少动效」设置：只呈现静态终局，不自动播放
+    show('titleScreen');
+    show('layerStack');
+    btnPause.disabled = true;
+    progress.style.width = '100%';
+  } else {
+    window.setTimeout(function () { runDemo(); }, 700);
+  }
+})();
 </script>
 </body>
 </html>
