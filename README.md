@@ -380,7 +380,7 @@ MindForge/
 │   └── generic_api.py         # 通用 REST API
 ├── cli/                       # 命令行界面
 │   └── main.py                # 基于 argparse 的 200+ 命令 CLI
-├── tests/                     # 测试套件（373 个用例）
+├── tests/                     # 测试套件（379 个用例）
 ├── website/                   # 官方网站
 └── examples/                  # 用法示例
 ```
