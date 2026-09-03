@@ -15,14 +15,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -33,11 +33,11 @@ jobs:
 
       - name: Run tests
         run: |
-          python -m pytest tests/ -v --tb=short 2>&1 || python tests/test_core.py
+          python -m pytest tests/ -v --tb=short
 
       - name: Smoke test — CLI
         run: |
-          python -c "from cli.main import main; main(['--help'])" || true
+          python -c "from cli.main import main; main(['--help'])"
 
       - name: Smoke test — MCP tools/list
         run: |

@@ -45,7 +45,7 @@ All notable changes to MindForge will be documented in this file.
 - **REST API concurrency limit**: configurable cap on in-flight requests, returning 503 when exceeded to prevent resource exhaustion
 
 ### Security
-- **Encryption fail-closed (P1-008)**: Removed the HMAC-XOR fallback encryption path. If `cryptography` was unavailable in an earlier version and encrypted memories were created, those `EXPERIMENTAL_HMAC_XOR` blobs are now **permanently undecryptable**. Back up with `mindforge export --json > backup.json` before upgrading.
+- **Encryption fail-closed (P1-008)**: Removed the HMAC-XOR fallback encryption path. If `cryptography` was unavailable in an earlier version and encrypted memories were created, those `EXPERIMENTAL_HMAC_XOR` blobs are now **permanently undecryptable**. Back up with `MindForge export --json > backup.json` before upgrading.
 - **WAL network-filesystem downgrade**: `_get_conn()` now detects network filesystems (including `fuseblk` / `fuse.*`) and falls back to `journal_mode=DELETE`, avoiding SIGBUS crashes on network-mounted databases.
 - **Webhook signature consistency**: unified HMAC signature computation; request timeout now honours `config.timeout`
 - **`add_tags_to_ids` XSS sanitization**: tag values sanitized before being persisted and rendered

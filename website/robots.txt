@@ -3,9 +3,6 @@
 
 User-agent: *
 Allow: /
-
-# 演示页为动画页，无实质文本内容，不纳入索引
-User-agent: *
 Disallow: /demo.html
 
 Sitemap: https://opok-ops.github.io/MindForge/sitemap.xml

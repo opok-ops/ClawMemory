@@ -932,6 +932,6 @@ context = adapter.get_context("database optimization")
 
 ## License
 
-MIT License + MindForge 隐私附加条款。
+MIT License.
 
 Copyright (c) 2026 MindForge Project
