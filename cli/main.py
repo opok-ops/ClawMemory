@@ -2459,7 +2459,7 @@ def _json_out(data, indent=2):
     print(_json.dumps(data, ensure_ascii=False, indent=indent, default=str))
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="mindforge",
         description=f"MindForge v{__version__} - AI Agent 终身记忆系统",
@@ -3664,7 +3664,7 @@ def main():
     p_emb_status = sub.add_parser("embedding-status",
                                   help="查看嵌入向量状态（v5.4.5 新增）")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     global _json_mode
     _json_mode = getattr(args, 'json_output', False)

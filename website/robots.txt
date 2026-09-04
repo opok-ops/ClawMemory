@@ -3,6 +3,5 @@
 
 User-agent: *
 Allow: /
-Disallow: /demo.html
 
 Sitemap: https://opok-ops.github.io/MindForge/sitemap.xml
