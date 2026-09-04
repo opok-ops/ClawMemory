@@ -43,6 +43,9 @@
   "operatingSystem": "Windows, macOS, Linux",
   "programmingLanguage": "Python",
   "softwareVersion": "5.5.8",
+  "toolCount": 33,
+  "moduleCount": 15,
+  "testCount": 379,
   "url": "https://opok-ops.github.io/MindForge/",
   "codeRepository": "https://github.com/opok-ops/MindForge",
   "license": "https://github.com/opok-ops/MindForge/blob/master/LICENSE",
@@ -58,7 +61,7 @@
     "多因子加权召回引擎",
     "联邦多 Agent 记忆共享",
     "四级隐私隔离与 AES-256-GCM 端侧加密",
-    "MCP Server（33 个工具）",
+    "MCP Server（30+ 个工具）",
     "OpenClaw / Claude Code / 通用 REST API / CLI 适配"
   ]
 }
@@ -235,17 +238,17 @@
       </div>
       <span class="stat-sep" aria-hidden="true"></span>
       <div class="stat">
-        <div class="stat-num" data-count="15">15</div>
+        <div class="stat-num" data-count="15" data-num="moduleCount">15</div>
         <div class="stat-lbl">功能模块</div>
       </div>
       <span class="stat-sep" aria-hidden="true"></span>
       <div class="stat">
-        <div class="stat-num" data-count="33">33</div>
+        <div class="stat-num" data-count="33" data-num="toolCount">33</div>
         <div class="stat-lbl">MCP 工具</div>
       </div>
       <span class="stat-sep" aria-hidden="true"></span>
       <div class="stat">
-        <div class="stat-num" data-count="379">379</div>
+        <div class="stat-num" data-count="379" data-num="testCount">379</div>
         <div class="stat-lbl">测试用例</div>
       </div>
       <span class="stat-sep" aria-hidden="true"></span>
@@ -700,7 +703,7 @@
   <div class="container">
     <div class="section-head" data-reveal>
       <span class="tag"><span class="tag-dot" aria-hidden="true"></span>Capabilities</span>
-      <h2 id="cap-title">15 个功能模块，<span class="gradient-text">一套记忆基础设施</span></h2>
+      <h2 id="cap-title"><span data-num="moduleCount">15</span> 个功能模块，<span class="gradient-text">一套记忆基础设施</span></h2>
       <p>从最底层的存取衰减，到人格画像、联邦共享与领域分析，MindForge 覆盖 Agent 记忆的完整生命周期。</p>
     </div>
 
@@ -892,7 +895,7 @@
           <span class="arch-mod"><i class="dotm" aria-hidden="true"></i>Claude Code</span>
           <span class="arch-mod"><i class="dotm" aria-hidden="true"></i>Generic API</span>
           <span class="arch-mod"><i class="dotm" aria-hidden="true"></i>CLI / SDK</span>
-          <span class="arch-mod"><i class="dotm" aria-hidden="true"></i>MCP Server (33 tools)</span>
+          <span class="arch-mod"><i class="dotm" aria-hidden="true"></i>MCP Server (<span data-num="toolCount">30+</span> tools)</span>
         </div>
       </article>
     </div>
@@ -1035,8 +1038,8 @@
       <article class="eco" data-reveal style="--d:240ms">
         <span class="eco-ico" aria-hidden="true"><svg class="icon"><use href="#i-server"/></svg></span>
         <h3>MCP Server</h3>
-        <p>Model Context Protocol，暴露 33 个工具</p>
-        <span class="eco-badge">33 TOOLS</span>
+        <p>Model Context Protocol，暴露 <span data-num="toolCount">30+</span> 个工具</p>
+        <span class="eco-badge"><span data-num="toolCount">30+</span> TOOLS</span>
       </article>
     </div>
 
@@ -1049,7 +1052,7 @@
 
     <p class="arch-note" data-reveal style="justify-content:center;text-align:left;max-width:840px;margin-left:auto;margin-right:auto;">
       <svg class="icon icon-md" aria-hidden="true"><use href="#i-check-circle"/></svg>
-      <span>项目维护 379 个测试用例，覆盖存储、检索、加密、联邦与适配层；嵌入后端可按需切换，也支持 <code style="font-size:11.5px">--no-embedding</code> 完全关闭向量检索。</span>
+      <span>项目维护 <span data-num="testCount">370+</span> 个测试用例，覆盖存储、检索、加密、联邦与适配层；嵌入后端可按需切换，也支持 <code style="font-size:11.5px">--no-embedding</code> 完全关闭向量检索。</span>
     </p>
   </div>
 </section>
@@ -1179,7 +1182,7 @@
           <h4>记忆版本对比 · MCP 参数校验 · Bug 修复</h4>
           <ul>
             <li><b>记忆版本对比</b>：<code>memory_diff(a, b)</code> 输出内容 unified diff 及分类/标签/重要度差异，同时接入 API / CLI / MCP</li>
-            <li><b>MCP 参数校验</b>：33 个工具 handler 统一校验必需参数，返回明确错误而非 KeyError 崩溃</li>
+            <li><b>MCP 参数校验</b>：<span data-num="toolCount">30+</span> 个工具 handler 统一校验必需参数，返回明确错误而非 KeyError 崩溃</li>
             <li><b>P0 修复</b>：<code>export_agent_memories()</code> 的 <code>__version__</code> NameError</li>
             <li><b>P1 修复</b>：<code>add()</code> 中 falsy 枚举值（如 <code>PrivacyLevel.NONE</code>）被默认值覆盖</li>
             <li><b>P1 修复</b>：<code>cmd_list</code> 筛选时显示全局总数而非筛选结果数</li>

@@ -1,0 +1,8 @@
+feat: dynamic number injection, CI security job, prep for v5.5.9
+
+- website: toolCount/moduleCount/testCount in JSON-LD as single source
+- website: inline numbers use data-num attrs, JS injects from JSON-LD
+- website: numbers >= 100 display with "+" suffix (e.g. 370+)
+- CI: add security job with bandit + pip-audit
+- CI: bandit runs with || true (informational, not blocking)
+- CI: pip-audit runs with --strict (blocking on known vulns)

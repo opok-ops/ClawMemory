@@ -719,6 +719,23 @@
         el.textContent = el.dataset.verTpl ? el.dataset.verTpl.replace('{v}', ver) : 'v' + ver;
       });
     }
+
+    // 统计数字注入：从 JSON-LD 读取 toolCount/moduleCount/testCount
+    var nums = {};
+    try {
+      var ld2 = document.querySelector('script[type="application/ld+json"]');
+      if (ld2) { var j = JSON.parse(ld2.textContent); nums = { toolCount: j.toolCount, moduleCount: j.moduleCount, testCount: j.testCount }; }
+    } catch (e) {}
+    if (Object.keys(nums).length) {
+      document.querySelectorAll('[data-num]').forEach(function (el) {
+        var key = el.dataset.num;
+        if (nums[key] != null) {
+          el.textContent = nums[key] >= 100 ? nums[key] + '+' : nums[key];
+          // 同步更新 stat-num 的 data-count
+          if (el.classList.contains('stat-num')) { el.dataset.count = String(nums[key]); }
+        }
+      });
+    }
   }
 
   if (document.readyState === 'loading') {
