@@ -2,6 +2,29 @@
 
 All notable changes to MindForge will be documented in this file.
 
+## [5.5.9] - 2026-09-04
+
+### Fixed
+- **CI fallback removed (P0)**: `pytest || test_core.py` and `|| true` on smoke test were masking failures; CI now fails red when tests actually break
+- **CLI main() signature (P0)**: `main()` did not accept `argv` parameter, causing `main(['--help'])` TypeError in CI smoke test; fixed to `main(argv=None)` with `parse_args(argv)`
+- **CHANGELOG typo**: lowercase `mindforge export` → `MindForge export` (Linux command-not-found)
+
+### Changed
+- **License unified**: README and MindForge.py changed from "MIT + Privacy Addendum" to pure MIT, matching LICENSE file
+- **Dynamic version injection**: website version numbers read from JSON-LD `softwareVersion` via JS, no longer hardcoded in 6 places
+- **Dynamic number injection**: toolCount/moduleCount/testCount in JSON-LD as single source; inline text uses `data-num` attrs
+- **Number fuzzing**: inline mentions use approximate display (30+ tools, 370+ tests) via JS injection
+- **Async font loading**: Google Fonts loaded asynchronously with `media="print" onload` pattern + local fallback CSS
+- **robots.txt**: merged duplicate User-agent blocks; removed Disallow (page-level noindex is canonical)
+- **Action versions upgraded**: checkout@v5, setup-python@v6, upload-pages-artifact@v4 (Node.js 20 deprecation)
+
+### Added
+- **SECURITY.md**: vulnerability reporting policy (email, response timeline, scope)
+- **LICENSE file**: standard MIT text, GitHub now recognizes and displays badge
+- **CI security job**: `bandit` (AST security scan) + `pip-audit` (dependency vulnerability check)
+- **Python 3.13**: added to CI matrix and pyproject classifiers
+- **v5.5.8 GitHub Release**: first official release with release notes
+
 ## [5.5.8] - 2026-09-01
 
 ### Added

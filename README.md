@@ -6,7 +6,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.5.8-green.svg)](https://github.com/opok-ops/MindForge)
+[![Version](https://img.shields.io/badge/version-5.5.9-green.svg)](https://github.com/opok-ops/MindForge)
 [![CI](https://github.com/opok-ops/MindForge/actions/workflows/ci.yml/badge.svg)](https://github.com/opok-ops/MindForge/actions/workflows/ci.yml)
 
 ---
@@ -112,7 +112,7 @@ for chunk in results.chunks:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      MindForge v5.5.8                          │
+│                      MindForge v5.5.9                          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  ┌─────────────────────────────────────────────────────────┐ │
@@ -183,7 +183,7 @@ for chunk in results.chunks:
 > SQLite 默认启用 WAL（Write-Ahead Logging）日志模式以获得更好的并发读写性能。但 **SQLite 官方不支持在网络文件系统（NFS、SMB/CIFS、SSHFS 等）上使用 WAL 模式**，可能导致 SIGBUS 崩溃。
 >
 > MindForge v5.5.7+ 会自动检测数据库路径是否位于网络文件系统，如检测到则自动降级为 DELETE 模式。建议将数据库文件放置在本地磁盘上以获得最佳性能和稳定性。
-> MindForge v5.5.8 修复了多个安全与稳定性问题，新增记忆版本差异对比功能。
+> MindForge v5.5.9 修复了 CI 可信度问题，新增安全扫描与动态数字注入。
 
 ### Retrieval Quality（检索精度）
 
@@ -415,6 +415,33 @@ context = adapter.get_context("database optimization")
 ---
 
 ## Changelog（版本记录）
+
+### v5.5.9 (2026-09-04)
+
+**CI 可信度修复 + 安全扫描 + 官网工程化**
+
+**修复：**
+
+1. **CI fallback 后门（P0）** — 移除 `pytest || test_core.py` 和 `|| true`，测试失败现在亮红灯。
+2. **CLI main() 签名（P0）** — `main()` 不接受参数导致 CI smoke test TypeError，改为 `main(argv=None)` + `parse_args(argv)`。
+3. **CHANGELOG 小写命令** — `mindforge export` → `MindForge export`（Linux command-not-found）。
+
+**变更：**
+
+4. **许可证统一** — README 和 MindForge.py 从 "MIT + Privacy Addendum" 改为纯 MIT。
+5. **动态版本注入** — 官网版本号从 JSON-LD `softwareVersion` 读取，6 处不再硬编码。
+6. **动态数字注入** — toolCount/moduleCount/testCount 在 JSON-LD 中作为单一数据源，inline 文本用 `data-num` 属性 + JS 注入。
+7. **异步字体加载** — Google Fonts 改为异步加载 + 本地回退 CSS。
+8. **robots.txt 规范化** — 合并重复块，保留页内 noindex。
+9. **Action 版本升级** — checkout@v5, setup-python@v6, upload-pages-artifact@v4。
+
+**新增：**
+
+10. **SECURITY.md** — 漏洞上报策略（邮箱、响应时限、范围）。
+11. **LICENSE 文件** — 标准 MIT，GitHub 已识别并展示徽章。
+12. **CI 安全扫描** — `bandit`（AST 安全扫描）+ `pip-audit`（依赖漏洞检查）。
+13. **Python 3.13** — CI matrix 和 pyproject classifiers 补充。
+14. **v5.5.8 GitHub Release** — 首个官方 Release。
 
 ### v5.5.8 (2026-09-01)
 

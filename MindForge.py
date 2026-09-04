@@ -13,9 +13,9 @@ v5.5.2 新增：Memory TTL过期机制 · 多关键词搜索高亮 · 按分类/
 底层实现仍在 core/ 和 modules/ 子包中。
 """
 
-__version__ = "5.5.8"
+__version__ = "5.5.9"
 __author__ = "MindForge Project"
-__license__ = "MIT + Privacy Addendum"
+__license__ = "MIT"
 
 from core import (
     MindForge,
