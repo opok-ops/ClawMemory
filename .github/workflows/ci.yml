@@ -73,4 +73,5 @@ jobs:
 
       - name: pip-audit
         run: |
-          pip-audit --strict
+          # 跳过本地 editable 包（MindForge 自身），只审计真实第三方依赖
+          pip-audit --strict --skip-editable

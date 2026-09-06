@@ -1,8 +1,0 @@
-release: v5.5.9 — CI fix, security scan, dynamic injection
-
-Version bump: 5.5.8 -> 5.5.9
-- MindForge.py: __version__ + __license__ (MIT)
-- pyproject.toml: version 5.5.9
-- README.md: badge, banner, changelog entry
-- website/index.html: JSON-LD softwareVersion
-- CHANGELOG.md: v5.5.9 entry
