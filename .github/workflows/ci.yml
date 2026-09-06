@@ -73,5 +73,6 @@ jobs:
 
       - name: pip-audit
         run: |
-          # 跳过本地 editable 包（MindForge 自身），只审计真实第三方依赖
-          pip-audit --strict --skip-editable
+          # 只审计项目直接依赖，不扫 runner 预装包（避免不可控的 CVE 噪音）
+          python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))" > /tmp/reqs.txt
+          pip-audit --strict -r /tmp/reqs.txt
