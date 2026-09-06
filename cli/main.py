@@ -1835,7 +1835,7 @@ def cmd_serve(args):
 
     # Web UI 模式（原有行为）
     print(c("启动 MindForge Web UI...", "cyan"))
-    print(f"  地址: http://localhost:{args.port}")
+    print(f"  地址: http://{args.host}:{args.port}")
     print(f"  数据库: {args.db_path}")
     print(c("\n  按 Ctrl+C 停止服务", "yellow"))
 
@@ -1849,7 +1849,7 @@ def cmd_serve(args):
             os.chdir(web_dir)
 
         Handler = http.server.SimpleHTTPRequestHandler
-        with socketserver.TCPServer(("", args.port), Handler) as httpd:
+        with socketserver.TCPServer((args.host, args.port), Handler) as httpd:
             httpd.serve_forever()
     except KeyboardInterrupt:
         print("\n服务已停止")
@@ -5446,7 +5446,7 @@ def cmd_import_xml(args):
             cm.close()
             return 1
         root = ET.fromstring(content)
-    except (ValueError, TypeError) as e:
+    except (ValueError, TypeError, ET.ParseError) as e:
         print(c(f"\n❌ XML 解析失败: {e}", "red"))
         return 1
 

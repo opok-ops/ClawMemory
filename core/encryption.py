@@ -28,7 +28,7 @@ def _get_crypto():
             _CRYPTO_MODULE = False
     return _CRYPTO_MODULE
 
-# PBKDF2 迭代次数：60000（OWASP 2023 推荐最低值，兼顾安全与低配电脑性能）
+# PBKDF2 迭代次数：60000（低于 OWASP 2023 推荐的 600,000，为低配电脑性能折中；敏感数据建议自行调高）
 _PBKDF2_ITERATIONS = 60000
 
 
