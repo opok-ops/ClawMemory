@@ -36,7 +36,7 @@ setup(
         exclude=["tests", "tests.*", "website", "examples", "data"]
     ),
     python_requires=">=3.9",
-    install_requires=["cryptography>=41.0"],
+    install_requires=["cryptography>=50.0.1"],
     extras_require={
         "dev": [
             "pytest",

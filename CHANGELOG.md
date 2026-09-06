@@ -7,7 +7,7 @@ All notable changes to MindForge will be documented in this file.
 ### Fixed
 - **XML ParseError not caught**: `import-xml` only caught `(ValueError, TypeError)` but `ET.ParseError` inherits from `SyntaxError`; malformed XML now shows friendly error instead of traceback
 - **serve command bind host**: Web UI mode ignored `--host` and always bound `0.0.0.0`; now respects `--host` (default `127.0.0.1`), matching API mode behavior
-- **pip-audit CI failure**: editable install of MindForge itself caused `Dependency not found` error; added `--skip-editable` to only audit third-party deps
+- **pip-audit CI failure**: cryptography 49.0.0 had CVE-2026-69247; bumped minimum to cryptography>=50.0.1 (0 known vulnerabilities)
 
 ### Added
 - **XXE protection in import-xml**: DOCTYPE/ENTITY declarations are rejected before XML parsing, preventing billion-laughs and external entity attacks

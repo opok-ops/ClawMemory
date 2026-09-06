@@ -22,7 +22,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-dependencies = ["cryptography>=41.0"]
+dependencies = ["cryptography>=50.0.1"]
 
 [project.urls]
 Homepage = "https://opok-ops.github.io/MindForge/"
