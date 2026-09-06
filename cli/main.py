@@ -93,7 +93,7 @@ from core import (
 try:
     from MindForge import __version__
 except ImportError:
-    __version__ = "5.5.8"
+    __version__ = "5.5.9"
 
 # 懒加载 modules：仅在对应命令执行时才导入，大幅加速 CLI 启动
 _modules_cache = {}
@@ -5437,6 +5437,14 @@ def cmd_import_xml(args):
 
     try:
         import xml.etree.ElementTree as ET
+
+        # 安全加固：记忆 XML 为无 DTD 的简单格式，
+        # 直接拒绝 DOCTYPE/ENTITY 声明，防 XXE 与实体膨胀攻击（billion laughs）
+        upper = content[:4096].upper()
+        if "<!DOCTYPE" in upper or "<!ENTITY" in upper:
+            print(c("\n❌ XML 包含 DOCTYPE/ENTITY 声明，已阻止解析（防 XXE 攻击）", "red"))
+            cm.close()
+            return 1
         root = ET.fromstring(content)
     except (ValueError, TypeError) as e:
         print(c(f"\n❌ XML 解析失败: {e}", "red"))

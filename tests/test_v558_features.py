@@ -24,9 +24,24 @@ if _PROJECT_ROOT not in sys.path:
 class TestVersionConsistency(unittest.TestCase):
     """版本号一致性测试"""
 
-    def test_version_is_558(self):
+    @staticmethod
+    def _pyproject_version():
+        """从 pyproject.toml 动态读取发布版本，避免每次发版同步硬编码断言"""
+        import re
+        pyproject = os.path.join(_PROJECT_ROOT, "pyproject.toml")
+        if not os.path.exists(pyproject):
+            return None
+        with open(pyproject, "r", encoding="utf-8") as f:
+            m = re.search(r'^version\s*=\s*"([^"]+)"', f.read(), re.M)
+        return m.group(1) if m else None
+
+    def test_version_matches_pyproject(self):
+        """顶层包 __version__ 必须与 pyproject.toml 发布版本一致"""
         from MindForge import __version__
-        self.assertEqual(__version__, "5.5.8")
+        expected = self._pyproject_version()
+        if expected is None:
+            self.skipTest("pyproject.toml not found")
+        self.assertEqual(__version__, expected)
 
     def test_version_semver_format(self):
         from MindForge import __version__
@@ -36,17 +51,19 @@ class TestVersionConsistency(unittest.TestCase):
             self.assertTrue(p.isdigit())
 
     def test_pyproject_version(self):
-        pyproject = os.path.join(_PROJECT_ROOT, "pyproject.toml")
-        if not os.path.exists(pyproject):
-            self.skipTest("pyproject.toml not found")
-        with open(pyproject, "r", encoding="utf-8") as f:
-            content = f.read()
-        self.assertIn('version = "5.5.8"', content)
+        """pyproject.toml 必须声明合法且完整的 semver 版本"""
+        expected = self._pyproject_version()
+        self.assertIsNotNone(expected, "pyproject.toml not found or missing version")
+        parts = expected.split(".")
+        self.assertEqual(len(parts), 3)
+        for p in parts:
+            self.assertTrue(p.isdigit())
 
     def test_storage_has_version(self):
-        """v5.5.8 修复：storage.py 应该能访问 __version__"""
-        from core.storage import __version__
-        self.assertEqual(__version__, "5.5.8")
+        """storage.py 的 __version__ 应与顶层包一致（v5.5.8 修复，v5.5.9 起动态比对）"""
+        from MindForge import __version__ as top_version
+        from core.storage import __version__ as storage_version
+        self.assertEqual(storage_version, top_version)
 
 
 class TestMemoryDiff(unittest.TestCase):
